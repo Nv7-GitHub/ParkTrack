@@ -61,13 +61,24 @@ struct StatTile: View {
     let label: String
     var systemImage: String?
     var tint: Color = Theme.accent
+    /// Draws a chevron beside the icon. A number that opens into a list has to look like it
+    /// does, or nobody finds out that it does.
+    var showsDisclosure: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let systemImage {
-                Image(systemName: systemImage)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(tint)
+            HStack(spacing: 4) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(tint)
+                }
+                if showsDisclosure {
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary.opacity(0.5))
+                }
             }
             Text(value)
                 .font(.system(size: 28, weight: .bold, design: .rounded))

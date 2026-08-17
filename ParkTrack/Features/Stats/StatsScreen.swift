@@ -37,6 +37,7 @@ struct StatsScreen: View {
     @State private var anchor: StatsAnchor = .currentLocation
     @State private var droppedPin: CLLocationCoordinate2D?
     @State private var isPickingPin = false
+    @State private var breakdown: StatBreakdownSheet.Kind?
 
     private var anchorCoordinate: CLLocationCoordinate2D? {
         switch anchor {
@@ -141,6 +142,9 @@ struct StatsScreen: View {
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Stats")
             .navigationBarTitleDisplayMode(.large)
+            .sheet(item: $breakdown) { kind in
+                StatBreakdownSheet(kind: kind, parks: parks, origin: anchorLocation)
+            }
             .sheet(isPresented: $isPickingPin) {
                 StatsPinPickerSheet(
                     initialCoordinate: droppedPin ?? location.currentLocation?.coordinate ?? settings.homeCoordinate
@@ -183,16 +187,37 @@ struct StatsScreen: View {
                 columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2),
                 spacing: 10
             ) {
-                StatTile(value: "\(stats.totalParks)", label: "Parks visited", systemImage: "tree.fill", tint: Theme.fern)
-                StatTile(value: "\(stats.totalVisits)", label: "Total visits", systemImage: "figure.walk", tint: Theme.sky)
-                StatTile(value: "\(stats.parksThisMonth)", label: "New this month", systemImage: "calendar", tint: Theme.moss)
-                StatTile(value: "\(stats.parksThisYear)", label: "New this year", systemImage: "calendar.badge.clock", tint: Theme.bark)
-                StatTile(value: "\(stats.distinctCities)", label: "Cities", systemImage: "building.2.fill", tint: Theme.sky)
-                StatTile(value: "\(stats.distinctStates)", label: "States or regions", systemImage: "map.fill", tint: Theme.canopy)
-                StatTile(value: "\(streak.currentWeeks)", label: "Week streak", systemImage: "flame.fill", tint: Theme.sunset)
-                StatTile(value: "\(streak.longestWeeks)", label: "Longest streak", systemImage: "crown.fill", tint: Theme.sunset)
+                // Every figure opens the set it counted. A headline number raises a question
+                // it cannot answer on its own — seventeen cities, but which ones — and the
+                // answer is already in the store.
+                tile(.visitedParks, "\(stats.totalParks)", "Parks visited", "tree.fill", Theme.fern)
+                tile(.allVisits, "\(stats.totalVisits)", "Total visits", "figure.walk", Theme.sky)
+                tile(.newThisMonth, "\(stats.parksThisMonth)", "New this month", "calendar", Theme.moss)
+                tile(.newThisYear, "\(stats.parksThisYear)", "New this year", "calendar.badge.clock", Theme.bark)
+                tile(.cities, "\(stats.distinctCities)", "Cities", "building.2.fill", Theme.sky)
+                tile(.states, "\(stats.distinctStates)", "States or regions", "map.fill", Theme.canopy)
+                tile(.currentStreak, "\(streak.currentWeeks)", "Week streak", "flame.fill", Theme.sunset)
+                tile(.longestStreak, "\(streak.longestWeeks)", "Longest streak", "crown.fill", Theme.sunset)
             }
             .animation(.smooth(duration: 0.45), value: stats.totalVisits)
         }
+    }
+
+    private func tile(
+        _ kind: StatBreakdownSheet.Kind,
+        _ value: String,
+        _ label: String,
+        _ systemImage: String,
+        _ tint: Color
+    ) -> some View {
+        Button {
+            breakdown = kind
+        } label: {
+            StatTile(value: value, label: label, systemImage: systemImage, tint: tint, showsDisclosure: true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Shows the full list")
     }
 }

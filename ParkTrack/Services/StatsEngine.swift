@@ -44,6 +44,14 @@ struct TimelinePoint: Identifiable {
     let cumulative: Int
 }
 
+/// One calendar week inside a streak, and what was logged in it.
+struct StreakWeek: Identifiable, Equatable {
+    var id: Date { start }
+    let start: Date
+    let visits: Int
+    let parks: Int
+}
+
 struct Streaks {
     let currentWeeks: Int
     let longestWeeks: Int
@@ -326,6 +334,66 @@ enum StatsEngine {
             longestGapDays: longestGap,
             lastVisitDate: dates.last
         )
+    }
+
+    /// The weeks making up the current and longest streaks, so a streak figure can be
+    /// opened and read rather than only counted.
+    static func streakWeeks(parks: [Park]) -> (current: [StreakWeek], longest: [StreakWeek]) {
+        streakWeeks(parks: parks, now: Date(), calendar: .current)
+    }
+
+    static func streakWeeks(
+        parks: [Park],
+        now: Date,
+        calendar: Calendar
+    ) -> (current: [StreakWeek], longest: [StreakWeek]) {
+        var visitsPerWeek: [Date: Int] = [:]
+        var parksPerWeek: [Date: Set<String>] = [:]
+        for park in parks {
+            for visit in park.datedVisits {
+                let week = weekStart(visit.date, calendar)
+                visitsPerWeek[week, default: 0] += 1
+                parksPerWeek[week, default: []].insert(park.identifier)
+            }
+        }
+        guard !visitsPerWeek.isEmpty else { return ([], []) }
+
+        func week(_ start: Date) -> StreakWeek {
+            StreakWeek(
+                start: start,
+                visits: visitsPerWeek[start] ?? 0,
+                parks: parksPerWeek[start]?.count ?? 0
+            )
+        }
+
+        // Current: walk backwards from the most recent week that counts. The week in
+        // progress is not held against the user, matching `streaks`.
+        let thisWeek = weekStart(now, calendar)
+        let lastWeek = previousWeek(thisWeek, calendar) ?? thisWeek
+        var cursor: Date? = visitsPerWeek[thisWeek] != nil
+            ? thisWeek
+            : (visitsPerWeek[lastWeek] != nil ? lastWeek : nil)
+        var current: [StreakWeek] = []
+        while let start = cursor, visitsPerWeek[start] != nil {
+            current.append(week(start))
+            cursor = previousWeek(start, calendar)
+        }
+
+        // Longest: the best unbroken run anywhere on record.
+        var longest: [StreakWeek] = []
+        var run: [StreakWeek] = []
+        var previous: Date?
+        for start in visitsPerWeek.keys.sorted() {
+            if let previous, nextWeek(previous, calendar) == start {
+                run.append(week(start))
+            } else {
+                run = [week(start)]
+            }
+            if run.count > longest.count { longest = run }
+            previous = start
+        }
+
+        return (current.reversed(), longest)
     }
 
     // MARK: - Records
