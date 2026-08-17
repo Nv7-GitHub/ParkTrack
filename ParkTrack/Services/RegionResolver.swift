@@ -41,9 +41,56 @@ final class RegionResolver {
             return lhs.distance(from: origin) < rhs.distance(from: origin)
         }
 
-        for park in ordered.prefix(limit) {
+        // Neighbours first, and they cost nothing. Parks arrive in clusters from a swept
+        // area, most already carry a locality straight off the map result, and a park a few
+        // hundred metres from three parks that all agree they're in the same city is in that
+        // city. Only what's left over is worth spending the geocoder's rate limit on.
+        let placed = (try? context.fetch(
+            FetchDescriptor<Park>(predicate: #Predicate { $0.locality != nil })
+        )) ?? []
+        var stillUnknown: [Park] = []
+        for park in ordered {
+            if Self.adoptRegion(for: park, from: placed) { continue }
+            stillUnknown.append(park)
+        }
+        if context.hasChanges { try? context.save() }
+
+        for park in stillUnknown.prefix(limit) {
+            if Task.isCancelled { return }
             await resolve(park)
         }
+    }
+
+    /// How close a placed park has to be to vouch for an unplaced one. About 1.2 km: close
+    /// enough to be the same town in any built-up area, and the agreement check below covers
+    /// the case where a boundary runs between them.
+    static let neighbourRadiusMeters: CLLocationDistance = 1_200
+
+    /// Adopts a region from nearby parks when they agree, and reports whether it did.
+    ///
+    /// Requires unanimity among the neighbours found: near a city limit the parks on either
+    /// side disagree, and guessing there would quietly file a park under the wrong city and
+    /// corrupt that city's completion count.
+    @discardableResult
+    static func adoptRegion(for park: Park, from placed: [Park]) -> Bool {
+        let neighbours = placed.filter {
+            $0.identifier != park.identifier
+                && $0.distance(from: park.location) <= neighbourRadiusMeters
+        }
+        guard !neighbours.isEmpty else { return false }
+
+        let localities = Set(neighbours.compactMap(\.locality))
+        guard localities.count == 1, let locality = localities.first else { return false }
+
+        park.locality = locality
+        let counties = Set(neighbours.compactMap(\.subAdministrativeArea))
+        if counties.count == 1 { park.subAdministrativeArea = counties.first }
+        let states = Set(neighbours.compactMap(\.administrativeArea))
+        if states.count == 1 { park.administrativeArea = states.first }
+        let countries = Set(neighbours.compactMap(\.country))
+        if countries.count == 1 { park.country = countries.first }
+        park.regionResolvedAt = Date()
+        return true
     }
 
     func resolve(_ park: Park) async {

@@ -25,7 +25,10 @@ struct ParkMarker: View {
                     Circle().strokeBorder(stroke, lineWidth: park.isVisited || isBulkSelected ? 1 : 1.5)
                 )
                 .frame(width: diameter, height: diameter)
-                .shadow(color: .black.opacity(0.25), radius: 4, x: 0, y: 2)
+                // Shadows are an offscreen pass each, and with a screenful of pins that was
+                // the difference between a smooth pan and a stuttering one. The stroke above
+                // already separates a pin from the map, so only the selected pin lifts.
+                .shadow(color: .black.opacity(isSelected ? 0.3 : 0), radius: isSelected ? 5 : 0, x: 0, y: 2)
 
             Image(systemName: glyph)
                 .font(.system(size: park.isVisited ? 13 : 11, weight: .bold))

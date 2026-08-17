@@ -1,5 +1,6 @@
 import XCTest
 import CoreLocation
+import MapKit
 import SwiftData
 @testable import ParkTrack
 
@@ -108,5 +109,31 @@ final class PerformanceProbeTests: XCTestCase {
                 )
             }
         }
+    }
+}
+
+/// The zoom-dependent annotation ceiling. Panning while zoomed out was drawing hundreds of
+/// pins, each a real view; these bounds are what keep a wide camera cheap.
+final class AnnotationBudgetTests: XCTestCase {
+    private func limit(_ delta: Double) -> Int {
+        MapScreen.annotationLimit(forSpan: MKCoordinateSpan(latitudeDelta: delta, longitudeDelta: delta))
+    }
+
+    func testCeilingFallsAsTheCameraPullsBack() {
+        XCTAssertGreaterThan(limit(0.02), limit(0.2))
+        XCTAssertGreaterThan(limit(0.2), limit(0.8))
+        XCTAssertGreaterThan(limit(0.8), limit(5))
+    }
+
+    func testNeighbourhoodZoomStillShowsPlenty() {
+        XCTAssertGreaterThanOrEqual(limit(0.02), 300)
+    }
+
+    func testWideZoomIsHeavilyCapped() {
+        XCTAssertLessThanOrEqual(limit(5), 30)
+    }
+
+    func testUnknownSpanIsConservative() {
+        XCTAssertLessThanOrEqual(MapScreen.annotationLimit(forSpan: nil), 100)
     }
 }

@@ -184,3 +184,65 @@ final class RegionIndexTests: XCTestCase {
         XCTAssertNil(park.regionResolvedAt)
     }
 }
+
+/// The cheap half of region resolution: adopting a city from neighbours that already know
+/// theirs, so the rate-limited geocoder is only spent on genuinely unknown parks.
+@MainActor
+final class NeighbourRegionInferenceTests: XCTestCase {
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+        context = ModelContext(container)
+    }
+
+    private func park(_ name: String, lat: Double, lon: Double, city: String? = nil) -> Park {
+        let park = Park(identifier: name, name: name, latitude: lat, longitude: lon)
+        park.locality = city
+        park.subAdministrativeArea = city == nil ? nil : "Sample County"
+        park.administrativeArea = city == nil ? nil : "Example State"
+        context.insert(park)
+        return park
+    }
+
+    func testAdoptsCityFromAgreeingNeighbours() {
+        let placed = [
+            park("A", lat: 47.6000, lon: -122.2000, city: "Sample City"),
+            park("B", lat: 47.6010, lon: -122.2010, city: "Sample City")
+        ]
+        let unplaced = park("C", lat: 47.6005, lon: -122.2005)
+
+        XCTAssertTrue(RegionResolver.adoptRegion(for: unplaced, from: placed))
+        XCTAssertEqual(unplaced.locality, "Sample City")
+        XCTAssertEqual(unplaced.subAdministrativeArea, "Sample County")
+        XCTAssertNotNil(unplaced.regionResolvedAt)
+    }
+
+    /// Near a boundary the neighbours disagree, and guessing would file the park under the
+    /// wrong city and corrupt that city's completion count.
+    func testRefusesToGuessWhenNeighboursDisagree() {
+        let placed = [
+            park("A", lat: 47.6000, lon: -122.2000, city: "Sample City"),
+            park("B", lat: 47.6010, lon: -122.2010, city: "Other City")
+        ]
+        let unplaced = park("C", lat: 47.6005, lon: -122.2005)
+
+        XCTAssertFalse(RegionResolver.adoptRegion(for: unplaced, from: placed))
+        XCTAssertNil(unplaced.locality)
+        XCTAssertNil(unplaced.regionResolvedAt)
+    }
+
+    func testIgnoresNeighboursThatAreTooFarAway() {
+        let placed = [park("A", lat: 47.7000, lon: -122.4000, city: "Sample City")]
+        let unplaced = park("C", lat: 47.6000, lon: -122.2000)
+
+        XCTAssertFalse(RegionResolver.adoptRegion(for: unplaced, from: placed))
+        XCTAssertNil(unplaced.locality)
+    }
+
+    func testNoNeighboursAtAllIsNotAnAdoption() {
+        let unplaced = park("C", lat: 47.6000, lon: -122.2000)
+        XCTAssertFalse(RegionResolver.adoptRegion(for: unplaced, from: []))
+    }
+}

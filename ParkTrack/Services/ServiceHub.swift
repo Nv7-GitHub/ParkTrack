@@ -50,11 +50,28 @@ final class ServiceHub {
         hasRunStartupDiscovery = true
         startupTask = Task { [weak self] in
             await discovery.sweep(around: coordinate, radiusMiles: radiusMiles)
+            // Neighbour inference is instant and places most of a swept cluster, so it runs
+            // inline; the geocoder pass that follows is rate-limited to about a second per
+            // park and would otherwise hold up indexing for a minute, so it goes to the back.
             if let context = self?.modelContext {
-                await RegionResolver.shared.resolveMissingRegions(context: context, limit: 30)
+                await RegionResolver.shared.resolveMissingRegions(context: context, limit: 0)
             }
             await self?.regionIndexer?.indexArea(around: coordinate)
             self?.startupTask = nil
+            self?.beginBackgroundRegionResolution()
+        }
+    }
+
+    /// Works through the parks the map never placed, slowly, in the background. Kept off the
+    /// startup path because `CLGeocoder` is rate-limited to roughly one request per second
+    /// and there is nothing to be gained by making the user wait for the tail.
+    private var resolutionTask: Task<Void, Never>?
+
+    func beginBackgroundRegionResolution() {
+        guard resolutionTask == nil, let modelContext else { return }
+        resolutionTask = Task { [weak self] in
+            await RegionResolver.shared.resolveMissingRegions(context: modelContext, limit: 200)
+            self?.resolutionTask = nil
         }
     }
 

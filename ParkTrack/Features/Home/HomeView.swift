@@ -390,18 +390,22 @@ struct HomeView: View {
 
         let radius = settings.radiiMiles.max() ?? AppSettings.defaultRadiiMiles.max() ?? 10
 
-        // Owned by the service hub, not by this view's task: a sweep takes tens of seconds
-        // and must survive the view churn that used to cancel it. A forced refresh is the
-        // user asking right now, so that one runs here and simply waits its turn.
-        if force {
-            await services.awaitStartupDiscovery()
-            await discovery.sweep(around: coordinate, radiusMiles: radius, force: true)
-            await RegionResolver.shared.resolveMissingRegions(context: modelContext, limit: 30)
-            await services.regionIndexer?.indexArea(around: coordinate)
-        } else {
+        // The launch sweep is owned by the service hub, not by this view's task: it takes
+        // tens of seconds and must survive the view churn that used to cancel it.
+        if !services.hasRunStartupDiscovery {
             services.beginStartupDiscovery(around: coordinate, radiusMiles: radius)
             await services.awaitStartupDiscovery()
+            return
         }
+
+        // Every later pass sweeps wherever the user is *now* — driving to another city and
+        // pulling to refresh is the whole point. Ground already swept is skipped by the
+        // coverage record, so refreshing where you started costs nothing, and indexing an
+        // already-indexed place returns immediately.
+        await services.awaitStartupDiscovery()
+        await discovery.sweep(around: coordinate, radiusMiles: radius, force: force)
+        await RegionResolver.shared.resolveMissingRegions(context: modelContext, limit: 30)
+        await services.regionIndexer?.indexArea(around: coordinate)
     }
 
     private func promotePendingTarget() {

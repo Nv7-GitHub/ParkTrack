@@ -174,7 +174,21 @@ final class RegionIndexer {
             return nil
         }
 
-        record.parkCount = parkCount(matching: identifier, kind: kind)
+        // A real city has parks in it. Zero means the sweep never actually saw the place —
+        // `MKLocalSearch` treats its region as a hint rather than a bound and will happily
+        // answer a query about somewhere far away with results from where the device is,
+        // which the result filter then discards. Recording that as a completed index would
+        // publish a total of zero, including to friends racing against it.
+        let count = parkCount(matching: identifier, kind: kind)
+        guard count > 0 else {
+            record.lastError = "The map returned no parks in \(name). It may not have understood the area — try again."
+            lastError = record.lastError
+            record.indexedAt = nil
+            try? modelContext.save()
+            return nil
+        }
+
+        record.parkCount = count
         record.indexedAt = Date()
         record.lastError = nil
         try? modelContext.save()

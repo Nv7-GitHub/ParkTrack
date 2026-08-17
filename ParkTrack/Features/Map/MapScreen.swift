@@ -48,8 +48,27 @@ struct MapScreen: View {
     @State private var hapticTick = 0
 
     /// Past this many pins the map stops being readable and starts being slow.
+    /// Ceilings for the widest zoom. Both scale down as the camera pulls back — see
+    /// `annotationLimit(for:)`. Every annotation is a real SwiftUI view and every fog hole is
+    /// a real overlay, so drawing hundreds of them while the map is moving is what made
+    /// panning stutter, and at that zoom they are an indistinguishable blob anyway.
     private static let annotationLimit = 300
     private static let revealLimit = 250
+
+    /// How many pins are worth drawing at a given zoom.
+    ///
+    /// Span is in degrees of latitude: roughly 0.05 is a neighbourhood, 0.5 a metro area, 2 a
+    /// small state. Past that the pins overlap into a solid mass, so more of them buys the
+    /// user nothing and costs a frame.
+    nonisolated static func annotationLimit(forSpan span: MKCoordinateSpan?) -> Int {
+        guard let span else { return 80 }
+        switch span.latitudeDelta {
+        case ..<0.08: return annotationLimit
+        case ..<0.35: return 150
+        case ..<1.2: return 60
+        default: return 30
+        }
+    }
 
     private enum MapSheet: Identifiable {
         case detail(Park)
@@ -334,13 +353,14 @@ struct MapScreen: View {
     /// filled-in pins are the ones carrying the user's progress.
     private var visibleParks: [Park] {
         visibleCache.value(for: viewportSignature) {
+            let limit = Self.annotationLimit(forSpan: settledRegion?.span)
             let pool = layers.showsUnvisited ? parks : parks.filter(\.isVisited)
             guard let region = settledRegion else {
-                return Array(prioritised(pool).prefix(Self.annotationLimit))
+                return Array(prioritised(pool).prefix(limit))
             }
             let inView = pool.filter { Self.region(region, contains: $0.coordinate, padding: 1.15) }
-            guard inView.count > Self.annotationLimit else { return inView }
-            return Array(prioritised(inView).prefix(Self.annotationLimit))
+            guard inView.count > limit else { return inView }
+            return Array(prioritised(inView).prefix(limit))
         }
     }
 
@@ -365,10 +385,12 @@ struct MapScreen: View {
     /// annotations — a hole whose centre is just off screen still clears part of the screen.
     private var revealedParks: [Park] {
         revealedCache.value(for: viewportSignature) {
+            // Fog holes are overlays composited every frame, so they get the same treatment.
+            let limit = min(Self.revealLimit, Self.annotationLimit(forSpan: settledRegion?.span))
             let visited = parks.filter(\.isVisited)
-            guard let region = settledRegion else { return Array(visited.prefix(Self.revealLimit)) }
+            guard let region = settledRegion else { return Array(visited.prefix(limit)) }
             let nearby = visited.filter { Self.region(region, contains: $0.coordinate, padding: 1.8) }
-            return Array(nearby.prefix(Self.revealLimit))
+            return Array(nearby.prefix(limit))
         }
     }
 
