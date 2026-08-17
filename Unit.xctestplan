@@ -1,0 +1,28 @@
+{
+  "configurations" : [
+    {
+      "id" : "A1B2C3D4-0000-4000-A000-000000000001",
+      "name" : "Default",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:ParkTrack.xcodeproj",
+      "identifier" : "8A5EE0A6842C0BE85F53A7CF",
+      "name" : "ParkTrack"
+    }
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:ParkTrack.xcodeproj",
+        "identifier" : "D4DE6A9F83403F6DD04DA3DF",
+        "name" : "ParkTrackTests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -8,8 +8,6 @@ struct StatsRegionSection: View {
     let parks: [Park]
     let signature: StatsSignature
 
-    @Environment(ServiceHub.self) private var services
-    @Query private var indexes: [RegionIndex]
     @State private var isPresentingIndexManager = false
     let cache: StatsCache
 
@@ -42,12 +40,6 @@ struct StatsRegionSection: View {
     }
 
     private var completions: [RegionCompletion] { cache.completions(for: scope) }
-
-    /// Changes whenever an index finishes or its count moves, so cached completions are
-    /// recomputed against the new denominator.
-    private var indexedFingerprint: Int {
-        indexes.reduce(0) { $0 &+ $1.parkCount &+ ($1.isIndexed ? 1 : 0) }
-    }
 
     private var shown: [RegionCompletion] {
         let all = completions

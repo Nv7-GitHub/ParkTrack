@@ -11,6 +11,29 @@ xcodebuild -project ParkTrack.xcodeproj -scheme ParkTrack \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test CODE_SIGNING_ALLOWED=NO
 ```
 
+## Testing
+
+That command runs the everyday suite — the unit tests, a few seconds for the lot.
+
+Two groups are opt-in, because both are minutes rather than seconds and neither answers a
+question the unit tests can't:
+
+```
+# Screenshot tour of every tab. For changes only a picture can confirm.
+xcodebuild -project ParkTrack.xcodeproj -scheme ParkTrack \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:ParkTrackUITests test
+
+# Probes against the live map service. Its rate limit is shared with your own phone,
+# so these come out of someone's pocket — run them when you're investigating the
+# service itself, not as a matter of course.
+PARKTRACK_LIVE_PROBES=1 xcodebuild -project ParkTrack.xcodeproj -scheme ParkTrack \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:ParkTrackTests/LiveMapKitProbeTests test
+```
+
+## Signing
+
 To build onto a phone, create `Config/Signing.local.xcconfig` (gitignored) with this
 machine's two values:
 

@@ -86,6 +86,35 @@ schemes:
       config: Debug
     test:
       config: Debug
+      # Two plans rather than one. `Unit` is the default and is the everyday check: the whole
+      # thing is seconds. `Full` adds the screen tour, which launches the app five times and
+      # lets a real map sweep run — minutes, for an answer only a screenshot can give. Run it
+      # with `-testPlan Full` when a change is one you have to look at.
+      #
+      # A plan, rather than marking the target skipped in the scheme: a skipped target cannot
+      # be reached by `-only-testing` either, so there is no way left to run it on purpose.
+      testPlans:
+        - path: Unit.xctestplan
+          defaultPlan: true
+        - path: Full.xctestplan
+  # Runs the app the way it actually ships: optimised, assertions off. Worth reaching for
+  # when judging how something feels, since a Debug build's unoptimised Swift makes the
+  # scrolling and the map noticeably heavier than anything a user will ever see.
+  ParkTrack (Release):
+    build:
       targets:
-        - ParkTrackTests
-        - ParkTrackUITests
+        ParkTrack: all
+    run:
+      config: Release
+    test:
+      config: Release
+      testPlans:
+        - path: Unit.xctestplan
+          defaultPlan: true
+        - path: Full.xctestplan
+    profile:
+      config: Release
+    analyze:
+      config: Release
+    archive:
+      config: Release

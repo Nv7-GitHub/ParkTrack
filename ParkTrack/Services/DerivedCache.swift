@@ -33,7 +33,14 @@ final class DerivedCache<Value> {
 /// Coordinates are rounded to roughly a hundred metres: GPS jitter of a few metres cannot
 /// change a completion count, and treating it as a new input is what made the map stutter
 /// while standing still.
+///
+/// Every signature carries the store's revision, taken automatically on construction, so a
+/// change no count can see — an index finishing, a date being cleared, a park being placed
+/// in a city — still invalidates whatever was derived from it. Callers do not opt in: a
+/// signature that could be built without it would be one more chance to ship a screen that
+/// goes stale until relaunch. See `StoreRevision`.
 struct StatsSignature: Equatable, Hashable {
+    let storeRevision: Int
     let parkCount: Int
     let visitCount: Int
     let anchorLatitude: Double?
@@ -51,13 +58,15 @@ struct StatsSignature: Equatable, Hashable {
             anchorLatitude: anchorLatitude,
             anchorLongitude: anchorLongitude,
             extra: extra + [value],
-            tokens: tokens
+            tokens: tokens,
+            storeRevision: storeRevision
         )
     }
 
     /// Counts supplied directly, which is how views build it: `parks.count` is free from
     /// the existing `@Query`, and the visit count comes from a `COUNT` on the store rather
     /// than by faulting every park's relationship.
+    @MainActor
     init(
         parkCount: Int,
         visitCount: Int,
@@ -65,6 +74,7 @@ struct StatsSignature: Equatable, Hashable {
         extra: [Double] = [],
         tokens: [String] = []
     ) {
+        self.storeRevision = StoreRevision.shared.value
         self.parkCount = parkCount
         self.visitCount = visitCount
         self.anchorLatitude = anchor.map { ($0.latitude * 1_000).rounded() / 1_000 }
@@ -79,8 +89,10 @@ struct StatsSignature: Equatable, Hashable {
         anchorLatitude: Double?,
         anchorLongitude: Double?,
         extra: [Double],
-        tokens: [String]
+        tokens: [String],
+        storeRevision: Int
     ) {
+        self.storeRevision = storeRevision
         self.parkCount = parkCount
         self.visitCount = visitCount
         self.anchorLatitude = anchorLatitude
@@ -89,11 +101,13 @@ struct StatsSignature: Equatable, Hashable {
         self.tokens = tokens
     }
 
+    @MainActor
     init(
         parks: [Park],
         anchor: CLLocationCoordinate2D? = nil,
         extra: [Double] = []
     ) {
+        self.storeRevision = StoreRevision.shared.value
         self.parkCount = parks.count
         self.visitCount = parks.reduce(0) { $0 + $1.visitCount }
         self.anchorLatitude = anchor.map { ($0.latitude * 1_000).rounded() / 1_000 }
@@ -104,60 +118,81 @@ struct StatsSignature: Equatable, Hashable {
 }
 
 
-/// Holds the store's visit count between saves.
+/// What the store has been through, and how many visits are in it.
 ///
-/// The count is one half of `StatsSignature`, which every screen builds inside its `body`
-/// — and a `body` runs far more often than the store changes. On the map, where the camera
-/// publishes a new region on every frame of a pan, that was two `COUNT` round trips to
-/// SQLite per frame before a single pin was drawn. The number can only move when something
-/// is written, so it is read once and then held until SwiftData says a save happened.
+/// Two jobs, one observer, because both answer "has anything changed" and both are driven
+/// by the same notification.
+///
+/// **The count** is half of every `StatsSignature`, which every screen builds inside its
+/// `body` — and a `body` runs far more often than the store changes. On the map, where the
+/// camera publishes a region on every frame of a pan, that was two `COUNT` round trips to
+/// SQLite per frame before a pin was drawn. It can only move when something is written, so
+/// it is read once and held until SwiftData says a save happened.
+///
+/// **The revision** is why that is not enough on its own. Counting parks and visits is a
+/// proxy for "is the data the same", and it is a leaky one: finishing a region index writes
+/// a park total onto a `RegionIndex`, clearing a date sets a flag on a visit that still
+/// exists, and reverse-geocoding names a park's city — none of which move either count, and
+/// all of which change what the screens should say. Every cache in the app therefore kept
+/// showing the old answer until the app was relaunched and the caches started empty.
+///
+/// A counter bumped on every save is the honest key. It changes when the store changes and
+/// at no other time, so it costs nothing per frame while making a stale cache impossible.
+/// Being `@Observable`, reading it inside a signature is also what tells SwiftUI to
+/// re-evaluate a screen once a save lands.
+@Observable
 @MainActor
-private final class VisitCountCache {
-    static let shared = VisitCountCache()
+final class StoreRevision {
+    static let shared = StoreRevision()
+
+    /// Bumped once per save. Only ever compared for equality.
+    private(set) var value = 0
 
     /// Keyed by context, so a test with its own container can never be answered with a
     /// count that belongs to a different store.
-    private var cached: [ObjectIdentifier: Int] = [:]
-    private var observer: NSObjectProtocol?
+    @ObservationIgnored private var cachedVisitCounts: [ObjectIdentifier: Int] = [:]
+    @ObservationIgnored private var observer: NSObjectProtocol?
 
     private init() {
+        // No queue, so a save made on the main thread — which is every save this app
+        // performs — bumps the revision before `save()` returns. Hopping through the main
+        // queue instead would leave one runloop turn in which a screen could read a
+        // signature that still described the store as it was before the write.
         observer = NotificationCenter.default.addObserver(
             forName: ModelContext.didSave,
             object: nil,
-            queue: .main
+            queue: nil
         ) { _ in
-            // Any save at all clears everything: erring towards a re-read is cheap, and a
-            // stale count would silently freeze a screen's figures.
-            MainActor.assumeIsolated { VisitCountCache.shared.cached.removeAll() }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { StoreRevision.shared.bump() }
+            } else {
+                Task { @MainActor in StoreRevision.shared.bump() }
+            }
         }
     }
 
-    func count(in context: ModelContext) -> Int {
+    func visitCount(in context: ModelContext) -> Int {
         let key = ObjectIdentifier(context)
-        if let existing = cached[key] { return existing }
+        if let existing = cachedVisitCounts[key] { return existing }
         let fresh = (try? context.fetchCount(FetchDescriptor<Visit>())) ?? 0
-        cached[key] = fresh
+        cachedVisitCounts[key] = fresh
         return fresh
     }
 
-    /// For a caller that has just written and wants the next read to go to the store,
-    /// without waiting for the save notification to land.
-    func invalidate() {
-        cached.removeAll()
+    /// Records that the store changed. Called for you on every save; exposed for the rare
+    /// caller that mutates and wants the screens to catch up before it saves.
+    func bump() {
+        cachedVisitCounts.removeAll()
+        value &+= 1
     }
 }
 
 extension ModelContext {
     /// Total logged visits, counted by the store instead of by walking relationships, and
-    /// remembered between saves. See `VisitCountCache`.
+    /// remembered between saves. See `StoreRevision`.
     @MainActor
     func visitCount() -> Int {
-        VisitCountCache.shared.count(in: self)
+        StoreRevision.shared.visitCount(in: self)
     }
 
-    /// Drops the remembered visit count. Only needed by code that mutates without saving.
-    @MainActor
-    func invalidateVisitCount() {
-        VisitCountCache.shared.invalidate()
-    }
 }
