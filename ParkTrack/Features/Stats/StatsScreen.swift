@@ -136,8 +136,11 @@ struct StatsScreen: View {
                     : "\(Format.parkCount(stats.totalParks)) visited so far"
             )
 
+            // Two columns, not an adaptive three. Eight tiles divide evenly into four rows,
+            // where three left a stranded pair on the last row, and the extra width stops
+            // labels like "States or regions" wrapping into the tile below.
             LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 104), spacing: 10)],
+                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 2),
                 spacing: 10
             ) {
                 StatTile(value: "\(stats.totalParks)", label: "Parks visited", systemImage: "tree.fill", tint: Theme.fern)
