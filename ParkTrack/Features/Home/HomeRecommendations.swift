@@ -26,27 +26,9 @@ struct HomeRecommendations: View {
 struct HomeRecommendationCard: View {
     let recommendation: Recommendation
 
-    private var tint: Color {
-        switch recommendation.reason {
-        case .wishlist: return Theme.sunset
-        case .finishRadius: return Theme.fern
-        case .finishRegion: return Theme.moss
-        case .closest: return Theme.sky
-        case .newTerritory: return Theme.bark
-        case .weekendPick: return Theme.canopy
-        }
-    }
-
-    private var icon: String {
-        switch recommendation.reason {
-        case .wishlist: return "star.fill"
-        case .finishRadius: return "circle.dashed"
-        case .finishRegion: return "map"
-        case .closest: return "figure.walk"
-        case .newTerritory: return "flag"
-        case .weekendPick: return "sun.max"
-        }
-    }
+    // Shared with the list row, so a reason reads the same wherever it appears.
+    private var tint: Color { recommendation.reason.tint }
+    private var icon: String { recommendation.reason.systemImage }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

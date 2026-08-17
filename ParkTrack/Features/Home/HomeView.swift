@@ -87,6 +87,12 @@ struct HomeView: View {
             .navigationDestination(for: HomeRadiusRoute.self) { route in
                 HomeRadiusDetailView(route: route)
             }
+            .navigationDestination(for: HomeListRoute.self) { route in
+                switch route {
+                case .recommendations: HomeRecommendationsListView()
+                case .recentVisits: HomeRecentVisitsListView()
+                }
+            }
             .sheet(item: $logTarget) { park in
                 LogVisitSheet(park: park) {
                     try? modelContext.save()
@@ -180,8 +186,12 @@ struct HomeView: View {
     private var recommendationSection: some View {
         if !recommendations.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader("Go somewhere new", subtitle: "Picked from what's near and what's unfinished")
-                    .padding(.horizontal, 16)
+                SectionHeaderLink(
+                    title: "Go somewhere new",
+                    subtitle: "Picked from what's near and what's unfinished",
+                    value: HomeListRoute.recommendations
+                )
+                .padding(.horizontal, 16)
                 HomeRecommendations(recommendations: recommendations)
             }
         }
@@ -189,8 +199,19 @@ struct HomeView: View {
 
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Recently visited")
-                .padding(.horizontal, 16)
+            // Only worth pushing into once there is more than the section already shows.
+            Group {
+                if recentVisits.isEmpty {
+                    SectionHeader("Recently visited")
+                } else {
+                    SectionHeaderLink(
+                        title: "Recently visited",
+                        subtitle: "Everything you've logged, newest first",
+                        value: HomeListRoute.recentVisits
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
 
             Group {
                 if recentVisits.isEmpty {

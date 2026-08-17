@@ -82,3 +82,17 @@ extension Visit {
     }
     var hasMedia: Bool { !(media ?? []).isEmpty }
 }
+
+extension Array where Element == Visit {
+    /// Newest first, with the undated ones after everything that has a date.
+    ///
+    /// Sorting on `date` alone files a park merely marked visited by the moment it was
+    /// tapped, which is not a claim about recency at all — so it would sit at the very top
+    /// of "recently visited" on the strength of a timestamp that means nothing. Among
+    /// themselves the undated ones fall back to when they were recorded, which is the only
+    /// ordering the store actually knows.
+    func orderedByRecency() -> [Visit] {
+        filter { !$0.isUndated }.sorted { $0.date > $1.date }
+            + filter(\.isUndated).sorted { $0.createdAt > $1.createdAt }
+    }
+}

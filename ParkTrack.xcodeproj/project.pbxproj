@@ -25,6 +25,7 @@
 		1FA4357E3FDF23A44D7F7E8C /* RecommendationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F732AC5B6708FFC99F6B1975 /* RecommendationEngineTests.swift */; };
 		2041B60420C8DF1760F9135E /* MediaCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED97EEC1FC26C6236CC253EA /* MediaCapture.swift */; };
 		21A3C3583FA345ED1F6E24C5 /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94530D184B1227E16A33097 /* SettingsScreen.swift */; };
+		221B6DB989AE84B9FF59D052 /* HomeSectionLists.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE51FD3F87373D312DA43DEB /* HomeSectionLists.swift */; };
 		22AF82F9E3D90504C122E725 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5AF97EE5F8D0E0881DCFF7F /* Formatters.swift */; };
 		27324185771C0B2889C15800 /* FriendMediaViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6404AEF6E642BBAE14E9067E /* FriendMediaViewer.swift */; };
 		284499ECD30542F447C6C759 /* SearchThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E5683236CB070B1FC76925 /* SearchThrottle.swift */; };
@@ -209,6 +210,7 @@
 		F732AC5B6708FFC99F6B1975 /* RecommendationEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationEngineTests.swift; sourceTree = "<group>"; };
 		FCE74713534F16A48A4109C5 /* StatsSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsSupport.swift; sourceTree = "<group>"; };
 		FD366091D24AA657E694A1B3 /* ParkDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkDetailView.swift; sourceTree = "<group>"; };
+		FE51FD3F87373D312DA43DEB /* HomeSectionLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSectionLists.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -447,6 +449,7 @@
 				C015AB6AF097C84936926576 /* HomeRadiusRings.swift */,
 				951199E3976402CE7E762306 /* HomeRecentVisits.swift */,
 				754C504BFC13EBB0DC9B91F3 /* HomeRecommendations.swift */,
+				FE51FD3F87373D312DA43DEB /* HomeSectionLists.swift */,
 				A800F5DB061B60D3FDFDF5FD /* HomeView.swift */,
 			);
 			path = Home;
@@ -629,6 +632,7 @@
 				8A48804891E6B8E08EEE40B3 /* HomeRadiusRings.swift in Sources */,
 				0B52E8B696D7E24A8464BBEB /* HomeRecentVisits.swift in Sources */,
 				1BEDB0CC80354B41D56899B0 /* HomeRecommendations.swift in Sources */,
+				221B6DB989AE84B9FF59D052 /* HomeSectionLists.swift in Sources */,
 				31E878FC45D3AD824801563A /* HomeView.swift in Sources */,
 				E2A05C4567B69F56F3E7ABDF /* LocationProvider.swift in Sources */,
 				DB1AC95E391C6DDF767D80E5 /* LogVisitSheet.swift in Sources */,

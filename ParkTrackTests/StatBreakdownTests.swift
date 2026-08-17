@@ -210,6 +210,43 @@ final class StatBreakdownTests: XCTestCase {
         XCTAssertTrue(runs.longest.isEmpty)
     }
 
+    // MARK: - Recency ordering, shared with Home's full visit list
+
+    func testVisitsAreOrderedNewestFirstWithUndatedLast() {
+        let park = makePark("Alpha", city: "Redmond", state: "WA", visits: [
+            date(2026, 1, 5), date(2026, 6, 2), date(2025, 9, 9)
+        ], marked: true)
+
+        let ordered = (park.visits ?? []).orderedByRecency()
+        XCTAssertEqual(ordered.count, 4)
+        XCTAssertEqual(ordered.compactMap(\.knownDate), [date(2026, 6, 2), date(2026, 1, 5), date(2025, 9, 9)])
+        XCTAssertTrue(ordered.last?.isUndated == true, "A visit nobody dated has no claim on being recent")
+    }
+
+    /// The stored `date` on an undated visit is the moment it was tapped, which is usually
+    /// *now* — so ordering on it alone would put a decade-old park at the very top.
+    func testAJustMarkedVisitDoesNotOutrankATodayLog() {
+        let park = makePark("Alpha", city: "Redmond", state: "WA", visits: [Date()], marked: true)
+
+        let ordered = (park.visits ?? []).orderedByRecency()
+        XCTAssertFalse(ordered.first?.isUndated == true)
+        XCTAssertTrue(ordered.last?.isUndated == true)
+    }
+
+    func testOrderingIsStableWhenNothingIsDated() {
+        let park = makePark("Alpha", city: "Redmond", state: "WA")
+        for _ in 0..<3 {
+            context.insert(Visit.undated(park: park))
+        }
+        try? context.save()
+
+        let ordered = (park.visits ?? []).orderedByRecency()
+        XCTAssertEqual(ordered.count, 3)
+        for (earlier, later) in zip(ordered, ordered.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(earlier.createdAt, later.createdAt)
+        }
+    }
+
     // MARK: - Empty
 
     func testEveryBreakdownIsEmptyForAnEmptyCollection() {

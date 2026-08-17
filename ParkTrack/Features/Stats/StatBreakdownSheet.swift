@@ -178,26 +178,24 @@ struct StatBreakdownSheet: View {
     }
 
     private func visitRows() -> [BreakdownRow.Model] {
-        var rows: [BreakdownRow.Model] = []
-        for park in parks {
-            for visit in park.visits ?? [] {
-                rows.append(
-                    BreakdownRow.Model(
-                        id: visit.identifier.uuidString,
-                        title: park.name,
-                        subtitle: park.regionLabel,
-                        trailing: visit.isUndated ? "No date" : Format.date(visit.date),
-                        detail: visit.rating > 0 ? String(repeating: "★", count: visit.rating) : nil,
-                        systemImage: "figure.walk",
-                        tint: Theme.sky,
-                        sortKey: visit.isUndated ? .distantPast : visit.date
-                    )
+        let byIdentifier = Dictionary(
+            parks.map { ($0.identifier, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return parks.flatMap { $0.visits ?? [] }
+            .orderedByRecency()
+            .map { visit in
+                let park = visit.park.flatMap { byIdentifier[$0.identifier] }
+                return BreakdownRow.Model(
+                    id: visit.identifier.uuidString,
+                    title: park?.name ?? "Unknown park",
+                    subtitle: park?.regionLabel,
+                    trailing: visit.isUndated ? "No date" : Format.date(visit.date),
+                    detail: visit.rating > 0 ? String(repeating: "★", count: visit.rating) : nil,
+                    systemImage: "figure.walk",
+                    tint: Theme.sky
                 )
             }
-        }
-        // Undated visits carry `.distantPast`, so they settle at the end where a visit
-        // nobody dated belongs.
-        return rows.sorted { $0.sortKey > $1.sortKey }
     }
 
     /// Places the user has actually been, with how many parks in each — the same set the
@@ -250,7 +248,6 @@ struct BreakdownRow: View {
         let detail: String?
         let systemImage: String
         let tint: Color
-        var sortKey: Date = .distantPast
     }
 
     let row: Model
