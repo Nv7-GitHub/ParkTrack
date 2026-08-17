@@ -63,8 +63,17 @@ extension Park {
 
     var visitCount: Int { visits?.count ?? 0 }
     var isVisited: Bool { visitCount > 0 }
-    var firstVisitDate: Date? { (visits ?? []).map(\.date).min() }
-    var lastVisitDate: Date? { (visits ?? []).map(\.date).max() }
+
+    /// The visits that carry a real date, which are the only ones any time-shaped figure may
+    /// count. A park marked visited without a date is still visited — it simply has no day
+    /// to put on a timeline. See `Visit.isUndated`.
+    var datedVisits: [Visit] { (visits ?? []).filter { !$0.isUndated } }
+
+    /// True when the park is visited but nothing says when.
+    var isVisitedWithoutADate: Bool { isVisited && datedVisits.isEmpty }
+
+    var firstVisitDate: Date? { datedVisits.map(\.date).min() }
+    var lastVisitDate: Date? { datedVisits.map(\.date).max() }
 
     /// Average of the ratings that were actually given, ignoring unrated visits.
     var averageRating: Double? {

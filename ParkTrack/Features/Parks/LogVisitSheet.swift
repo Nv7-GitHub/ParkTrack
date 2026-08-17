@@ -220,7 +220,9 @@ struct LogVisitSheet: View {
         guard !didLoad else { return }
         didLoad = true
         guard let visit = editingVisit else { return }
-        date = visit.date
+        // An undated visit has no day to offer, so the picker opens on today rather than on
+        // the moment the row happened to be created.
+        date = visit.isUndated ? Date() : visit.date
         if let minutes = visit.durationMinutes {
             includeDuration = true
             durationMinutes = minutes
@@ -243,6 +245,10 @@ struct LogVisitSheet: View {
         }
 
         visit.date = date
+        // The sheet is where a day gets chosen, so anything saved through it has one —
+        // including a visit that was only ever marked, which is how the user gives an
+        // undated entry a real date.
+        visit.isUndated = false
         visit.durationMinutes = includeDuration ? durationMinutes : nil
         visit.rating = rating
         visit.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)

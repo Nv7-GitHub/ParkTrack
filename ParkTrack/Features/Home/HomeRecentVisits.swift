@@ -42,7 +42,7 @@ struct HomeRecentVisits: View {
                         .lineLimit(1)
                 }
                 HStack(spacing: 6) {
-                    Text(Format.relative(visit.date))
+                    Text(visit.isUndated ? "Marked visited" : Format.relative(visit.date))
                     if visit.rating > 0 {
                         Text("·")
                         HStack(spacing: 1) {
@@ -66,7 +66,7 @@ struct HomeRecentVisits: View {
         .padding(14)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(park.name), \(Format.date(visit.date))")
+        .accessibilityLabel("\(park.name), \(visit.isUndated ? "marked visited, no date" : Format.date(visit.date))")
         .accessibilityHint("Opens the park")
     }
 }

@@ -271,21 +271,12 @@ struct ParkDetailView: View {
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
 
-            // The one-tap version of the same thing, for backfilling somewhere you have been
-            // plenty of times and have nothing to say about — the bulk flow's behaviour, for a
-            // single park. It records a visit dated today with no details; the sheet above is
-            // there when the details matter.
+            // The one-tap version of the same thing, and exactly what the map's bulk mode
+            // does for many parks at once — so it is named the same here. It records that
+            // the user has been, without claiming a day; the sheet above is for when the
+            // day, and everything else about it, matters.
             if !park.isVisited {
-                Button {
-                    markVisited()
-                } label: {
-                    Label("I've been here before", systemImage: "checkmark.circle")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
-                }
-                .buttonStyle(.bordered)
-                .tint(Theme.moss)
+                MarkVisitedButton(action: markVisited)
             }
 
             HStack(spacing: 10) {
@@ -340,9 +331,13 @@ struct ParkDetailView: View {
 
     // MARK: Mutations
 
-    /// Records a bare visit for today, the way bulk marking does.
+    /// Records that the user has been here, without claiming a day.
+    ///
+    /// This used to insert a visit dated today, which put a park the user first went to
+    /// years ago on this month's timeline and in this week's streak. Marking a park visited
+    /// answers "is it in the collection"; only the log sheet answers "when".
     private func markVisited() {
-        let visit = Visit(park: park)
+        let visit = Visit.undated(park: park)
         modelContext.insert(visit)
         try? modelContext.save()
     }
@@ -387,12 +382,23 @@ private struct VisitHistoryRow: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(visit.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year()))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Theme.textPrimary)
-                        Text(visit.date.formatted(.dateTime.hour().minute()))
-                            .font(.caption)
-                            .foregroundStyle(Theme.textSecondary)
+                        if visit.isUndated {
+                            // Say what is actually known. Showing the row's creation time
+                            // here would read as a claim about when the user was there.
+                            Text("Been here")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Text("No date recorded — swipe to add one")
+                                .font(.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        } else {
+                            Text(visit.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year()))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Text(visit.date.formatted(.dateTime.hour().minute()))
+                                .font(.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
                     }
                     Spacer(minLength: 8)
                     if visit.rating > 0 {

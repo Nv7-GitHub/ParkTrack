@@ -48,7 +48,9 @@ struct ParkQuickLookSheet: View {
             .toolbarBackground(.hidden, for: .navigationBar)
         }
         .tint(Theme.accent)
-        .presentationDetents([.height(260), .large])
+        // The short detent has to clear everything down to "See Details", and an unvisited
+        // park carries one more button than a visited one.
+        .presentationDetents([.height(park.isVisited ? 260 : 312), .large])
         .presentationBackground(.ultraThinMaterial)
         .presentationDragIndicator(.visible)
     }
@@ -89,6 +91,13 @@ struct ParkQuickLookSheet: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
+
+            // "I've been here, I just can't tell you when" is the commonest thing to say
+            // about a park you have tapped on the map, and it should not require pushing
+            // into the detail screen to say it.
+            if !park.isVisited {
+                MarkVisitedButton(action: markVisited, isCompact: true)
+            }
 
             HStack(spacing: 10) {
                 Button(action: toggleWishlist) {
@@ -154,6 +163,14 @@ struct ParkQuickLookSheet: View {
                 tint: Theme.bark
             )
         }
+    }
+
+    /// Records that the user has been here, without claiming a day — the single-park
+    /// version of the map's bulk mode. See `Visit.isUndated`.
+    private func markVisited() {
+        let visit = Visit.undated(park: park)
+        modelContext.insert(visit)
+        try? modelContext.save()
     }
 
     private func toggleWishlist() {

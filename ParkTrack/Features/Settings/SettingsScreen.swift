@@ -19,6 +19,7 @@ struct SettingsScreen: View {
 
     @Query private var parks: [Park]
     @State private var isReviewingSuspects = false
+    @State private var isFixingMarkedVisits = false
     /// Fetched in full because deleting them and reacting to their arrival both need the
     /// objects, not just a count.
     @Query private var visits: [Visit]
@@ -34,6 +35,16 @@ struct SettingsScreen: View {
     struct AuditCounts {
         let suspicious: Int
         let unresolved: Int
+    }
+
+    /// Dated visits carrying nothing but the fact of the visit — the shape a park marked
+    /// visited used to be written in, before undated visits existed.
+    private var markedVisitCount: Int {
+        var count = 0
+        for visit in visits where !visit.isUndated && visit.park != nil && visit.hasNoDetails {
+            count += 1
+        }
+        return count
     }
 
     @State private var homePlaceName: String?
@@ -101,6 +112,9 @@ struct SettingsScreen: View {
             .onChange(of: isReviewingSuspects) { _, isOpen in
                 // Coming back from the review, some of those entries may be gone.
                 if !isOpen { auditRevision += 1 }
+            }
+            .sheet(isPresented: $isFixingMarkedVisits) {
+                FixMarkedVisitsSheet()
             }
             .sheet(isPresented: $isReviewingSuspects) {
             SuspiciousParksSheet()
@@ -430,6 +444,19 @@ struct SettingsScreen: View {
                         )
                     }
                     .disabled(suspiciousCount == 0)
+
+                    Button {
+                        isFixingMarkedVisits = true
+                    } label: {
+                        settingsRow(
+                            title: "Fix marked visits",
+                            detail: markedVisitCount == 0
+                                ? "No visits look like they were marked rather than logged"
+                                : "\(markedVisitCount) dated \(markedVisitCount == 1 ? "visit has" : "visits have") no details — they may be marks, not logs",
+                            systemImage: "calendar.badge.minus",
+                            tint: Theme.sky
+                        )
+                    }
 
                     Button(role: .destructive) {
                         isConfirmingDeletion = true

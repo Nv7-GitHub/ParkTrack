@@ -16,6 +16,19 @@ final class Visit {
     var weatherSummary: String?
     var createdAt: Date = Date()
 
+    /// True when the user only said "I've been here", without saying when.
+    ///
+    /// Marking a park visited and logging a visit are different claims. The first is about
+    /// the park — it belongs in the collection, in the completion rings, in the counts. The
+    /// second is about a day, and only that one can honestly appear on a timeline, a streak
+    /// or a heatmap. Recording a backlog as a hundred visits dated today made every
+    /// date-shaped figure in the app describe the afternoon the app was installed.
+    ///
+    /// `date` still holds when the row was created, so lists have something to order by; it
+    /// simply is not a claim about when the user was there. Defaults to false so every visit
+    /// already in the store keeps its date, which is what the fix-up screen is for.
+    var isUndated: Bool = false
+
     var park: Park?
 
     @Relationship(deleteRule: .cascade, inverse: \MediaItem.visit)
@@ -41,6 +54,29 @@ final class Visit {
 }
 
 extension Visit {
+    /// A visit recorded without a day: "I've been here", nothing more.
+    ///
+    /// `date` is the moment the row was made, purely so lists have something to order by.
+    static func undated(park: Park? = nil) -> Visit {
+        let visit = Visit(park: park)
+        visit.isUndated = true
+        return visit
+    }
+
+    /// The day this visit happened, when the user actually said.
+    var knownDate: Date? { isUndated ? nil : date }
+
+    /// True when nothing was recorded beyond the fact of the visit — which is what a
+    /// "mark visited" row looks like, and what the fix-up screen offers to correct.
+    var hasNoDetails: Bool {
+        rating == 0
+            && durationMinutes == nil
+            && notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && companions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (weatherSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            && (media ?? []).isEmpty
+    }
+
     var sortedMedia: [MediaItem] {
         (media ?? []).sorted { $0.createdAt < $1.createdAt }
     }

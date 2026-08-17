@@ -341,6 +341,8 @@ enum StatsEngine {
         calendar: Calendar
     ) -> Records {
         let visited = visitedParks(parks)
+        // Counts may include undated visits — they happened. Anything that answers "when"
+        // may not, so those figures go through `datedVisits` instead.
         let allVisits = visited.flatMap { $0.visits ?? [] }
 
         let firsts = visited.compactMap(\.firstVisitDate)
@@ -370,7 +372,7 @@ enum StatsEngine {
         // Distinct parks per day, not raw visits: three laps of one park isn't a big day out.
         var parksPerDay: [Date: Set<String>] = [:]
         for park in visited {
-            for visit in park.visits ?? [] {
+            for visit in park.datedVisits {
                 let day = calendar.startOfDay(for: visit.date)
                 parksPerDay[day, default: []].insert(park.identifier)
             }
@@ -410,8 +412,11 @@ enum StatsEngine {
 
     // MARK: - Helpers
 
+    /// Only the visits the user actually dated. Everything in this file that buckets by
+    /// time goes through here, so a park marked visited without a day never appears on a
+    /// timeline, in a streak, or on the heatmap. See `Visit.isUndated`.
     private static func allVisitDates(_ parks: [Park]) -> [Date] {
-        parks.flatMap { ($0.visits ?? []).map(\.date) }
+        parks.flatMap { $0.datedVisits.map(\.date) }
     }
 
     private static func monthStarts(monthsBack: Int, now: Date, calendar: Calendar) -> [Date] {

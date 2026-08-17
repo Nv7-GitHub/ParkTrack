@@ -311,7 +311,7 @@ struct MapScreen: View {
             if scanner.isScanning {
                 MapStatusPill(text: "Scanning this area…", showsSpinner: true)
             } else if bulkMode {
-                MapStatusPill(text: "Tap every park you've been to", systemImage: "hand.tap.fill")
+                MapStatusPill(text: "Tap every park you've been to — no dates needed", systemImage: "hand.tap.fill")
             } else if let message = discovery?.lastError {
                 MapStatusPill(text: message, systemImage: "exclamationmark.triangle.fill")
             }
@@ -683,13 +683,15 @@ struct MapScreen: View {
         }
     }
 
-    /// One dated-today visit per selected park: the point of this flow is catching up on a
-    /// backlog, not describing each trip, so nothing else is asked for.
+    /// One undated visit per selected park: the point of this flow is catching up on a
+    /// backlog, not describing each trip, so nothing else is asked for — including when.
+    ///
+    /// Dating them today, which is what this used to do, dropped the user's whole history
+    /// onto a single afternoon of every chart in the app. See `Visit.isUndated`.
     private func commitBulkVisits() {
-        let today = Date()
         let selected = bulkSelection
         for park in parks where selected.contains(park.identifier) {
-            modelContext.insert(Visit(date: today, park: park))
+            modelContext.insert(Visit.undated(park: park))
         }
         try? modelContext.save()
         hapticTick += 1

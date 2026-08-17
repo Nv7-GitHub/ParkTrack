@@ -231,3 +231,33 @@ struct Pill: View {
         .background(tint.opacity(0.14), in: Capsule())
     }
 }
+
+/// The one-tap "I've been to this park" control.
+///
+/// The same action the map's bulk mode performs on a whole selection, so it carries the
+/// same name wherever it appears. It deliberately says what it will not do: a mark is not
+/// a log, and nothing about it reaches the timeline, the streak or the heatmap.
+struct MarkVisitedButton: View {
+    let action: () -> Void
+    var isCompact: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Label("Mark visited", systemImage: "checkmark.circle")
+                    .font(.subheadline.weight(.semibold))
+                if !isCompact {
+                    Text("Counts it as visited, without a date")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.bordered)
+        .tint(Theme.moss)
+        .accessibilityLabel("Mark visited")
+        .accessibilityHint("Counts this park as visited without recording a date")
+    }
+}

@@ -173,8 +173,10 @@ enum StatsBreakdown {
         }
     }
 
+    /// Dated visits only: a park marked visited without a day has no weekday, no month and
+    /// no square on the heatmap. See `Visit.isUndated`.
     private static func visitDates(_ parks: [Park]) -> [Date] {
-        parks.flatMap { ($0.visits ?? []).map(\.date) }
+        parks.flatMap { $0.datedVisits.map(\.date) }
     }
 }
 

@@ -32,9 +32,10 @@ struct YearInReviewSummary: Equatable {
     ) -> YearInReviewSummary {
         let discovered = StatsBreakdown.parksDiscovered(parks: parks, year: year, calendar: calendar)
 
+        // Dated visits only. A backlog marked visited belongs in the collection, not in a
+        // particular year's story. See `Visit.isUndated`.
         func visitsInYear(_ park: Park) -> [Visit] {
-            let all: [Visit] = park.visits ?? []
-            return all.filter { (visit: Visit) -> Bool in
+            park.datedVisits.filter { (visit: Visit) -> Bool in
                 calendar.component(.year, from: visit.date) == year
             }
         }
