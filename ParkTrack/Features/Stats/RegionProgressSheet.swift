@@ -8,8 +8,29 @@ import CoreLocation
 /// second question is the one the completion bar raises. Both halves are shown, with the
 /// visited side collapsed by default so the actionable half is what you land on.
 struct RegionProgressSheet: View {
-    let completion: RegionCompletion
+    /// The snapshot this sheet was opened with. Everything index-related is re-read live from
+    /// the store below, because the sheet used to keep showing "index this place" after the
+    /// sweep had finished — the value it was handed at presentation never changed, so the only
+    /// way to see the result was to close and reopen.
+    let initialCompletion: RegionCompletion
     var origin: CLLocation?
+
+    @Query private var indexes: [RegionIndex]
+
+    /// The snapshot with its index facts refreshed from whatever is in the store now.
+    private var completion: RegionCompletion {
+        guard let record = indexes.first(where: { $0.identifier == initialCompletion.identifier }),
+              record.isIndexed else {
+            return initialCompletion
+        }
+        var updated = initialCompletion
+        updated.isIndexed = true
+        updated.isApproximate = record.isApproximate
+        updated.indexedAt = record.indexedAt
+        updated.total = max(record.parkCount, initialCompletion.visited + initialCompletion.remaining.count)
+        updated.fraction = updated.total == 0 ? 0 : Double(updated.visited) / Double(updated.total)
+        return updated
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(ServiceHub.self) private var services
@@ -127,9 +148,7 @@ struct RegionProgressSheet: View {
                 case .sweeping(let progress):
                     IndexProgressView(progress: progress)
                 case .queued(let position):
-                    Text(position == 0
-                         ? "Starting shortly…"
-                         : "Waiting behind \(position) other place\(position == 1 ? "" : "s").")
+                    Text(queueLabel(position: position))
                         .font(.caption)
                         .foregroundStyle(Theme.textSecondary)
                 case .none:
@@ -188,6 +207,15 @@ struct RegionProgressSheet: View {
             forIdentifier: completion.identifier,
             name: completion.name
         ) != nil
+    }
+
+    /// Names what the wait is actually for. Saying "starting shortly" while something else
+    /// held the queue for minutes was the least useful thing it could have said.
+    private func queueLabel(position: Int) -> String {
+        if let blocking = services.regionIndexer?.blockingRegionName {
+            return "Waiting for \(blocking) to finish…"
+        }
+        return position == 0 ? "Starting shortly…" : "Waiting behind \(position) other place\(position == 1 ? "" : "s")."
     }
 
     private func index() async {

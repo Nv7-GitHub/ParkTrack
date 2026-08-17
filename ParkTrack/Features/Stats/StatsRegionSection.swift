@@ -152,7 +152,7 @@ struct StatsRegionSection: View {
             RegionIndexManager()
         }
         .sheet(item: $detail) { completion in
-            RegionProgressSheet(completion: completion, origin: nil)
+            RegionProgressSheet(initialCompletion: completion, origin: nil)
                 .presentationDetents([.medium, .large])
         }
     }

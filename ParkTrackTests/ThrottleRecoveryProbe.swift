@@ -8,6 +8,18 @@ import MapKit
 /// app should tell someone staring at "the map service is busy". This drives it into the
 /// limit deliberately, then polls with a plain request until one succeeds.
 final class ThrottleRecoveryProbe: XCTestCase {
+    /// These probes hit the real map service, and that rate limit is shared with whatever the
+    /// developer's own phone is doing — running them casually takes searches out of someone's
+    /// pocket. They only run when asked for explicitly:
+    ///
+    ///     PARKTRACK_LIVE_PROBES=1 xcodebuild ... -only-testing:ParkTrackTests/ThrottleRecoveryProbe test
+    override func setUpWithError() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["PARKTRACK_LIVE_PROBES"] == "1",
+            "Live map probes are opt-in; set PARKTRACK_LIVE_PROBES=1 to run them."
+        )
+    }
+
     private func rawSearch() async -> Bool {
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = "park"

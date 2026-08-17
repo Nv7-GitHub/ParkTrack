@@ -388,7 +388,12 @@ struct HomeView: View {
         let center = await location.resolveLocation() ?? originLocation
         guard let coordinate = center?.coordinate ?? settings.homeCoordinate else { return }
 
-        let radius = settings.radiiMiles.max() ?? AppSettings.defaultRadiiMiles.max() ?? 10
+        // The launch sweep is capped, however wide the user's custom ring is. Sweeping out to
+        // twenty-five miles before anything else can run is minutes of searching that also
+        // blocks whatever they ask for next; the wider rings fill in from map browsing and
+        // stay honestly marked as still scanning until they do.
+        let widest = settings.radiiMiles.max() ?? AppSettings.defaultRadiiMiles.max() ?? 10
+        let radius = force ? widest : min(widest, AppSettings.startupSweepRadiusMiles)
 
         // The launch sweep is owned by the service hub, not by this view's task: it takes
         // tens of seconds and must survive the view churn that used to cancel it.

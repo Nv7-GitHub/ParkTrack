@@ -18,8 +18,9 @@ struct RegionCompletion: Identifiable {
     var id: String { name }
     let name: String
     let visited: Int
-    let total: Int
-    let fraction: Double
+    // Re-read from the store once an index finishes, so a screen already on display updates.
+    var total: Int
+    var fraction: Double
     let remaining: [Park]
     /// The visited half of the same group, so a detail view can show both sides.
     var visitedParks: [Park] = []

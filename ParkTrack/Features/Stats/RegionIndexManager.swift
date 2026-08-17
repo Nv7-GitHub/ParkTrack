@@ -197,6 +197,7 @@ struct RegionIndexManager: View {
                             ForEach(indexes) { region in
                                 RegionIndexRow(
                                     region: region,
+                                    blocking: indexer?.blockingRegionName,
                                     state: indexer?.state(forIdentifier: region.identifier, name: region.name)
                                 ) {
                                     Task { await reindex(region) }
@@ -271,6 +272,8 @@ struct RegionIndexManager: View {
 
 private struct RegionIndexRow: View {
     let region: RegionIndex
+    /// Whatever is currently holding the queue, so a waiting row can name it.
+    var blocking: String?
     /// This row's own standing, so a queued place doesn't borrow the running one's bar.
     var state: RegionIndexer.State?
     let onReindex: () -> Void
@@ -300,7 +303,8 @@ private struct RegionIndexRow: View {
                     case .sweeping(let progress):
                         IndexProgressView(progress: progress)
                     case .queued(let position):
-                        Text(position == 0 ? "Starting shortly…" : "Waiting behind \(position) other place\(position == 1 ? "" : "s")")
+                        Text(blocking.map { "Waiting for \($0)…" }
+                             ?? (position == 0 ? "Starting shortly…" : "Waiting behind \(position) other place\(position == 1 ? "" : "s")"))
                             .font(.caption2)
                             .foregroundStyle(Theme.textSecondary)
                     case .none:

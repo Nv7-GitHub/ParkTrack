@@ -413,6 +413,7 @@ final class ParkDiscoveryService {
         var searches = 0
         var failures = 0
         var retries: [String: Int] = [:]
+        var tilesSinceSave = 0
         var completed = true
         var truncated = false
 
@@ -430,6 +431,11 @@ final class ParkDiscoveryService {
             if searches >= Self.maxIndexSearches { truncated = true; break }
 
             let tile = queue.removeFirst()
+            // Ground a previous attempt already searched — including one that was cut short —
+            // is not searched again. This is what makes retrying a big region resume rather
+            // than start from nothing.
+            if coverage.covers(tile) { continue }
+
             let outcome = await Self.candidates(in: tile)
             searches += 1
             if Task.isCancelled { completed = false; break }
@@ -455,7 +461,16 @@ final class ParkDiscoveryService {
                 failures = 0
                 if outcome.rawCount >= Self.saturatedResultCount,
                    tile.span.latitudeDelta > Self.minimumTileSpanDegrees {
+                    // Saturated: its four quarters are searched instead, so the tile itself is
+                    // not yet covered.
                     queue.append(contentsOf: Self.tiles(for: tile, side: 2))
+                } else {
+                    coverage.record(tile)
+                    tilesSinceSave += 1
+                    if tilesSinceSave >= Self.coverageSaveInterval {
+                        tilesSinceSave = 0
+                        persistCoverage()
+                    }
                 }
             }
 
@@ -478,8 +493,10 @@ final class ParkDiscoveryService {
 
         if completed && !truncated {
             coverage.record(square)
-            persistCoverage()
         }
+        // Whatever was finished is written down either way. A sweep that stopped early still
+        // searched real ground, and losing that is what made a retry repeat everything.
+        persistCoverage()
         lastSweepCompleted = completed
         return DenseSweepResult(
             found: order.compactMap { found[$0] },
@@ -487,6 +504,10 @@ final class ParkDiscoveryService {
             truncated: truncated
         )
     }
+
+    /// Tiles between writes of the coverage record. Saving after every tile is a store write
+    /// per search; this keeps an interrupted sweep's progress without that cost.
+    nonisolated static let coverageSaveInterval = 8
 
     /// How many times one tile may be re-queued after the map service refuses it.
     nonisolated static let maxTileRetries = 3

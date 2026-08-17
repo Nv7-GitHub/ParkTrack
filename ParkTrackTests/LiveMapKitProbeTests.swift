@@ -7,6 +7,18 @@ import SwiftData
 /// dropped the results" apart from "the map service refused us", which look identical from
 /// inside the app.
 final class LiveMapKitProbeTests: XCTestCase {
+    /// These probes hit the real map service, and that rate limit is shared with whatever the
+    /// developer's own phone is doing — running them casually takes searches out of someone's
+    /// pocket. They only run when asked for explicitly:
+    ///
+    ///     PARKTRACK_LIVE_PROBES=1 xcodebuild ... -only-testing:ParkTrackTests/LiveMapKitProbeTests test
+    override func setUpWithError() throws {
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["PARKTRACK_LIVE_PROBES"] == "1",
+            "Live map probes are opt-in; set PARKTRACK_LIVE_PROBES=1 to run them."
+        )
+    }
+
     /// Raw search at the travel-test coordinate, to separate "the service gave us nothing"
     /// from "our filters dropped everything".
     func testRawSearchAtOtherCity() async throws {

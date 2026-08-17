@@ -84,6 +84,9 @@ final class RegionIndexer {
     }
 
     /// What to show for one region: its own progress, its own place in the queue, or nothing.
+    /// What is holding up the queue, if anything.
+    var blockingRegionName: String? { activeRegionName }
+
     func state(forIdentifier identifier: String?, name: String) -> State? {
         if isIndexing(identifier: identifier, name: name) { return .sweeping(progress) }
         guard let position = pending.firstIndex(where: { entry in
@@ -101,6 +104,14 @@ final class RegionIndexer {
     /// A state is far too large to sweep tile by tile in one go; indexing is offered for
     /// cities and counties, and a state's number stays the sum of what is known.
     static let indexableKinds: [RegionKind] = [.city, .county]
+
+    /// What gets indexed without being asked. Only the city.
+    ///
+    /// A county is hundreds of searches against a rate limit, so indexing one automatically on
+    /// launch occupied the queue for many minutes — and anything the user then asked for sat
+    /// behind it, apparently doing nothing. Counties are worth indexing, but only when someone
+    /// chooses to wait for one.
+    static let automaticKinds: [RegionKind] = [.city]
 
     init(modelContext: ModelContext, discovery: ParkDiscoveryService) {
         self.modelContext = modelContext
@@ -147,7 +158,7 @@ final class RegionIndexer {
 
     func indexArea(around coordinate: CLLocationCoordinate2D) async {
         guard let placemark = await reverseGeocode(coordinate) else { return }
-        for kind in Self.indexableKinds {
+        for kind in Self.automaticKinds {
             guard let name = placeName(from: placemark, kind: kind) else { continue }
             let identifier = RegionIndex.identity(
                 kind: kind,

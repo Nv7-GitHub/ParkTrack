@@ -1,5 +1,6 @@
 import XCTest
 import CoreLocation
+import MapKit
 import SwiftData
 @testable import ParkTrack
 
@@ -323,5 +324,53 @@ final class RegionResolutionCostTests: XCTestCase {
         let adopted = unplaced.count { RegionResolver.adoptRegion(for: $0, from: placed) }
         XCTAssertEqual(adopted, unplaced.count, "Every park inside an agreeing cluster should be placed without the geocoder")
         XCTAssertTrue(unplaced.allSatisfy { $0.locality == "Sample City" })
+    }
+}
+
+/// Ground already searched is never searched again, including ground covered by a sweep that
+/// was cut short. Losing that was what made a retry repeat everything from nothing.
+@MainActor
+final class SweepResumeTests: XCTestCase {
+    private var container: ModelContainer!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+    }
+
+    private func region(lat: Double, lon: Double, span: Double) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
+        )
+    }
+
+    func testPartialCoverageIsRememberedAcrossServices() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        let tile = region(lat: 47.6, lon: -122.2, span: 0.05)
+        service.noteScanned(region: tile)
+
+        // A relaunch mid-way through a big region.
+        let resumed = ParkDiscoveryService(modelContext: ModelContext(container))
+        XCTAssertTrue(resumed.hasSwept(region: tile), "A tile searched before the interruption must not be searched again")
+    }
+
+    func testAnIndexedRegionStaysIndexed() {
+        let context = ModelContext(container)
+        let index = RegionIndex(
+            identifier: RegionIndex.identity(kind: .city, name: "Sample City", container: "Example State"),
+            kind: .city,
+            name: "Sample City",
+            container: "Example State",
+            country: "Example Country",
+            center: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.2),
+            radiusMeters: 8_000
+        )
+        index.parkCount = 30
+        index.indexedAt = Date()
+        index.indexerVersion = RegionIndex.currentIndexerVersion
+        context.insert(index)
+
+        XCTAssertTrue(index.isIndexed)
+        XCTAssertFalse(index.needsReindexing, "A finished index of the current generation is never swept again on its own")
     }
 }
