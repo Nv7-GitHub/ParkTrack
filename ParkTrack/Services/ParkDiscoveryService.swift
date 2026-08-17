@@ -458,6 +458,32 @@ final class ParkDiscoveryService {
     /// Refinement stops here. Below roughly 1.5 km a tile is smaller than the parks in it.
     nonisolated static let minimumTileSpanDegrees = 0.014
 
+    /// How many pieces a saturated tile is cut into, per side.
+    ///
+    /// Halving is the obvious choice and it is the wrong one. `MKLocalSearch` answers with
+    /// at most about 25 results however wide the region, so any populated tile above a
+    /// couple of kilometres comes back saturated — measured over San Francisco and over a
+    /// suburb, that was *every* tile at *every* level, right down to 2.8 km. The
+    /// intermediate steps therefore never tell us anything: a 26 km tile that saturates has
+    /// a 13 km quarter that saturates too, and searching it is a request spent learning what
+    /// was already known.
+    ///
+    /// Cutting four ways per side skips those levels. San Francisco goes from 1 + 4 + 16 +
+    /// 64 + 256 = 341 requests down to 1 + 16 + 256 = 273 for the same final resolution —
+    /// and 341 was over the per-region budget, so the city could never finish indexing at
+    /// all, however many times it was resumed.
+    nonisolated static let maxSplitSide = 4
+
+    /// How finely to cut a tile that came back at the result cap, or nil when it is already
+    /// as small as it usefully gets.
+    nonisolated static func splitSide(for tile: MKCoordinateRegion) -> Int? {
+        let span = tile.span.latitudeDelta
+        // Children must not come out below the size at which a tile is smaller than the
+        // parks inside it, so a tile that cannot be cut usefully is left as it is.
+        guard span >= minimumTileSpanDegrees * 2 else { return nil }
+        return min(maxSplitSide, max(2, Int(span / minimumTileSpanDegrees)))
+    }
+
     /// Hard ceiling on one region's searches, so a pathological area cannot run forever.
     nonisolated static let maxIndexSearches = 320
 
@@ -559,10 +585,10 @@ final class ParkDiscoveryService {
             } else {
                 failures = 0
                 if outcome.rawCount >= Self.saturatedResultCount,
-                   tile.span.latitudeDelta > Self.minimumTileSpanDegrees {
-                    // Saturated: its four quarters are searched instead, so the tile itself is
-                    // not yet covered.
-                    queue.append(contentsOf: Self.tiles(for: tile, side: 2))
+                   let side = Self.splitSide(for: tile) {
+                    // Saturated: its pieces are searched instead, so the tile itself is not
+                    // yet covered. See `maxSplitSide` for why it is cut this finely.
+                    queue.append(contentsOf: Self.tiles(for: tile, side: side))
                 } else {
                     coverage.record(tile, resolution: tile.span.latitudeDelta)
                     tilesSinceSave += 1
@@ -778,7 +804,10 @@ final class ParkDiscoveryService {
     /// rather than materialising the entire catalogue. A sweep calls this once per level,
     /// and this is the main actor, so pulling every park into memory each time was a stall
     /// the user felt as the map freezing while it scanned.
-    private func persist(_ candidates: [ParkCandidate]) -> [Park] {
+    ///
+    /// Internal so the tests can check what a swept park actually knows about itself.
+    @discardableResult
+    func persist(_ candidates: [ParkCandidate]) -> [Park] {
         let wanted = Set(candidates.map(\.id))
         let descriptor = FetchDescriptor<Park>(
             predicate: #Predicate<Park> { wanted.contains($0.identifier) }
@@ -793,6 +822,7 @@ final class ParkDiscoveryService {
             if let existing = byIdentifier[candidate.id] {
                 if existing.postalAddress == nil { existing.postalAddress = candidate.addressLine }
                 if existing.categoryRaw == nil { existing.categoryRaw = candidate.category }
+                existing.apply(candidate)
                 result.append(existing)
                 continue
             }
@@ -804,6 +834,13 @@ final class ParkDiscoveryService {
                 categoryRaw: candidate.category
             )
             park.postalAddress = candidate.addressLine
+            // The search result already said which city this is in, and this is the path
+            // every sweep and every index takes. Throwing that away meant a freshly indexed
+            // park belonged to no city until the rate-limited geocoder reached it — around
+            // one park a second — so an index could report ninety parks found while the city
+            // it indexed still read "1 of 2". `park(for:)` had always done this; the bulk
+            // path never did.
+            park.apply(candidate)
             modelContext.insert(park)
             byIdentifier[candidate.id] = park
             result.append(park)

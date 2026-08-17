@@ -166,3 +166,70 @@ final class IndexResumeTests: XCTestCase {
         XCTAssertEqual(finelyCovered(tiles, in: coverage), tiles.count)
     }
 }
+
+/// How finely a saturated tile is cut.
+///
+/// Measured against the real map service: `MKLocalSearch` caps every answer at about 25
+/// results however wide the region, so any populated tile above a couple of kilometres
+/// saturates — every tile at every level did, over a dense city and a suburb alike. So the
+/// intermediate steps of a halving search are requests spent confirming what is already
+/// known, and skipping them is what lets a large city finish inside its budget.
+final class TileSplittingTests: XCTestCase {
+
+    private func region(spanDegrees: Double) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42),
+            span: MKCoordinateSpan(latitudeDelta: spanDegrees, longitudeDelta: spanDegrees)
+        )
+    }
+
+    /// Roughly the 26 km tile a sweep starts from.
+    func testAWideTileIsCutAsFinelyAsAllowed() {
+        XCTAssertEqual(ParkDiscoveryService.splitSide(for: region(spanDegrees: 0.234)), 4)
+    }
+
+    /// A tile whose children would fall below the useful minimum is left alone.
+    func testATileNearTheMinimumIsNotCut() {
+        XCTAssertNil(ParkDiscoveryService.splitSide(for: region(spanDegrees: 0.0147)))
+        XCTAssertNil(ParkDiscoveryService.splitSide(for: region(spanDegrees: ParkDiscoveryService.minimumTileSpanDegrees)))
+    }
+
+    /// Whatever the cut, no child may come out smaller than the floor — that is the line
+    /// past which a tile is smaller than the parks in it.
+    func testChildrenNeverFallBelowTheMinimum() {
+        for span in stride(from: 0.028, through: 0.5, by: 0.004) {
+            guard let side = ParkDiscoveryService.splitSide(for: region(spanDegrees: span)) else { continue }
+            let childSpan = span / Double(side)
+            XCTAssertGreaterThanOrEqual(
+                childSpan,
+                ParkDiscoveryService.minimumTileSpanDegrees * 0.999,
+                "A \(span)° tile cut \(side) ways gives \(childSpan)° children"
+            )
+        }
+    }
+
+    /// The point of the change: a city reaches the same final resolution in far fewer
+    /// requests, and inside the budget it used to blow through.
+    func testACityFitsInsideTheSearchBudget() {
+        var queue = [region(spanDegrees: 0.234)]
+        var requests = 0
+        var finest = Double.greatestFiniteMagnitude
+
+        // Everything saturates, which is what the live probe measured.
+        while let tile = queue.first {
+            queue.removeFirst()
+            requests += 1
+            finest = min(finest, tile.span.latitudeDelta)
+            guard let side = ParkDiscoveryService.splitSide(for: tile) else { continue }
+            queue.append(contentsOf: ParkDiscoveryService.tiles(for: tile, side: side))
+        }
+
+        XCTAssertLessThanOrEqual(
+            requests,
+            ParkDiscoveryService.maxIndexSearches,
+            "A city has to be able to finish, not just resume forever"
+        )
+        XCTAssertLessThanOrEqual(finest, ParkDiscoveryService.minimumTileSpanDegrees * 1.1,
+                                 "…and still reach full resolution")
+    }
+}
