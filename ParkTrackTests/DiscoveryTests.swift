@@ -407,3 +407,55 @@ final class ScannedAreaPersistenceTests: XCTestCase {
         XCTAssertFalse(service.isLargelySwept(region: region(lat: 45.5, lon: -122.6, span: 0.1)))
     }
 }
+
+/// Identifying entries that were filed as parks but are not, from the period when tapping any
+/// map search result added one.
+@MainActor
+final class ParkAuditTests: XCTestCase {
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+        context = ModelContext(container)
+    }
+
+    @discardableResult
+    private func park(_ name: String, category: String?) -> Park {
+        let park = Park(identifier: name, name: name, latitude: 1, longitude: 1, categoryRaw: category)
+        context.insert(park)
+        return park
+    }
+
+    func testCafeFiledAsAParkIsFlagged() {
+        let cafe = park("Corner Roasters", category: MKPointOfInterestCategory.cafe.rawValue)
+        XCTAssertTrue(ParkAudit.isSuspicious(cafe))
+    }
+
+    func testRealParkIsNotFlagged() {
+        let real = park("Riverbend Park", category: MKPointOfInterestCategory.park.rawValue)
+        XCTAssertFalse(ParkAudit.isSuspicious(real))
+    }
+
+    /// A hand-placed pin has no category and can be called anything its owner calls it, so
+    /// judging it by name would flag the most deliberate entries in the catalogue.
+    func testHandAddedParkWithAnOddNameIsLeftAlone() {
+        let custom = park("Grandma's field", category: nil)
+        XCTAssertFalse(ParkAudit.isSuspicious(custom))
+    }
+
+    func testCategoryLabelIsReadable() {
+        let cafe = park("Corner Roasters", category: MKPointOfInterestCategory.cafe.rawValue)
+        XCTAssertEqual(ParkAudit.categoryLabel(for: cafe), "Cafe")
+    }
+
+    func testSuspiciousFiltersOnlyTheOddOnes() {
+        park("Riverbend Park", category: MKPointOfInterestCategory.park.rawValue)
+        park("Corner Roasters", category: MKPointOfInterestCategory.cafe.rawValue)
+        park("Hardware Store", category: MKPointOfInterestCategory.store.rawValue)
+        park("Grandma's field", category: nil)
+
+        let flagged = ParkAudit.suspicious((try? context.fetch(FetchDescriptor<Park>())) ?? [])
+        XCTAssertEqual(Set(flagged.map(\.name)), ["Corner Roasters", "Hardware Store"])
+    }
+}

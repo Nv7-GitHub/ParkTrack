@@ -18,6 +18,7 @@ struct SettingsScreen: View {
     @Environment(ServiceHub.self) private var services
 
     @Query private var parks: [Park]
+    @State private var isReviewingSuspects = false
     @Query private var visits: [Visit]
 
     @State private var homePlaceName: String?
@@ -38,6 +39,10 @@ struct SettingsScreen: View {
 
     init() {}
 
+    /// Entries that were filed as parks from a non-park search result, back when tapping any
+    /// result added one.
+    private var suspiciousCount: Int { ParkAudit.suspicious(parks).count }
+
     var body: some View {
         @Bindable var settings = settings
 
@@ -56,7 +61,10 @@ struct SettingsScreen: View {
             }
             .background(Theme.background)
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle("Settings")
+            .sheet(isPresented: $isReviewingSuspects) {
+            SuspiciousParksSheet()
+        }
+        .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -368,6 +376,19 @@ struct SettingsScreen: View {
                         )
                     }
                     .disabled(activity != nil || unresolvedCount == 0)
+
+                    Button {
+                        isReviewingSuspects = true
+                    } label: {
+                        settingsRow(
+                            title: "Tidy up the catalogue",
+                            detail: suspiciousCount == 0
+                                ? "Nothing in your list looks out of place"
+                                : "\(suspiciousCount) \(suspiciousCount == 1 ? "entry doesn't" : "entries don't") look like parks",
+                            systemImage: "wand.and.sparkles"
+                        )
+                    }
+                    .disabled(suspiciousCount == 0)
 
                     Button(role: .destructive) {
                         isConfirmingDeletion = true
