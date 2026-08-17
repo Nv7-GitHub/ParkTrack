@@ -18,9 +18,7 @@ struct HomeHeroHeader: View {
     private let baseHeight: CGFloat = 250
 
     /// The hero gradient inverts with the palette, so the text on it has to invert too.
-    private var ink: Color {
-        colorScheme == .dark ? Color(hex: 0x0E1512) : .white
-    }
+    private var ink: Color { Theme.heroInk(colorScheme) }
 
     var body: some View {
         GeometryReader { proxy in

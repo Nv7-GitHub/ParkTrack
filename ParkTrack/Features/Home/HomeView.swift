@@ -23,15 +23,37 @@ struct HomeView: View {
     @State private var streaksCache = DerivedCache<Streaks>()
     @State private var completionsCache = DerivedCache<[RadiusCompletion]>()
     @State private var recommendationsCache = DerivedCache<[Recommendation]>()
-    /// Only as many as the section can show. This used to fetch and materialise every
-    /// visit ever logged so it could take the newest five, which grows without bound and is
-    /// paid for on every change to the store.
-    @Query(HomeView.recentVisitsDescriptor) private var visits: [Visit]
+    // Two queries, not one, and neither unbounded.
+    //
+    // One query sorted by `date` cannot answer this. A visit that was only ever marked
+    // carries the moment it was tapped as its date, so every one of them sorts to the very
+    // top — and with a fetch limit, a backlog cleared this afternoon fills the whole window
+    // and pushes out the visits that actually happened. Asking for the two kinds separately
+    // means the dated ones are chosen on their own merits and the marked ones can only ever
+    // fill space left over.
+    @Query(HomeView.datedVisitsDescriptor) private var datedVisits: [Visit]
+    @Query(HomeView.markedVisitsDescriptor) private var markedVisits: [Visit]
 
-    private static var recentVisitsDescriptor: FetchDescriptor<Visit> {
-        var descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\Visit.date, order: .reverse)])
-        // A little headroom over the five shown, because orphaned visits are filtered out.
-        descriptor.fetchLimit = 20
+    /// Headroom over the handful shown, because visits with no park are filtered out.
+    private static let recentVisitWindow = 20
+
+    static var datedVisitsDescriptor: FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate<Visit> { $0.isUndated == false },
+            sortBy: [SortDescriptor(\Visit.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = recentVisitWindow
+        return descriptor
+    }
+
+    /// Marked visits have no day to be recent by, so they fall back to when they were
+    /// recorded — the only ordering the store actually knows about them.
+    static var markedVisitsDescriptor: FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(
+            predicate: #Predicate<Visit> { $0.isUndated == true },
+            sortBy: [SortDescriptor(\Visit.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = recentVisitWindow
         return descriptor
     }
 
@@ -355,8 +377,11 @@ struct HomeView: View {
         }
     }
 
+    /// What actually happened first, then whatever was merely marked.
     private var recentVisits: [Visit] {
-        Array(visits.filter { $0.park != nil }.prefix(5))
+        let dated = datedVisits.filter { $0.park != nil }
+        let marked = markedVisits.filter { $0.park != nil }
+        return Array((dated + marked).prefix(5))
     }
 
     private var isSearching: Bool {

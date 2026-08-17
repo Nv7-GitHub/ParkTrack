@@ -88,9 +88,16 @@ struct YearInReviewSummary: Equatable {
 /// exactly what the user sees at a fixed width.
 struct YearInReviewPoster: View {
     let summary: YearInReviewSummary
+    /// Passed in rather than read from the environment.
+    ///
+    /// `ImageRenderer` walks this view outside the app's normal environment, so a poster
+    /// that looked up the colour scheme itself would render correctly on screen and wrongly
+    /// in the shared image. The card knows the scheme and hands down the answer.
+    let ink: Color
 
-    init(summary: YearInReviewSummary) {
+    init(summary: YearInReviewSummary, ink: Color) {
         self.summary = summary
+        self.ink = ink
     }
 
     var body: some View {
@@ -98,10 +105,10 @@ struct YearInReviewPoster: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(summary.displayName.isEmpty ? "My year in parks" : "\(summary.displayName)'s year in parks")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(ink.opacity(0.9))
                 Text(String(summary.year))
                     .font(.system(size: 46, weight: .heavy, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ink)
             }
 
             HStack(spacing: 10) {
@@ -123,19 +130,19 @@ struct YearInReviewPoster: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Favourite this year")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(ink.opacity(0.75))
                     Text(top)
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ink)
                         .lineLimit(2)
                         .minimumScaleFactor(0.7)
                     Text("\(summary.topParkVisits) \(summary.topParkVisits == 1 ? "visit" : "visits")")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.8))
+                        .foregroundStyle(ink.opacity(0.8))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
-                .background(.white.opacity(0.16), in: RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous))
+                .background(ink.opacity(0.16), in: RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous))
             }
 
             HStack(spacing: 6) {
@@ -146,7 +153,7 @@ struct YearInReviewPoster: View {
                     Text("since \(Format.shortDate(first))").font(.caption2)
                 }
             }
-            .foregroundStyle(.white.opacity(0.8))
+            .foregroundStyle(ink.opacity(0.8))
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -160,19 +167,19 @@ struct YearInReviewPoster: View {
         VStack(alignment: .leading, spacing: 1) {
             Text(value)
                 .font(.system(size: 26, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+                .foregroundStyle(ink)
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(ink.opacity(0.8))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(ink.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityValue(value)
@@ -184,7 +191,10 @@ struct YearInReviewCard: View {
     let summary: YearInReviewSummary
 
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
     @State private var rendered: Image?
+
+    private var ink: Color { Theme.heroInk(colorScheme) }
 
     init(summary: YearInReviewSummary) {
         self.summary = summary
@@ -200,7 +210,7 @@ struct YearInReviewCard: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader("Year in review", subtitle: "A card built for sharing")
 
-            YearInReviewPoster(summary: summary)
+            YearInReviewPoster(summary: summary, ink: ink)
                 .shadow(color: .black.opacity(0.16), radius: 14, x: 0, y: 6)
 
             if summary.isEmpty {
@@ -221,7 +231,7 @@ struct YearInReviewCard: View {
                 .accessibilityHint("Shares the year in review card as an image")
             }
         }
-        .task(id: RenderKey(summary: summary, scale: displayScale)) { await renderWhenIdle() }
+        .task(id: RenderKey(summary: summary, scale: displayScale, scheme: colorScheme)) { await renderWhenIdle() }
     }
 
     /// What a rasterisation depends on, so the card re-renders when the figures or the
@@ -229,6 +239,7 @@ struct YearInReviewCard: View {
     private struct RenderKey: Equatable {
         let summary: YearInReviewSummary
         let scale: CGFloat
+        let scheme: ColorScheme
     }
 
     /// Rasterised ahead of time so the share sheet opens instantly — but not during the
@@ -246,7 +257,7 @@ struct YearInReviewCard: View {
         try? await Task.sleep(for: .milliseconds(400))
         guard !Task.isCancelled else { return }
 
-        let renderer = ImageRenderer(content: YearInReviewPoster(summary: summary).frame(width: 360))
+        let renderer = ImageRenderer(content: YearInReviewPoster(summary: summary, ink: ink).frame(width: 360))
         renderer.scale = displayScale
         guard let image = renderer.uiImage else { return }
         rendered = Image(uiImage: image)

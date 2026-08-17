@@ -247,6 +247,60 @@ final class StatBreakdownTests: XCTestCase {
         }
     }
 
+    // MARK: - Home's "Recently visited"
+
+    /// Home cannot ask one sorted query for this, and a backlog is what proves it.
+    ///
+    /// A marked visit carries the moment it was tapped as its date, so a hundred parks
+    /// ticked off this afternoon are the hundred newest rows by date — and with a fetch
+    /// window they fill it completely, pushing every visit that actually happened off the
+    /// front page.
+    func testABacklogOfMarkedParksDoesNotCrowdOutRealVisitsOnHome() {
+        let logged = makePark("Logged", city: "Redmond", state: "WA", visits: [date(2026, 6, 2)])
+        for index in 0..<60 {
+            makePark("Marked \(index)", city: "Redmond", state: "WA", marked: true)
+        }
+
+        let dated = (try? context.fetch(HomeView.datedVisitsDescriptor)) ?? []
+        let marked = (try? context.fetch(HomeView.markedVisitsDescriptor)) ?? []
+        let shown = Array((dated + marked).prefix(5))
+
+        XCTAssertEqual(shown.first?.park?.identifier, logged.identifier, "A real visit leads")
+        XCTAssertFalse(shown.first?.isUndated == true)
+        XCTAssertEqual(shown.count, 5, "…and the marked ones still fill the space left over")
+    }
+
+    /// The window is a limit, not a filter: with plenty of real visits, none of the marked
+    /// ones make the cut at all.
+    func testMarkedParksOnlyFillSpaceLeftOver() {
+        for index in 0..<8 {
+            makePark("Logged \(index)", city: "Redmond", state: "WA", visits: [date(2026, 6, 1 + index)])
+        }
+        for index in 0..<8 {
+            makePark("Marked \(index)", city: "Redmond", state: "WA", marked: true)
+        }
+
+        let dated = (try? context.fetch(HomeView.datedVisitsDescriptor)) ?? []
+        let marked = (try? context.fetch(HomeView.markedVisitsDescriptor)) ?? []
+        let shown = Array((dated + marked).prefix(5))
+
+        XCTAssertTrue(shown.allSatisfy { !$0.isUndated })
+        XCTAssertEqual(shown.map { $0.park?.name }, ["Logged 7", "Logged 6", "Logged 5", "Logged 4", "Logged 3"])
+    }
+
+    /// A user who has only ever marked parks still gets a section rather than an empty one.
+    func testAMarkedOnlyCollectionStillFillsTheSection() {
+        for index in 0..<3 {
+            makePark("Marked \(index)", city: "Redmond", state: "WA", marked: true)
+        }
+
+        let dated = (try? context.fetch(HomeView.datedVisitsDescriptor)) ?? []
+        let marked = (try? context.fetch(HomeView.markedVisitsDescriptor)) ?? []
+
+        XCTAssertTrue(dated.isEmpty)
+        XCTAssertEqual(marked.count, 3)
+    }
+
     // MARK: - Empty
 
     func testEveryBreakdownIsEmptyForAnEmptyCollection() {

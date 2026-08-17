@@ -62,6 +62,15 @@ enum Theme {
     /// element half-hidden unless it reserves this much space.
     static let tabBarClearance: CGFloat = 76
 
+    /// Text drawn on `heroGradient`.
+    ///
+    /// The gradient inverts with the palette — its dark-mode colours are the light ones, a
+    /// pale green through to a pale blue — so the ink has to invert with it. White on the
+    /// dark-mode gradient is white on pale green, which is barely there.
+    static func heroInk(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(hex: 0x0E1512) : .white
+    }
+
     private static func adaptive(light: Color, dark: Color) -> Color {
         Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
