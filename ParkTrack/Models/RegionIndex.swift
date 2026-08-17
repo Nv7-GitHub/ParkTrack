@@ -56,9 +56,13 @@ final class RegionIndex {
     /// which is exactly what records written before this existed decode as.
     var indexerVersion: Int = 0
 
-    /// True when the place was too large to sweep at full density, so the count is a floor
-    /// rather than a total. A county can be hundreds of kilometres across and the map answers
-    /// each search with a couple of dozen results at most.
+    /// True when the sweep ran out of its search budget before finishing, so the count is a
+    /// floor rather than a total.
+    ///
+    /// This is about density as much as size: a sweep splits a tile whenever the map answers
+    /// it at the per-request cap, so somewhere with a great many parks packed together spends
+    /// its budget long before somewhere merely large. Running it again continues from the
+    /// ground already covered rather than starting over.
     var isApproximate: Bool = false
 
     /// Set while a sweep is running so the UI can show progress and refuse to start twice.

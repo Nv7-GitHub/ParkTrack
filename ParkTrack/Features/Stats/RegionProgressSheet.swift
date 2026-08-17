@@ -52,6 +52,7 @@ struct RegionProgressSheet: View {
                         indexPrompt
                     } else if completion.isApproximate {
                         approximateNote
+                        continueButton
                     }
 
                     section(
@@ -165,13 +166,34 @@ struct RegionProgressSheet: View {
         }
     }
 
+    /// Picks up where the last sweep stopped, which is cheap now that finished tiles are
+    /// remembered at the grade they were searched.
+    private var continueButton: some View {
+        Button {
+            Task { await index() }
+        } label: {
+            if isIndexingThis {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Searching \(completion.name)…")
+                }
+            } else {
+                Label("Keep searching \(completion.name)", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.semibold))
+            }
+        }
+        .buttonStyle(.bordered)
+        .tint(Theme.accent)
+        .disabled(services.regionIndexer?.isIndexing ?? false)
+    }
+
     private var approximateNote: some View {
         Card {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Approximate total")
+                Text("At least this many")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("\(completion.name) is too large to search exhaustively, so this is a floor — there are probably more parks in it than the count shows.")
+                Text("Searching \(completion.name) reached its limit before it ran out of ground — somewhere this dense splits into a lot of small searches. The count is a floor, and indexing again carries on from where it stopped rather than starting over.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

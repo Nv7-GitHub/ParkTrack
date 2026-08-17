@@ -295,7 +295,7 @@ private struct RegionIndexRow: View {
                         } else if region.isIndexed {
                             Pill(text: "\(region.parkCount) parks", systemImage: "tree.fill", tint: Theme.fern)
                             if region.isApproximate {
-                                Pill(text: "Approximate", systemImage: "tilde", tint: Theme.bark)
+                                Pill(text: "At least", systemImage: "plus.magnifyingglass", tint: Theme.bark)
                             }
                         }
                     }

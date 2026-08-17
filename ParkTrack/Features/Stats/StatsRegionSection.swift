@@ -105,7 +105,7 @@ struct StatsRegionSection: View {
                                                 .font(.caption2)
                                                 .foregroundStyle(Theme.textSecondary)
                                         } else if completion.isApproximate {
-                                            Text("Approximate — \(completion.name) is too large to search exhaustively")
+                                            Text("At least this many — searching hit its limit. Index again to go further.")
                                                 .font(.caption2)
                                                 .foregroundStyle(Theme.textSecondary)
                                         }
