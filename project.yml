@@ -1,0 +1,66 @@
+name: ParkTrack
+options:
+  bundleIdPrefix: com.nv7.parktrack
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  ParkTrack:
+    type: application
+    platform: iOS
+    sources:
+      - path: ParkTrack
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrack
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored."
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Attach photos and videos from your library to a park visit."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Take a photo or video at a park to attach to your visit."
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+  ParkTrackTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ParkTrackTests
+    dependencies:
+      - target: ParkTrack
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrackTests
+        GENERATE_INFOPLIST_FILE: YES
+  ParkTrackUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ParkTrackUITests
+    dependencies:
+      - target: ParkTrack
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrackUITests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ParkTrack:
+    build:
+      targets:
+        ParkTrack: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ParkTrackTests
+        - ParkTrackUITests
