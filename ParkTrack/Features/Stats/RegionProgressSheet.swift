@@ -107,7 +107,7 @@ struct RegionProgressSheet: View {
                 Button {
                     Task { await index() }
                 } label: {
-                    if (services.regionIndexer?.isIndexing ?? false) {
+                    if isIndexingThis {
                         HStack(spacing: 8) {
                             ProgressView()
                             Text("Indexing \(completion.name)…")
@@ -119,10 +119,21 @@ struct RegionProgressSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
-                .disabled((services.regionIndexer?.isIndexing ?? false))
+                .disabled(services.regionIndexer?.isIndexing ?? false)
 
-                if (services.regionIndexer?.isIndexing ?? false) {
-                    IndexProgressView(progress: services.regionIndexer?.progress)
+                // This region's own standing. One shared bar meant opening another city showed
+                // whatever sweep happened to be running somewhere else.
+                switch services.regionIndexer?.state(forIdentifier: completion.identifier, name: completion.name) {
+                case .sweeping(let progress):
+                    IndexProgressView(progress: progress)
+                case .queued(let position):
+                    Text(position == 0
+                         ? "Starting shortly…"
+                         : "Waiting behind \(position) other place\(position == 1 ? "" : "s").")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                case .none:
+                    EmptyView()
                 }
 
                 if let indexError {
@@ -171,13 +182,21 @@ struct RegionProgressSheet: View {
         }
     }
 
+    /// True only while this region is the one being swept.
+    private var isIndexingThis: Bool {
+        services.regionIndexer?.state(
+            forIdentifier: completion.identifier,
+            name: completion.name
+        ) != nil
+    }
+
     private func index() async {
         guard let indexer = services.regionIndexer else { return }
         indexError = nil
         let name = completion.name
         let kind = completion.kind
         // Handed to the service, so closing this sheet does not stop the sweep.
-        indexer.enqueue {
+        indexer.enqueue(identifier: completion.identifier, name: name) {
             if await indexer.indexPlace(named: name, kind: kind) == nil {
                 indexError = indexer.lastError ?? "Couldn't index \(name)."
             }

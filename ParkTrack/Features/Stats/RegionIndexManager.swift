@@ -195,7 +195,10 @@ struct RegionIndexManager: View {
                         SectionHeader("Indexed places", subtitle: "\(indexes.count) cached, never re-swept unless you ask")
                         VStack(spacing: 10) {
                             ForEach(indexes) { region in
-                                RegionIndexRow(region: region) {
+                                RegionIndexRow(
+                                    region: region,
+                                    state: indexer?.state(forIdentifier: region.identifier, name: region.name)
+                                ) {
                                     Task { await reindex(region) }
                                 } onDelete: {
                                     delete(region)
@@ -224,7 +227,7 @@ struct RegionIndexManager: View {
         let chosen = kind
         query = ""
         completer.clear()
-        indexer.enqueue {
+        indexer.enqueue(identifier: "", name: suggestion.title) {
             if await indexer.indexSuggestion(suggestion, kind: chosen) == nil {
                 message = indexer.lastError ?? "Couldn't index \(suggestion.title)."
             }
@@ -238,7 +241,7 @@ struct RegionIndexManager: View {
         let chosen = kind
         query = ""
         completer.clear()
-        indexer.enqueue {
+        indexer.enqueue(identifier: "", name: name) {
             if await indexer.indexPlace(named: name, kind: chosen) == nil {
                 message = indexer.lastError ?? "Couldn't index \"\(name)\"."
             }
@@ -248,17 +251,17 @@ struct RegionIndexManager: View {
     private func indexHere() async {
         guard let indexer, let coordinate = location.currentLocation?.coordinate else { return }
         message = nil
-        indexer.enqueue { await indexer.indexArea(around: coordinate) }
+        indexer.enqueue(identifier: "", name: "your area") { await indexer.indexArea(around: coordinate) }
     }
 
     private func reindex(_ region: RegionIndex) async {
         guard let indexer else { return }
-        indexer.enqueue { await indexer.reindex(region) }
+        indexer.enqueue(identifier: region.identifier, name: region.name) { await indexer.reindex(region) }
     }
 
     private func refreshStale() async {
         guard let indexer else { return }
-        indexer.enqueue { await indexer.refreshOutdatedIndexes() }
+        indexer.enqueue(identifier: "", name: "stale places") { await indexer.refreshOutdatedIndexes() }
     }
 
     private func delete(_ region: RegionIndex) {
@@ -268,6 +271,8 @@ struct RegionIndexManager: View {
 
 private struct RegionIndexRow: View {
     let region: RegionIndex
+    /// This row's own standing, so a queued place doesn't borrow the running one's bar.
+    var state: RegionIndexer.State?
     let onReindex: () -> Void
     let onDelete: () -> Void
 
@@ -291,10 +296,19 @@ private struct RegionIndexRow: View {
                             }
                         }
                     }
-                    if let indexedAt = region.indexedAt {
-                        Text("Indexed \(Format.relative(indexedAt)) · \(Format.miles(region.radiusMiles)) radius")
+                    switch state {
+                    case .sweeping(let progress):
+                        IndexProgressView(progress: progress)
+                    case .queued(let position):
+                        Text(position == 0 ? "Starting shortly…" : "Waiting behind \(position) other place\(position == 1 ? "" : "s")")
                             .font(.caption2)
                             .foregroundStyle(Theme.textSecondary)
+                    case .none:
+                        if let indexedAt = region.indexedAt {
+                            Text("Indexed \(Format.relative(indexedAt)) · \(Format.miles(region.radiusMiles)) radius")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
                     }
                 }
                 Spacer(minLength: 8)

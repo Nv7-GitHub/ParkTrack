@@ -20,6 +20,9 @@ final class RegionIndexer {
     /// The region being swept right now, if any, so the UI can show progress and refuse to
     /// queue a second sweep on top of it.
     private(set) var activeRegionName: String?
+    /// Identity of the region being swept, so a screen can tell whether the progress on show
+    /// is its own. Without it every open sheet displayed whatever happened to be running.
+    private(set) var activeRegionIdentifier: String?
     private(set) var lastError: String?
     /// Live progress of the sweep behind the active index, so the UI can show something
     /// moving rather than an indeterminate spinner for minutes.
@@ -35,17 +38,59 @@ final class RegionIndexer {
 
     var isIndexing: Bool { indexTask != nil }
 
+    /// Whether the sweep currently running is this region's, matched on identity and falling
+    /// back to the name for a region that has no index record yet.
+    func isIndexing(identifier: String?, name: String) -> Bool {
+        guard activeRegionName != nil else { return false }
+        if let identifier, let active = activeRegionIdentifier, !identifier.isEmpty {
+            return identifier == active
+        }
+        return activeRegionName?.localizedCaseInsensitiveContains(name) ?? false
+    }
+
+
+
+    /// Where one region stands: waiting its turn, or being swept right now.
+    enum State: Equatable {
+        case queued(position: Int)
+        case sweeping(ParkDiscoveryService.SweepProgress?)
+
+        static func == (lhs: State, rhs: State) -> Bool {
+            switch (lhs, rhs) {
+            case let (.queued(a), .queued(b)): return a == b
+            case (.sweeping, .sweeping): return true
+            default: return false
+            }
+        }
+    }
+
+    /// Regions asked for but not yet finished, oldest first. Kept so every region can report
+    /// its own standing rather than sharing one bar between them.
+    private(set) var pending: [(identifier: String, name: String)] = []
+
     /// Starts work in the background and returns immediately. Requests made while another is
-    /// running are queued by the awaits inside, not dropped.
-    func enqueue(_ work: @escaping () async -> Void) {
+    /// running wait their turn rather than being dropped, and say so.
+    func enqueue(identifier: String, name: String, _ work: @escaping () async -> Void) {
+        pending.append((identifier: identifier, name: name))
         let previous = indexTask
         indexTask = Task { [weak self] in
             await previous?.value
             await work()
-            if self?.indexTask?.isCancelled == false, self?.activeRegionName == nil {
+            self?.pending.removeAll { $0.identifier == identifier && $0.name == name }
+            if self?.pending.isEmpty == true {
                 self?.indexTask = nil
             }
         }
+    }
+
+    /// What to show for one region: its own progress, its own place in the queue, or nothing.
+    func state(forIdentifier identifier: String?, name: String) -> State? {
+        if isIndexing(identifier: identifier, name: name) { return .sweeping(progress) }
+        guard let position = pending.firstIndex(where: { entry in
+            if let identifier, !identifier.isEmpty, entry.identifier == identifier { return true }
+            return entry.name.localizedCaseInsensitiveCompare(name) == .orderedSame
+        }) else { return nil }
+        return .queued(position: position)
     }
 
     /// Waits for everything queued, for callers that need the result.
@@ -217,9 +262,11 @@ final class RegionIndexer {
         record.isIndexing = true
         record.lastError = nil
         activeRegionName = record.displayName
+        activeRegionIdentifier = record.identifier
         defer {
             record.isIndexing = false
             activeRegionName = nil
+            activeRegionIdentifier = nil
             progress = nil
         }
 
