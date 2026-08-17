@@ -123,6 +123,7 @@
 		5FC4C6EBC344E7CE81331F62 /* ParkQuickLookSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkQuickLookSheet.swift; sourceTree = "<group>"; };
 		6404AEF6E642BBAE14E9067E /* FriendMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendMediaViewer.swift; sourceTree = "<group>"; };
 		640F2D1F13F9C3DCF72EECEE /* Friend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Friend.swift; sourceTree = "<group>"; };
+		687B6EB121E0D28092971744 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
 		745C1692332393A859502171 /* StatsRegionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRegionSection.swift; sourceTree = "<group>"; };
 		754C504BFC13EBB0DC9B91F3 /* HomeRecommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRecommendations.swift; sourceTree = "<group>"; };
 		7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRecordsSection.swift; sourceTree = "<group>"; };
@@ -178,6 +179,14 @@
 				286FE9537EC15B7C96A35109 /* Theme.swift */,
 			);
 			path = Design;
+			sourceTree = "<group>";
+		};
+		1382A0F775375AED44D64ADD /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				687B6EB121E0D28092971744 /* Signing.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		2B0AD788209515ADDF29F99D /* ParkTrackTests */ = {
@@ -266,6 +275,7 @@
 		84429BEC5369C2F986B55EF1 = {
 			isa = PBXGroup;
 			children = (
+				1382A0F775375AED44D64ADD /* Config */,
 				4939E8E56EC824B81B7164A4 /* ParkTrack */,
 				2B0AD788209515ADDF29F99D /* ParkTrackTests */,
 				566ED514B87A23B6DD747733 /* ParkTrackUITests */,
@@ -378,6 +388,7 @@
 			buildConfigurationList = AA18DF67A85B55C5264B55D7 /* Build configuration list for PBXNativeTarget "ParkTrack" */;
 			buildPhases = (
 				873FB1FB7DA1D97C827A08D1 /* Sources */,
+				819CAE126C80EDF34F0998E3 /* Verify signing identity */,
 			);
 			buildRules = (
 			);
@@ -470,6 +481,28 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		819CAE126C80EDF34F0998E3 /* Verify signing identity */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Verify signing identity";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "[ \"$PLATFORM_NAME\" = \"iphoneos\" ] || exit 0\ncase \"$PRODUCT_BUNDLE_IDENTIFIER\" in\n  *CHANGE-ME*)\n    echo \"error: Config/Signing.local.xcconfig is missing, so this build fell back to the placeholder bundle id '$PRODUCT_BUNDLE_IDENTIFIER'.\"\n    echo \"error: Installing it would create a SECOND app on the phone with no parks or visits rather than updating the real one.\"\n    echo \"error: Create Config/Signing.local.xcconfig with the two lines for this machine, e.g.:\"\n    echo \"error:     DEVELOPMENT_TEAM = ABCDE12345\"\n    echo \"error:     PARKTRACK_BUNDLE_ID = com.yourprefix.parktrack.app\"\n    echo \"error: Use the SAME PARKTRACK_BUNDLE_ID this machine has always used — changing it orphans the app data already on your phone, and the iCloud records behind friends.\"\n    exit 1\n    ;;\nesac\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		873FB1FB7DA1D97C827A08D1 /* Sources */ = {
@@ -575,6 +608,7 @@
 /* Begin XCBuildConfiguration section */
 		1020C7ADED752125A56B0A2F /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 687B6EB121E0D28092971744 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -610,7 +644,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -651,7 +684,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrack;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PARKTRACK_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -667,7 +700,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrackTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PARKTRACK_BUNDLE_ID).tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ParkTrack.app/ParkTrack";
@@ -684,7 +717,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrackTests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PARKTRACK_BUNDLE_ID).tests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ParkTrack.app/ParkTrack";
@@ -701,7 +734,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrackUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PARKTRACK_BUNDLE_ID).uitests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = ParkTrack;
@@ -718,7 +751,7 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrackUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PARKTRACK_BUNDLE_ID).uitests";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = ParkTrack;
@@ -727,6 +760,7 @@
 		};
 		C68D783274C315B480C4174C /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 687B6EB121E0D28092971744 /* Signing.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -762,7 +796,6 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -810,7 +843,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrack;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(PARKTRACK_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

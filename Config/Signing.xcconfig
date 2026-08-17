@@ -1,0 +1,42 @@
+// Who this build is signed as, and what it calls itself.
+//
+// Both are per-machine facts, not project ones: they name a particular Apple developer
+// account and a bundle id registered against it. Anyone else building this repo does so
+// under their own developer team, so neither value can live in a committed file without
+// each push reassigning the other person's.
+//
+// Real values go in `Signing.local.xcconfig` next to this file, which is gitignored — see
+// the `#include?` at the bottom. Nothing here is secret (a Team ID is visible in any
+// distributed app), it just has no business being shared or fought over in a diff.
+//
+// Kept as a config file rather than in the Xcode UI because settings made through Xcode
+// live in `project.pbxproj`, which XcodeGen rewrites from scratch on every `xcodegen
+// generate` — so they silently vanish. XcodeGen never rewrites this file, it only
+// references it.
+
+// Empty is the correct default, not a made-up team id. Simulator builds need no team at
+// all, so a fresh clone builds and tests without one; a device build fails with Xcode's
+// own "requires a development team", which is a far better prompt than mysteriously
+// signing against an account you don't have.
+DEVELOPMENT_TEAM =
+
+// THE BUNDLE ID IS THE APP'S IDENTITY ON A PHONE, AND IDENTITY IS WHAT OWNS THE USER'S
+// DATA. iOS keys a container to it: change it and the next install is a brand-new app with
+// no parks and no visits, while the old container sits there under the old id, invisible
+// and unreachable from the new one.
+//
+// It also names the iCloud container once CloudKit is enabled, so changing it after the
+// friends features go live orphans the published profile and visit records too.
+//
+// This default is therefore a deliberate tripwire, not a usable value — see `Verify
+// signing identity` in project.yml, which fails a device build while this value is still
+// here rather than letting it install a second, empty ParkTrack alongside the real one.
+//
+// Simulator builds are left alone: no real data lives in a simulator, and a fresh clone
+// must still be able to build and run the test suite with no local file at all.
+PARKTRACK_BUNDLE_ID = com.example.CHANGE-ME.parktrack
+
+// Local overrides. `#include?` is the optional form — no error when the file is absent,
+// which is the fresh-clone case. Last assignment wins in an xcconfig, so this has to come
+// after the defaults above or it would be the one being overridden.
+#include? "Signing.local.xcconfig"

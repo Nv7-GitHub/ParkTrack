@@ -4,10 +4,15 @@ options:
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
+# Signing and bundle id come from Config/Signing.xcconfig: it holds placeholders and
+# optionally includes a gitignored Signing.local.xcconfig with the real values, so a
+# commit never carries either.
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -20,7 +25,7 @@ targets:
       - path: ParkTrack
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrack
+        PRODUCT_BUNDLE_IDENTIFIER: $(PARKTRACK_BUNDLE_ID)
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -30,6 +35,25 @@ targets:
         INFOPLIST_KEY_NSCameraUsageDescription: "Take a photo or video at a park to attach to your visit."
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
+    # Guards against the failure this whole arrangement exists to prevent: a missing
+    # Signing.local.xcconfig letting the placeholder id through, installing a second empty
+    # ParkTrack next to the real one and looking exactly like the data was wiped.
+    postBuildScripts:
+      - name: Verify signing identity
+        basedOnDependencyAnalysis: false
+        script: |
+          [ "$PLATFORM_NAME" = "iphoneos" ] || exit 0
+          case "$PRODUCT_BUNDLE_IDENTIFIER" in
+            *CHANGE-ME*)
+              echo "error: Config/Signing.local.xcconfig is missing, so this build fell back to the placeholder bundle id '$PRODUCT_BUNDLE_IDENTIFIER'."
+              echo "error: Installing it would create a SECOND app on the phone with no parks or visits rather than updating the real one."
+              echo "error: Create Config/Signing.local.xcconfig with the two lines for this machine, e.g.:"
+              echo "error:     DEVELOPMENT_TEAM = ABCDE12345"
+              echo "error:     PARKTRACK_BUNDLE_ID = com.yourprefix.parktrack.app"
+              echo "error: Use the SAME PARKTRACK_BUNDLE_ID this machine has always used — changing it orphans the app data already on your phone, and the iCloud records behind friends."
+              exit 1
+              ;;
+          esac
   ParkTrackTests:
     type: bundle.unit-test
     platform: iOS
@@ -39,7 +63,7 @@ targets:
       - target: ParkTrack
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrackTests
+        PRODUCT_BUNDLE_IDENTIFIER: $(PARKTRACK_BUNDLE_ID).tests
         GENERATE_INFOPLIST_FILE: YES
   ParkTrackUITests:
     type: bundle.ui-testing
@@ -50,7 +74,7 @@ targets:
       - target: ParkTrack
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrackUITests
+        PRODUCT_BUNDLE_IDENTIFIER: $(PARKTRACK_BUNDLE_ID).uitests
         GENERATE_INFOPLIST_FILE: YES
 schemes:
   ParkTrack:

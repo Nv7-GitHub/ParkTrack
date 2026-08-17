@@ -5,3 +5,7 @@ DerivedData/
 xcuserdata/
 *.xcodeproj/project.xcworkspace/
 *.xcodeproj/xcuserdata/
+
+# This machine's signing team and bundle id. The committed Config/Signing.xcconfig holds a
+# placeholder and optionally includes this file, so a commit never carries either value.
+Config/Signing.local.xcconfig
