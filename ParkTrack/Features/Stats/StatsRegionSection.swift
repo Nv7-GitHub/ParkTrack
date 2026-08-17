@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Completion by administrative area — city, county or state — for whatever areas the
 /// reverse geocoder has actually named. Nothing here is baked in: the buckets are simply
@@ -6,6 +7,10 @@ import SwiftUI
 struct StatsRegionSection: View {
     let parks: [Park]
     let signature: StatsSignature
+
+    @Environment(ServiceHub.self) private var services
+    @Query private var indexes: [RegionIndex]
+    @State private var isPresentingIndexManager = false
     @State private var completionsCache = DerivedCache<[RegionCompletion]>()
 
     enum Scope: String, CaseIterable, Identifiable {
@@ -36,13 +41,19 @@ struct StatsRegionSection: View {
     }
 
     private var completions: [RegionCompletion] {
-        completionsCache.value(for: signature.adding(Double(scope.hashValue % 7))) {
+        completionsCache.value(for: signature.adding(Double(scope.hashValue % 7)).adding(Double(indexedFingerprint))) {
             switch scope {
-            case .city: return StatsEngine.completionByCity(parks: parks)
-            case .county: return StatsEngine.completionByCounty(parks: parks)
-            case .state: return StatsEngine.completionByState(parks: parks)
+            case .city: return StatsEngine.completionByCity(parks: parks, indexes: indexes)
+            case .county: return StatsEngine.completionByCounty(parks: parks, indexes: indexes)
+            case .state: return StatsEngine.completionByState(parks: parks, indexes: indexes)
             }
         }
+    }
+
+    /// Changes whenever an index finishes or its count moves, so cached completions are
+    /// recomputed against the new denominator.
+    private var indexedFingerprint: Int {
+        indexes.reduce(0) { $0 &+ $1.parkCount &+ ($1.isIndexed ? 1 : 0) }
     }
 
     private var shown: [RegionCompletion] {
@@ -54,9 +65,18 @@ struct StatsRegionSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(
-                "Completion by area",
-                subtitle: "Sorted by how many parks each area holds"
-            )
+                title: "Completion by area",
+                subtitle: "Indexed places count every park in them, not just the ones you've found"
+            ) {
+                Button {
+                    isPresentingIndexManager = true
+                } label: {
+                    Label("Index", systemImage: "square.stack.3d.down.right")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+            }
 
             Card {
                 VStack(alignment: .leading, spacing: 14) {
@@ -80,17 +100,27 @@ struct StatsRegionSection: View {
                                 Button {
                                     detail = completion
                                 } label: {
-                                    ProgressBar(
-                                        title: completion.name,
-                                        visited: completion.visited,
-                                        total: completion.total,
-                                        tint: Theme.chartColors[index % Theme.chartColors.count]
-                                    )
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        ProgressBar(
+                                            title: completion.name,
+                                            visited: completion.visited,
+                                            total: completion.total,
+                                            tint: Theme.chartColors[index % Theme.chartColors.count]
+                                        )
+                                        if !completion.isIndexed {
+                                            Text("Partial — index \(completion.name) for a real total")
+                                                .font(.caption2)
+                                                .foregroundStyle(Theme.textSecondary)
+                                        }
+                                    }
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityElement(children: .ignore)
                                 .accessibilityLabel(completion.name)
-                                .accessibilityValue("\(completion.visited) of \(completion.total) parks visited")
+                                .accessibilityValue(
+                                    "\(completion.visited) of \(completion.total) parks visited"
+                                        + (completion.isIndexed ? "" : ", partial count")
+                                )
                                 .accessibilityHint("Shows the parks you still have left")
                                 .accessibilityAddTraits(.isButton)
                             }
@@ -113,6 +143,9 @@ struct StatsRegionSection: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $isPresentingIndexManager) {
+            RegionIndexManager()
         }
         .sheet(item: $detail) { completion in
             StatsRemainingParksSheet(

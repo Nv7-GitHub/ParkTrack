@@ -100,6 +100,20 @@ final class ScreenTourUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
     }
 
+    /// Waits for the initial sweep to populate the store, then scrolls Stats to the region
+    /// section — the completion-by-area block only exists once parks have been placed.
+    func testRegionCompletionSection() throws {
+        Thread.sleep(forTimeInterval: 40)
+        app.tabBars.buttons["Stats"].tap()
+        Thread.sleep(forTimeInterval: 6)
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 2)
+        capture("30-stats-regions")
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: 2)
+        capture("31-stats-regions-lower")
+    }
+
     /// Zooms the map in far enough that park name labels should appear, and confirms the
     /// footprint bubbles are gone.
     func testMapZoomedInShowsParkNames() throws {

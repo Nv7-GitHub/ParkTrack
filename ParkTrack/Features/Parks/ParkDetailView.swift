@@ -30,6 +30,12 @@ struct ParkDetailView: View {
 
     private var visits: [Visit] { park.sortedVisits }
 
+    private var placeCard: some View {
+        ParkPlaceCard(park: park) {
+            Task { await RegionResolver.shared.resolve(park) }
+        }
+    }
+
     var body: some View {
         List {
             Section {
@@ -45,6 +51,10 @@ struct ParkDetailView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                 actions
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                placeCard
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -387,6 +397,7 @@ private struct VisitHistoryRow: View {
         .accessibilityElement(children: .contain)
     }
 
+
     private struct Fact {
         let text: String
         let icon: String
@@ -502,5 +513,65 @@ private struct MediaPage: View {
         let created = AVPlayer(url: url)
         player = created
         if isCurrent { created.play() }
+    }
+}
+
+/// Where the park sits administratively. These exact fields are what the city, county and
+/// state completion percentages group by, so showing them makes it obvious why a park counts
+/// towards one place and not another — and obvious when the geocoder hasn't placed it yet.
+private struct ParkPlaceCard: View {
+    let park: Park
+    let onResolve: () -> Void
+
+    private var rows: [(label: String, value: String?)] {
+        [
+            ("City", park.locality),
+            ("County", park.subAdministrativeArea),
+            ("State", park.administrativeArea),
+            ("Country", park.country)
+        ]
+    }
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader("Place", subtitle: "How this park is counted")
+
+                if rows.allSatisfy({ $0.value == nil }) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Not placed yet. Until the map names this park's city, it isn't counted in any completion percentage.")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Look up now", action: onResolve)
+                            .font(.subheadline.weight(.semibold))
+                            .buttonStyle(.bordered)
+                            .tint(Theme.accent)
+                    }
+                } else {
+                    ForEach(rows, id: \.label) { row in
+                        if let value = row.value, !value.isEmpty {
+                            HStack {
+                                Text(row.label)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.textSecondary)
+                                Spacer(minLength: 12)
+                                Text(value)
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .multilineTextAlignment(.trailing)
+                            }
+                        }
+                    }
+                    if let address = park.postalAddress, !address.isEmpty {
+                        Divider().overlay(Theme.separator)
+                        Text(address)
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 }

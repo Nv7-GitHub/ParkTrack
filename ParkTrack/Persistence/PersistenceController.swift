@@ -13,7 +13,9 @@ enum PersistenceController {
         Visit.self,
         MediaItem.self,
         Friend.self,
-        FriendVisit.self
+        FriendVisit.self,
+        RegionIndex.self,
+        FriendRegionProgress.self
     ])
 
     /// True when the running build actually got a CloudKit-backed store.

@@ -19,6 +19,13 @@ struct RegionCompletion: Identifiable {
     let total: Int
     let fraction: Double
     let remaining: [Park]
+    /// True when `total` came from a completed sweep of this place rather than from however
+    /// many of its parks happen to have been found so far.
+    var isIndexed: Bool = false
+    var indexedAt: Date?
+    /// Key shared with friends, so a head-to-head counts both sides against the same total.
+    var identifier: String = ""
+    var kind: RegionKind = .city
 }
 
 /// One bucket on a chart: the count in that period plus the running total up to it.
@@ -108,21 +115,30 @@ enum StatsEngine {
 
     // MARK: - Region completion
 
-    static func completionByCity(parks: [Park]) -> [RegionCompletion] {
-        completion(parks: parks) { $0.locality }
+    static func completionByCity(parks: [Park], indexes: [RegionIndex] = []) -> [RegionCompletion] {
+        completion(parks: parks, kind: .city, indexes: indexes) { $0.locality }
     }
 
-    static func completionByCounty(parks: [Park]) -> [RegionCompletion] {
-        completion(parks: parks) { $0.subAdministrativeArea }
+    static func completionByCounty(parks: [Park], indexes: [RegionIndex] = []) -> [RegionCompletion] {
+        completion(parks: parks, kind: .county, indexes: indexes) { $0.subAdministrativeArea }
     }
 
-    static func completionByState(parks: [Park]) -> [RegionCompletion] {
-        completion(parks: parks) { $0.administrativeArea }
+    static func completionByState(parks: [Park], indexes: [RegionIndex] = []) -> [RegionCompletion] {
+        completion(parks: parks, kind: .state, indexes: indexes) { $0.administrativeArea }
     }
 
     /// Parks that haven't been reverse-geocoded yet have no key, and are left out entirely
     /// rather than lumped into an "Unknown" bucket that would skew every percentage.
-    private static func completion(parks: [Park], key: (Park) -> String?) -> [RegionCompletion] {
+    private static func completion(
+        parks: [Park],
+        kind: RegionKind,
+        indexes: [RegionIndex],
+        key: (Park) -> String?
+    ) -> [RegionCompletion] {
+        let indexByIdentifier = Dictionary(
+            indexes.filter(\.isIndexed).map { ($0.identifier, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         var groups: [String: [Park]] = [:]
         for park in parks {
             guard let name = key(park)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -133,12 +149,25 @@ enum StatsEngine {
         return groups
             .map { name, members in
                 let visited = members.filter(\.isVisited).count
+                // An indexed region knows how many parks it really has. Without one the
+                // total is only what has been stumbled across so far, which is why it used
+                // to move whenever the search radius did.
+                let indexed = members.compactMap { RegionIndex.identity(kind: kind, park: $0) }
+                    .first
+                    .flatMap { indexByIdentifier[$0] }
+                let total = max(indexed?.parkCount ?? members.count, members.count)
                 return RegionCompletion(
                     name: name,
                     visited: visited,
-                    total: members.count,
-                    fraction: members.isEmpty ? 0 : Double(visited) / Double(members.count),
-                    remaining: members.filter { !$0.isVisited }.sorted { $0.name < $1.name }
+                    total: total,
+                    fraction: total == 0 ? 0 : Double(visited) / Double(total),
+                    remaining: members.filter { !$0.isVisited }.sorted { $0.name < $1.name },
+                    isIndexed: indexed != nil,
+                    indexedAt: indexed?.indexedAt,
+                    identifier: indexed?.identifier
+                        ?? members.compactMap { RegionIndex.identity(kind: kind, park: $0) }.first
+                        ?? name,
+                    kind: kind
                 )
             }
             .sorted { $0.total == $1.total ? $0.name < $1.name : $0.total > $1.total }

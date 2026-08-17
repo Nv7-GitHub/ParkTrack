@@ -13,7 +13,15 @@ struct ParkCandidate: Identifiable, Hashable {
     let name: String
     let coordinate: CLLocationCoordinate2D
     let category: String?
-    let addressLine: String?
+    var addressLine: String?
+
+    /// Straight off the map result's placemark. Search already knows what city a result is
+    /// in, so taking it here means most parks never need the rate-limited reverse geocoder
+    /// — which is what makes indexing a whole city in one pass practical.
+    var locality: String?
+    var subAdministrativeArea: String?
+    var administrativeArea: String?
+    var country: String?
 
     static func == (lhs: ParkCandidate, rhs: ParkCandidate) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
@@ -135,6 +143,9 @@ final class ParkDiscoveryService {
 
     private(set) var isSearching = false
     private(set) var lastError: String?
+    /// False when the last sweep was cut short — cancelled, or abandoned after too many
+    /// failed levels. A caller that records "this ground is searched" must check it.
+    private(set) var lastSweepCompleted = false
 
     /// Which ground a sweep has finished. Rings read this to tell a real denominator from
     /// a provisional one.
@@ -223,13 +234,15 @@ final class ParkDiscoveryService {
         var found: [String: Park] = [:]
         var order: [String] = []
         var failedLevels = 0
+        var completed = true
+        defer { lastSweepCompleted = completed }
 
         for level in Self.sweepLevels(around: coordinate, radiusMiles: radiusMiles) {
-            if Task.isCancelled { break }
+            if Task.isCancelled { completed = false; break }
             if !force && coverage.covers(level.square) { continue }
 
             let outcome = await Self.candidates(inTiles: level.tiles, wideOver: level.square)
-            if Task.isCancelled { break }
+            if Task.isCancelled { completed = false; break }
 
             if !outcome.candidates.isEmpty {
                 for park in persist(outcome.candidates) where found[park.identifier] == nil {
@@ -243,7 +256,7 @@ final class ParkDiscoveryService {
             if let failure = outcome.failure {
                 lastError = failure
                 failedLevels += 1
-                if failedLevels >= Self.maxFailedLevels { break }
+                if failedLevels >= Self.maxFailedLevels { completed = false; break }
                 continue
             }
             failedLevels = 0
@@ -293,8 +306,12 @@ final class ParkDiscoveryService {
             categoryRaw: candidate.category
         )
         park.postalAddress = candidate.addressLine
+        park.apply(candidate)
         modelContext.insert(park)
-        scheduleRegionResolution(for: park)
+        // Only the results the map left unplaced still need the slow geocoder.
+        if park.regionResolvedAt == nil {
+            scheduleRegionResolution(for: park)
+        }
         return park
     }
 
@@ -503,7 +520,11 @@ final class ParkDiscoveryService {
             name: name,
             coordinate: coordinate,
             category: item.pointOfInterestCategory?.rawValue,
-            addressLine: item.placemark.title
+            addressLine: item.placemark.title,
+            locality: item.placemark.locality,
+            subAdministrativeArea: item.placemark.subAdministrativeArea,
+            administrativeArea: item.placemark.administrativeArea,
+            country: item.placemark.country
         )
     }
 

@@ -21,6 +21,9 @@ final class Friend {
     @Relationship(deleteRule: .cascade, inverse: \FriendVisit.friend)
     var visits: [FriendVisit]? = []
 
+    @Relationship(deleteRule: .cascade, inverse: \FriendRegionProgress.friend)
+    var regions: [FriendRegionProgress]? = []
+
     init(friendCode: String, displayName: String) {
         self.friendCode = friendCode
         self.displayName = displayName
@@ -63,4 +66,32 @@ extension FriendVisit {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
+}
+
+
+/// A friend's standing in one indexed place, mirrored locally so a head-to-head reads
+/// instantly. Both sides count against the same `total`, which is what makes the race fair:
+/// it comes from whoever indexed the region, not from how much ground each person happened
+/// to have wandered across.
+@Model
+final class FriendRegionProgress {
+    var regionIdentifier: String = ""
+    var regionName: String = ""
+    var kindRaw: String = RegionKind.city.rawValue
+    var visited: Int = 0
+    var total: Int = 0
+    var updatedAt: Date = Date()
+
+    var friend: Friend?
+
+    init(regionIdentifier: String, regionName: String, kind: RegionKind, visited: Int, total: Int) {
+        self.regionIdentifier = regionIdentifier
+        self.regionName = regionName
+        self.kindRaw = kind.rawValue
+        self.visited = visited
+        self.total = total
+    }
+
+    var kind: RegionKind { RegionKind(rawValue: kindRaw) ?? .city }
+    var fraction: Double { total > 0 ? Double(visited) / Double(total) : 0 }
 }

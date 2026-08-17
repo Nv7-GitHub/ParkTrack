@@ -31,6 +31,7 @@ struct FriendsScreen: View {
 
     @Query(sort: \Friend.addedAt) private var friends: [Friend]
     @Query private var parks: [Park]
+    @Query private var indexes: [RegionIndex]
     @State private var recordsCache = DerivedCache<Records>()
     @State private var streaksCache = DerivedCache<Streaks>()
 
@@ -67,6 +68,12 @@ struct FriendsScreen: View {
                             entries: entries,
                             metric: $metric,
                             onAddFriend: { isAddingFriend = true }
+                        )
+
+                        RegionRaceView(
+                            parks: parks,
+                            friends: friends,
+                            myName: trimmedDisplayName
                         )
                     case .feed:
                         FriendsFeedView(
@@ -182,9 +189,27 @@ struct FriendsScreen: View {
             totalVisits: records.totalVisits,
             citiesCount: records.distinctCities,
             currentStreakWeeks: streaks.currentWeeks,
-            parksThisMonth: records.parksThisMonth
+            parksThisMonth: records.parksThisMonth,
+            regions: myRegionProgress()
         )
         await social.publishMyData(parks: parks, profile: profile)
+    }
+
+    /// Only indexed places are published. An unindexed region's total is just how much of it
+    /// the user happens to have found, and racing a friend against two different denominators
+    /// would be meaningless.
+    private func myRegionProgress() -> [RegionProgressPayload] {
+        indexes.filter(\.isIndexed).compactMap { region in
+            let members = parks.filter { RegionIndex.identity(kind: region.kind, park: $0) == region.identifier }
+            guard !members.isEmpty else { return nil }
+            return RegionProgressPayload(
+                identifier: region.identifier,
+                name: region.displayName,
+                kind: region.kind.rawValue,
+                visited: members.count(where: \.isVisited),
+                total: max(region.parkCount, members.count)
+            )
+        }
     }
 }
 

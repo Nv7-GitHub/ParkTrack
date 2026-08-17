@@ -79,6 +79,19 @@ extension Park {
         return parts.isEmpty ? country : parts.joined(separator: ", ")
     }
 
+    /// Fills in the region fields a map result already knew, so the park is placeable in a
+    /// city without a round trip to the geocoder. Only counts as resolved when the search
+    /// result actually carried a locality — a bare country is not enough to group by.
+    func apply(_ candidate: ParkCandidate) {
+        if locality == nil { locality = candidate.locality }
+        if subAdministrativeArea == nil { subAdministrativeArea = candidate.subAdministrativeArea }
+        if administrativeArea == nil { administrativeArea = candidate.administrativeArea }
+        if country == nil { country = candidate.country }
+        if locality != nil, administrativeArea != nil, regionResolvedAt == nil {
+            regionResolvedAt = Date()
+        }
+    }
+
     func distance(from location: CLLocation) -> CLLocationDistance {
         self.location.distance(from: location)
     }

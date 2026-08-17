@@ -13,6 +13,22 @@ struct FriendProfilePayload: Codable {
     let citiesCount: Int
     let currentStreakWeeks: Int
     let parksThisMonth: Int
+    /// Per-place standings. Both sides of a race count against the same `total`, which comes
+    /// from whoever indexed the region — without that the comparison would just reflect who
+    /// had wandered across more ground.
+    var regions: [RegionProgressPayload] = []
+}
+
+struct RegionProgressPayload: Codable {
+    let identifier: String
+    let name: String
+    let kind: String
+    let visited: Int
+    let total: Int
+}
+
+extension SocialBackend {
+    func updateIndexedRegions(_ regions: [RegionProgressPayload]) async {}
 }
 
 /// One shared visit. Carries at most a single media attachment so a friend's whole
@@ -33,6 +49,9 @@ struct FriendVisitPayload: Codable {
 /// Where shared data actually lives. Two implementations ship: CloudKit for signed
 /// builds, and an in-memory mock so the Friends UI is explorable everywhere else.
 protocol SocialBackend: Sendable {
+    /// Lets a backend know which places the user has indexed. Only the mock uses it — it has
+    /// no other way to invent a plausible opponent for a race — and the default is a no-op.
+    func updateIndexedRegions(_ regions: [RegionProgressPayload]) async
     func fetchProfile(code: String) async throws -> FriendProfilePayload
     func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload]
     func publish(profile: FriendProfilePayload, visits: [FriendVisitPayload]) async throws
@@ -163,7 +182,25 @@ final class SocialService {
 
     /// Re-pulls every friend's profile and any visits logged since we last heard from
     /// them. One friend failing never stops the rest.
+    /// Tells the backend what the user has indexed before pulling, so a race has the same
+    /// denominator on both sides.
+    private func shareIndexedRegions() async {
+        let indexes = ((try? modelContext.fetch(FetchDescriptor<RegionIndex>())) ?? []).filter(\.isIndexed)
+        guard !indexes.isEmpty else { return }
+        let payloads = indexes.map {
+            RegionProgressPayload(
+                identifier: $0.identifier,
+                name: $0.displayName,
+                kind: $0.kind.rawValue,
+                visited: 0,
+                total: $0.parkCount
+            )
+        }
+        await backend.updateIndexedRegions(payloads)
+    }
+
     func refreshAll() async {
+        await shareIndexedRegions()
         guard !isSyncing else { return }
         let friends = allFriends()
         guard !friends.isEmpty else { return }
@@ -232,6 +269,41 @@ final class SocialService {
         friend.citiesCount = profile.citiesCount
         friend.currentStreakWeeks = profile.currentStreakWeeks
         friend.parksThisMonth = profile.parksThisMonth
+        applyRegions(profile.regions, to: friend)
+    }
+
+    /// Upsert by region identifier so a friend's standing in a place is replaced, not
+    /// appended to, and places they no longer report drop away.
+    private func applyRegions(_ payloads: [RegionProgressPayload], to friend: Friend) {
+        var existing: [String: FriendRegionProgress] = [:]
+        for progress in friend.regions ?? [] {
+            existing[progress.regionIdentifier] = progress
+        }
+
+        for payload in payloads {
+            let kind = RegionKind(rawValue: payload.kind) ?? .city
+            if let current = existing.removeValue(forKey: payload.identifier) {
+                current.regionName = payload.name
+                current.kindRaw = kind.rawValue
+                current.visited = payload.visited
+                current.total = payload.total
+                current.updatedAt = Date()
+            } else {
+                let progress = FriendRegionProgress(
+                    regionIdentifier: payload.identifier,
+                    regionName: payload.name,
+                    kind: kind,
+                    visited: payload.visited,
+                    total: payload.total
+                )
+                progress.friend = friend
+                modelContext.insert(progress)
+            }
+        }
+
+        for stale in existing.values {
+            modelContext.delete(stale)
+        }
     }
 
     private func displayName(for profile: FriendProfilePayload) -> String {

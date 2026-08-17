@@ -13,7 +13,18 @@ import UIKit
 /// park names are made up, and every coordinate is a small offset from an anchor
 /// (the user's home when it's set), so the sample data lands wherever the user is
 /// rather than pointing at any real place.
-struct MockSocialBackend: SocialBackend {
+final class MockSocialBackend: SocialBackend, @unchecked Sendable {
+    /// Set by the service from what the user has actually indexed. Guarded by a lock because
+    /// the protocol is Sendable and this is the one piece of mutable state in here.
+    private let lock = NSLock()
+    private var indexedRegions: [RegionProgressPayload] = []
+
+    func updateIndexedRegions(_ regions: [RegionProgressPayload]) async {
+        lock.lock()
+        defer { lock.unlock() }
+        indexedRegions = regions
+    }
+
     private let profiles: [String: FriendProfilePayload]
     private let visitsByCode: [String: [FriendVisitPayload]]
 
@@ -48,10 +59,38 @@ struct MockSocialBackend: SocialBackend {
 
     // MARK: - SocialBackend
 
+    /// Sample standings keyed by nothing real: the identifiers are filled in against
+    /// whatever the user has actually indexed, so the race has someone to run against in a
+    /// build with no CloudKit. Names stay generic — see the sample data note above.
+    private func regionProgress(forSampleAt index: Int) -> [RegionProgressPayload] {
+        lock.lock()
+        let regions = indexedRegions
+        lock.unlock()
+        return regions.map { region in
+            RegionProgressPayload(
+                identifier: region.identifier,
+                name: region.name,
+                kind: region.kind,
+                visited: max(0, min(region.total, region.total / 3 + index)),
+                total: region.total
+            )
+        }
+    }
+
     func fetchProfile(code: String) async throws -> FriendProfilePayload {
         await Self.simulateLatency()
         guard let profile = profiles[code.uppercased()] else { throw SocialError.notFound }
-        return profile
+        let index = sampleCodes.firstIndex(of: code.uppercased()) ?? 0
+        return FriendProfilePayload(
+            code: profile.code,
+            displayName: profile.displayName,
+            totalParks: profile.totalParks,
+            totalVisits: profile.totalVisits,
+            citiesCount: profile.citiesCount,
+            currentStreakWeeks: profile.currentStreakWeeks,
+            parksThisMonth: profile.parksThisMonth,
+            regions: regionProgress(forSampleAt: index)
+        )
     }
 
     func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload] {
