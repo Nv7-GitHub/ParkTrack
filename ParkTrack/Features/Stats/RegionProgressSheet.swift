@@ -48,6 +48,8 @@ struct RegionProgressSheet: View {
                 VStack(alignment: .leading, spacing: Theme.sectionSpacing) {
                     header
 
+                    indexStatus
+
                     if !completion.isIndexed {
                         indexPrompt
                     } else if completion.isApproximate {
@@ -115,6 +117,38 @@ struct RegionProgressSheet: View {
         }
     }
 
+    /// Progress, queue position or failure for this region, wherever it is in its life.
+    @ViewBuilder
+    private var indexStatus: some View {
+        let state = services.regionIndexer?.state(forIdentifier: completion.identifier, name: completion.name)
+        if state != nil || indexError != nil {
+            Card {
+                VStack(alignment: .leading, spacing: 8) {
+                    switch state {
+                    case .sweeping(let progress):
+                        Text("Searching \(completion.name)…")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        IndexProgressView(progress: progress)
+                    case .queued(let position):
+                        Text(queueLabel(position: position))
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
+                    case .none:
+                        EmptyView()
+                    }
+
+                    if let indexError {
+                        Text(indexError)
+                            .font(.caption)
+                            .foregroundStyle(Theme.sunset)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+
     private var indexPrompt: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
@@ -145,23 +179,7 @@ struct RegionProgressSheet: View {
 
                 // This region's own standing. One shared bar meant opening another city showed
                 // whatever sweep happened to be running somewhere else.
-                switch services.regionIndexer?.state(forIdentifier: completion.identifier, name: completion.name) {
-                case .sweeping(let progress):
-                    IndexProgressView(progress: progress)
-                case .queued(let position):
-                    Text(queueLabel(position: position))
-                        .font(.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                case .none:
-                    EmptyView()
-                }
 
-                if let indexError {
-                    Text(indexError)
-                        .font(.caption)
-                        .foregroundStyle(Theme.sunset)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
         }
     }
