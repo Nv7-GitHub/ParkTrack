@@ -188,7 +188,7 @@ enum RecommendationEngine {
                 park: park,
                 reason: .wishlist,
                 score: Weight.wishlist * (0.85 + 0.15 * proximity(meters)),
-                headline: "On Your Wishlist",
+                headline: "Wishlist",
                 detail: detail,
                 distanceMeters: meters
             )
@@ -214,7 +214,7 @@ enum RecommendationEngine {
                 park: park,
                 reason: .closest,
                 score: Weight.closest * proximity(meters),
-                headline: index == 0 ? "Closest Unvisited Park" : "Close By",
+                headline: index == 0 ? "Closest" : "Nearby",
                 detail: "\(park.name) is \(Format.distance(meters)) away and still unlogged.",
                 distanceMeters: meters
             )
@@ -251,9 +251,7 @@ enum RecommendationEngine {
                     park: park,
                     reason: .finishRadius,
                     score: Weight.finishRadius * base,
-                    headline: isNearlyDone(visited: visitedCount, total: inside.count, remaining: remaining.count)
-                        ? "Only \(remaining.count) Left in Your \(Format.miles(radius)) Ring"
-                        : "\(remaining.count) Left in Your \(Format.miles(radius)) Ring",
+                    headline: "\(remaining.count) left within \(Format.miles(radius))",
                     detail: "Visiting this would put you at \(Format.percent(after)) within \(Format.miles(radius)).",
                     distanceMeters: meters
                 ))
@@ -291,9 +289,7 @@ enum RecommendationEngine {
                     park: park,
                     reason: .finishRegion,
                     score: Weight.finishRegion * base,
-                    headline: isNearlyDone(visited: visitedCount, total: group.count, remaining: remaining.count)
-                        ? "Nearly Done with \(region)"
-                        : "\(remaining.count) Left in \(region)",
+                    headline: "\(remaining.count) left in \(region)",
                     detail: "Visiting this would put you at \(Format.percent(after)) of \(region).",
                     distanceMeters: distance(park, from: anchor)
                 ))
@@ -315,7 +311,7 @@ enum RecommendationEngine {
                 park: park,
                 reason: .newTerritory,
                 score: Weight.newTerritory * (0.7 + 0.3 * proximity(meters)),
-                headline: "New Territory",
+                headline: "New territory",
                 detail: "This would be your first logged park in \(region).",
                 distanceMeters: meters
             )
@@ -352,7 +348,7 @@ enum RecommendationEngine {
                 park: park,
                 reason: .weekendPick,
                 score: Weight.weekendPick * (0.5 + 0.5 * sweetSpot),
-                headline: "Weekend Pick",
+                headline: "Weekend pick",
                 detail: "A bigger outing at \(Format.distance(meters)) out, away from your usual loop.",
                 distanceMeters: meters
             ))

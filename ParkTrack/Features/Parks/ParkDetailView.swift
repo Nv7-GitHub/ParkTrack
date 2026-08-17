@@ -15,6 +15,7 @@ struct ParkDetailView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(LocationProvider.self) private var location
+    @Environment(AppRouter.self) private var router
 
     @State private var isLogging = false
     @State private var editingVisit: Visit?
@@ -158,6 +159,23 @@ struct ParkDetailView: View {
             .allowsHitTesting(false)
             .frame(height: 280)
             .accessibilityHidden(true)
+            // The hero is a still image of the park's surroundings, so the obvious thing to do
+            // with it is tap it — and the obvious result is the real map, centred here.
+            .contentShape(Rectangle())
+            .onTapGesture { router.showOnMap(park) }
+            .overlay(alignment: .topTrailing) {
+                Label("Open in map", systemImage: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption2.weight(.semibold))
+                    .labelStyle(.iconOnly)
+                    .padding(8)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(12)
+                    .allowsHitTesting(false)
+            }
+            .accessibilityElement()
+            .accessibilityLabel("Show \(park.name) on the map")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { router.showOnMap(park) }
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {

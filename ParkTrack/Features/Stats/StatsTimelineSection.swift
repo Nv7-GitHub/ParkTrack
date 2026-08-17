@@ -228,16 +228,23 @@ struct StatsTimelineSection: View {
         switch count {
         case ..<8: return 1
         case ..<15: return 2
-        case ..<27: return 3
+        case ..<27: return 4
         case ..<50: return 6
         default: return 12
         }
     }
 
+    /// Month names, not initials.
+    ///
+    /// The narrow format renders a single letter, and since the axis only labels every second
+    /// or third month, a year came out as "S N J M M J" — unreadable, and worse than useless
+    /// because it looks like it should mean something. Abbreviated names survive the same
+    /// stride, and the year is called out at each January so a multi-year range stays placed.
     private func axisLabel(_ date: Date) -> String {
-        monthsBack > 14
-        ? date.formatted(.dateTime.month(.narrow).year(.twoDigits))
-        : date.formatted(.dateTime.month(.narrow))
+        let month = date.formatted(.dateTime.month(.abbreviated))
+        guard monthsBack > 14 else { return month }
+        let isJanuary = Calendar.current.component(.month, from: date) == 1
+        return isJanuary ? date.formatted(.dateTime.month(.abbreviated).year(.twoDigits)) : month
     }
 
     private func monthLabel(_ date: Date) -> String {

@@ -122,6 +122,10 @@ struct RegionProgressSheet: View {
                 .tint(Theme.accent)
                 .disabled(isIndexing)
 
+                if isIndexing {
+                    IndexProgressView(progress: services.regionIndexer?.progress)
+                }
+
                 if let indexError {
                     Text(indexError)
                         .font(.caption)

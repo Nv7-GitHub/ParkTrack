@@ -134,11 +134,14 @@ struct RegionIndexManager: View {
                             .disabled(isWorking || location.currentLocation == nil)
 
                             if let active = indexer?.activeRegionName {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                    Text("Sweeping \(active)…")
-                                        .font(.caption)
-                                        .foregroundStyle(Theme.textSecondary)
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 8) {
+                                        ProgressView()
+                                        Text("Sweeping \(active)…")
+                                            .font(.caption)
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
+                                    IndexProgressView(progress: indexer?.progress)
                                 }
                             }
 
@@ -314,6 +317,39 @@ private struct RegionIndexRow: View {
                 }
                 .accessibilityLabel("Options for \(region.displayName)")
             }
+        }
+    }
+}
+
+/// What the sweep behind an index is actually doing.
+///
+/// Indexing a county is hundreds of searches over several minutes. A bare spinner for that
+/// long is indistinguishable from a hang, and the two failures it used to report — "it got
+/// interrupted" and "couldn't index" — gave no clue how far it had got.
+struct IndexProgressView: View {
+    let progress: ParkDiscoveryService.SweepProgress?
+
+    var body: some View {
+        if let progress, progress.tilesTotal > 0 {
+            VStack(alignment: .leading, spacing: 5) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.separator)
+                        Capsule()
+                            .fill(Theme.progressGradient)
+                            .frame(width: max(4, geo.size.width * progress.fraction))
+                            .animation(.smooth(duration: 0.3), value: progress.fraction)
+                    }
+                }
+                .frame(height: 6)
+
+                Text("Searched \(progress.tilesSearched) of \(progress.tilesTotal) areas · \(Format.parkCount(progress.parksFound)) found")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                    .contentTransition(.numericText())
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityValue("\(Int(progress.fraction * 100)) percent, \(progress.parksFound) parks found")
         }
     }
 }

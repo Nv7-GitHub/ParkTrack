@@ -21,6 +21,9 @@ final class RegionIndexer {
     /// queue a second sweep on top of it.
     private(set) var activeRegionName: String?
     private(set) var lastError: String?
+    /// Live progress of the sweep behind the active index, so the UI can show something
+    /// moving rather than an indeterminate spinner for minutes.
+    private(set) var progress: ParkDiscoveryService.SweepProgress?
 
     /// A state is far too large to sweep tile by tile in one go; indexing is offered for
     /// cities and counties, and a state's number stays the sum of what is known.
@@ -148,7 +151,12 @@ final class RegionIndexer {
         force: Bool = false
     ) async -> RegionIndex? {
         _ = force  // The sweep below is unconditionally forced; see the comment there.
-        guard activeRegionName == nil else { return nil }
+        // Wait for any index already running instead of refusing outright, which is what
+        // made a second tap report "couldn't index" with no explanation.
+        while activeRegionName != nil {
+            if Task.isCancelled { return nil }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
 
         let identifier = RegionIndex.identity(kind: kind, name: name, container: container)
         var resolved = placemark
@@ -184,6 +192,7 @@ final class RegionIndexer {
         defer {
             record.isIndexing = false
             activeRegionName = nil
+            progress = nil
         }
 
         // A uniform-density sweep, not the ordinary one. The ordinary sweep widens in levels
@@ -193,13 +202,17 @@ final class RegionIndexer {
         let result = await discovery.sweepDense(
             around: center,
             radiusMiles: radius / Format.metersPerMile
-        )
+        ) { [weak self] update in
+            self?.progress = update
+        }
+        progress = nil
         record.isApproximate = result.truncated
 
         // A cut-short sweep has not seen the whole place, and recording it as indexed would
         // publish a total that is simply wrong — including to friends racing against it.
         guard result.completed, !Task.isCancelled else {
-            record.lastError = "Indexing \(name) was interrupted. Try again."
+            record.lastError = discovery.lastError
+                ?? "Indexing \(name) stopped early. Try again in a moment."
             lastError = record.lastError
             try? modelContext.save()
             return nil

@@ -100,7 +100,8 @@ final class RecommendationEngineTests: XCTestCase {
 
         XCTAssertEqual(results.first?.park.name, "Ring Finisher")
         XCTAssertEqual(results.first?.reason, .finishRadius)
-        XCTAssertTrue(results.first?.headline.contains("Ring") == true)
+        // The headline names the ring it would finish, e.g. "1 left within 5 mi".
+        XCTAssertTrue(results.first?.headline.contains("within") == true, "Got: \(results.first?.headline ?? "nil")")
     }
 
     func testVisitedParksAreNeverRecommended() throws {

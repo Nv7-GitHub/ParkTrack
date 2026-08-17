@@ -11,35 +11,32 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(LocationProvider.self) private var location
     @State private var services = ServiceHub()
-    @State private var selection: Tab = .home
-
-    enum Tab: Hashable {
-        case home, map, parks, stats, friends
-    }
+    @State private var router = AppRouter()
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: $router.selectedTab) {
             HomeView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
-                .tag(Tab.home)
+                .tag(RootTab.home)
 
             MapScreen()
                 .tabItem { Label("Map", systemImage: "map.fill") }
-                .tag(Tab.map)
+                .tag(RootTab.map)
 
             ParksListScreen()
                 .tabItem { Label("Parks", systemImage: "tree.fill") }
-                .tag(Tab.parks)
+                .tag(RootTab.parks)
 
             StatsScreen()
                 .tabItem { Label("Stats", systemImage: "chart.bar.fill") }
-                .tag(Tab.stats)
+                .tag(RootTab.stats)
 
             FriendsScreen()
                 .tabItem { Label("Friends", systemImage: "person.2.fill") }
-                .tag(Tab.friends)
+                .tag(RootTab.friends)
         }
         .environment(services)
+        .environment(router)
         .task {
             services.start(modelContext: modelContext)
             location.requestAuthorization()

@@ -266,6 +266,17 @@ final class ParkDiscoveryService {
         return order.compactMap { found[$0] }
     }
 
+    /// How a uniform-density sweep is getting on, for the UI to show while it runs.
+    struct SweepProgress {
+        let tilesSearched: Int
+        let tilesTotal: Int
+        let parksFound: Int
+
+        var fraction: Double {
+            tilesTotal > 0 ? Double(tilesSearched) / Double(tilesTotal) : 0
+        }
+    }
+
     /// What a uniform-density sweep managed to do.
     struct DenseSweepResult {
         let found: [Park]
@@ -279,6 +290,9 @@ final class ParkDiscoveryService {
     /// Tiles beyond this and one region would occupy the searcher for many minutes.
     nonisolated static let maxIndexGridSide = 22
 
+    /// How many tiles in a row may fail before a dense sweep gives up.
+    nonisolated static let maxConsecutiveTileFailures = 6
+
     /// Sweeps an area at even density, for indexing.
     ///
     /// The ordinary sweep grows in concentric levels that trible in size, so its outer tiles
@@ -288,8 +302,15 @@ final class ParkDiscoveryService {
     /// number of parks in a place. Here every tile is the same small size, whatever the
     /// extent, and the caller is told when the area was too big to cover at that density.
     @discardableResult
-    func sweepDense(around coordinate: CLLocationCoordinate2D, radiusMiles: Double) async -> DenseSweepResult {
-        guard !isSweeping else { return DenseSweepResult(found: [], completed: false, truncated: false) }
+    func sweepDense(
+        around coordinate: CLLocationCoordinate2D,
+        radiusMiles: Double,
+        onProgress: ((SweepProgress) -> Void)? = nil
+    ) async -> DenseSweepResult {
+        // Wait for whatever is already searching rather than failing. Bailing out here is how
+        // tapping "Index Redmond" while the launch sweep was still running reported itself as
+        // interrupted, and how a second tap reported that it simply could not index at all.
+        await waitForSweepToFinish()
         isSweeping = true
         isSearching = true
         lastError = nil
@@ -314,7 +335,10 @@ final class ParkDiscoveryService {
         var completed = true
         var failures = 0
 
-        for tile in Self.tiles(for: square, side: gridSide) {
+        let plan = Self.tiles(for: square, side: gridSide)
+        onProgress?(SweepProgress(tilesSearched: 0, tilesTotal: plan.count, parksFound: 0))
+
+        for (index, tile) in plan.enumerated() {
             if Task.isCancelled { completed = false; break }
             let outcome = await Self.candidates(inTiles: [tile], wideOver: tile)
             if Task.isCancelled { completed = false; break }
@@ -324,13 +348,26 @@ final class ParkDiscoveryService {
                 order.append(park.identifier)
             }
 
+            // A dense sweep is dozens or hundreds of requests and the map service throttles
+            // in bursts, so a few refusals in a row are normal and abandoning on the first
+            // couple would strand most attempts. It gives up only when a run of tiles fails,
+            // by which point something is actually wrong.
             if outcome.failure != nil {
                 lastError = outcome.failure
                 failures += 1
-                if failures >= Self.maxFailedLevels { completed = false; break }
+                if failures >= Self.maxConsecutiveTileFailures { completed = false; break }
+                // Back off before the next tile rather than hammering a service already
+                // telling us to slow down.
+                try? await Task.sleep(for: .milliseconds(600 * failures))
             } else {
                 failures = 0
             }
+
+            onProgress?(SweepProgress(
+                tilesSearched: index + 1,
+                tilesTotal: plan.count,
+                parksFound: order.count
+            ))
         }
 
         if completed && !truncated {
@@ -342,6 +379,15 @@ final class ParkDiscoveryService {
             completed: completed,
             truncated: truncated
         )
+    }
+
+    /// Yields until no sweep is in flight. Everything here is main-actor bound, so this is a
+    /// cooperative wait rather than a lock.
+    private func waitForSweepToFinish() async {
+        while isSweeping {
+            if Task.isCancelled { return }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
     }
 
     /// Whether every part of a completion ring has actually been searched.

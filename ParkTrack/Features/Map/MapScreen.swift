@@ -14,6 +14,7 @@ import CoreLocation
 struct MapScreen: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(LocationProvider.self) private var location
+    @Environment(AppRouter.self) private var router
     @Environment(AppSettings.self) private var settings
     @Environment(ServiceHub.self) private var services
     @Query private var parks: [Park]
@@ -138,6 +139,9 @@ struct MapScreen: View {
             }
             .sensoryFeedback(.impact, trigger: hapticTick)
             .task { await prepare() }
+            // Another tab asked for a park to be shown here.
+            .onChange(of: router.mapFocus?.identifier) { _, _ in focusRoutedPark() }
+            .onAppear { focusRoutedPark() }
             .onDisappear { scanner.cancel() }
         }
     }
@@ -469,6 +473,24 @@ struct MapScreen: View {
 
     private static func defaultRegion(around coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
         MKCoordinateRegion(center: coordinate, latitudinalMeters: 8_000, longitudinalMeters: 8_000)
+    }
+
+    /// Centres on and selects a park another screen routed here, then clears the request so
+    /// the same park can be sent again later.
+    private func focusRoutedPark() {
+        guard let park = router.mapFocus else { return }
+        selectedParkIdentifier = park.identifier
+        withAnimation(.smooth(duration: 0.5)) {
+            camera = .region(
+                MKCoordinateRegion(
+                    center: park.coordinate,
+                    latitudinalMeters: 1_400,
+                    longitudinalMeters: 1_400
+                )
+            )
+        }
+        present(.detail(park))
+        router.clearMapFocus()
     }
 
     private func scheduleScan(for region: MKCoordinateRegion) {

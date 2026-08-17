@@ -56,6 +56,7 @@
 		78F1F370B7B67E64E3A13072 /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EADE91C60B3BBF86768A026 /* MapScreen.swift */; };
 		7A89C0729225125DD2AC207F /* Friend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 640F2D1F13F9C3DCF72EECEE /* Friend.swift */; };
 		7AB656604969E389BA6B8B43 /* FriendsLeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1547326E14C2B2CEE3D34C52 /* FriendsLeaderboardView.swift */; };
+		7C6CBA15014EB0F321645E3A /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7EBB218F4711F007D3D2FC7 /* AppRouter.swift */; };
 		809E64475E30D94A01FEB4DB /* StatsSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCE74713534F16A48A4109C5 /* StatsSupport.swift */; };
 		81319F37A091FEB664DC1549 /* ParkQuickLookSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FC4C6EBC344E7CE81331F62 /* ParkQuickLookSheet.swift */; };
 		85C2DAEF6B8404B8E49AD548 /* Park.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71DBCFC0F44B633C7621FF4 /* Park.swift */; };
@@ -152,6 +153,7 @@
 		951199E3976402CE7E762306 /* HomeRecentVisits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRecentVisits.swift; sourceTree = "<group>"; };
 		997999F0F575A142910327F4 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		A7C7563A60E38AA97927CD7C /* ScreenTourUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTourUITests.swift; sourceTree = "<group>"; };
+		A7EBB218F4711F007D3D2FC7 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
 		A800F5DB061B60D3FDFDF5FD /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		A94530D184B1227E16A33097 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
@@ -189,6 +191,7 @@
 		00685439E1E7DA9E173EF400 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				A7EBB218F4711F007D3D2FC7 /* AppRouter.swift */,
 				4AF64A33B7AE66CA42FDB62A /* ParkTrackApp.swift */,
 				4F6ED712DA5F75C2864331D2 /* RootView.swift */,
 			);
@@ -567,6 +570,7 @@
 			files = (
 				E7E3781BC6746A5F60ECD930 /* AddFriendSheet.swift in Sources */,
 				D680971D7D80D261742A979A /* AddParkHereSheet.swift in Sources */,
+				7C6CBA15014EB0F321645E3A /* AppRouter.swift in Sources */,
 				48C108CC77F7EDBF3FC325F1 /* AppSettings.swift in Sources */,
 				64FD9AB14813932B81518678 /* CloudKitSocialBackend.swift in Sources */,
 				9B314360D14237E2DCB9FE69 /* Components.swift in Sources */,

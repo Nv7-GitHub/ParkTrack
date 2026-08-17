@@ -209,7 +209,12 @@ struct Pill: View {
             if let systemImage {
                 Image(systemName: systemImage).font(.caption2)
             }
-            Text(text).font(.caption.weight(.medium))
+            // A pill is a capsule; wrapped text inside one reads as a mistake, so it stays on
+            // one line and shrinks a little before it truncates.
+            Text(text)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 5)
