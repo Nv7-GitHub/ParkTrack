@@ -47,11 +47,13 @@ struct SettingsScreen: View {
         return count
     }
 
-    @State private var homePlaceName: String?
-    @State private var isResolvingHomeName = false
+    /// Reverse-geocoded names, per place, so a saved point reads as somewhere rather than
+    /// as a pair of numbers.
+    @State private var placeNames: [SavedPlaceKind: String] = [:]
+    @State private var resolvingPlace: SavedPlaceKind?
     @State private var mediaBytes: Int64 = 0
 
-    @State private var isPickingHome = false
+    @State private var pickingPlace: SavedPlaceKind?
     @State private var isConfirmingDeletion = false
     @State private var isImporting = false
 
@@ -98,7 +100,7 @@ struct SettingsScreen: View {
             ScrollView {
                 VStack(spacing: Theme.sectionSpacing) {
                     profileCard(settings: settings)
-                    homeCard()
+                    placesCard()
                     radiusCard(settings: settings)
                     dataCard()
                     backupCard()
@@ -126,14 +128,15 @@ struct SettingsScreen: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(isPresented: $isPickingHome) {
-                SettingsHomeLocationPicker(
-                    initialCoordinate: settings.homeCoordinate ?? location.currentLocation?.coordinate,
-                    initialLabel: settings.homeLabel
+            .sheet(item: $pickingPlace) { kind in
+                SettingsPlaceLocationPicker(
+                    kind: kind,
+                    initialCoordinate: settings.coordinate(for: kind) ?? location.currentLocation?.coordinate,
+                    initialLabel: settings.label(for: kind)
                 ) { coordinate, label in
-                    settings.homeCoordinate = coordinate
-                    settings.homeLabel = label
-                    Task { await resolveHomePlaceName() }
+                    settings.setCoordinate(coordinate, for: kind)
+                    settings.setLabel(label, for: kind)
+                    Task { await resolvePlaceName(for: kind) }
                 }
             }
             .sheet(isPresented: $isConfirmingDeletion) {
@@ -151,8 +154,12 @@ struct SettingsScreen: View {
         }
         .task {
             mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
-            await resolveHomePlaceName()
             refreshExportFile()
+            // Sequentially: the geocoder is rate-limited, and three lookups fired at once is
+            // how you get two of them back empty.
+            for kind in settings.savedPlaces {
+                await resolvePlaceName(for: kind)
+            }
         }
         .onChange(of: parks.count) { refreshExportFile() }
         .onChange(of: visits.count) { refreshExportFile() }
@@ -236,56 +243,26 @@ struct SettingsScreen: View {
         return "Add \(who) on ParkTrack with friend code \(settings.friendCode)."
     }
 
-    // MARK: - Home
+    // MARK: - Places
 
-    private func homeCard() -> some View {
+    /// Every place the rings can be measured from, and the only screen that adds or removes
+    /// one. A place that isn't set says what it would be for rather than hiding.
+    private func placesCard() -> some View {
         Card {
-            VStack(alignment: .leading, spacing: 16) {
-                SectionHeader("Home location", subtitle: "The centre of every completion ring")
+            VStack(alignment: .leading, spacing: 14) {
+                SectionHeader(
+                    "Your places",
+                    subtitle: "Stats can measure how much you've explored around any of these"
+                )
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(settings.homeLabel.isEmpty ? "Home" : settings.homeLabel)
-                        .font(.headline)
-                        .foregroundStyle(Theme.textPrimary)
-
-                    if settings.homeCoordinate != nil {
-                        HStack(spacing: 6) {
-                            if isResolvingHomeName {
-                                ProgressView().controlSize(.mini)
-                            }
-                            Text(homePlaceName ?? coordinateDescription)
-                                .font(.subheadline)
-                                .foregroundStyle(Theme.textSecondary)
+                VStack(spacing: 0) {
+                    ForEach(SavedPlaceKind.allCases) { kind in
+                        placeRow(kind)
+                        if kind != SavedPlaceKind.allCases.last {
+                            Divider().overlay(Theme.separator).padding(.vertical, 4)
                         }
-                    } else {
-                        Text("Not set yet. Stats fall back to wherever you are right now.")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-
-                HStack(spacing: 10) {
-                    Button {
-                        isPickingHome = true
-                    } label: {
-                        Label("Choose on map", systemImage: "mappin.and.ellipse")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-
-                    Button {
-                        Task { await useCurrentLocationAsHome() }
-                    } label: {
-                        Label("Use current", systemImage: "location.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.accent)
-                    .disabled(!location.isAuthorized)
-                }
-                .font(.subheadline.weight(.medium))
 
                 if !location.isAuthorized {
                     Text("Location access is off, so ParkTrack can't read your current position.")
@@ -293,37 +270,112 @@ struct SettingsScreen: View {
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Text("Home is also the fallback centre for the rest of the app when there's no location fix.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private var coordinateDescription: String {
-        guard let coordinate = settings.homeCoordinate else { return "" }
+    @ViewBuilder
+    private func placeRow(_ kind: SavedPlaceKind) -> some View {
+        let coordinate = settings.coordinate(for: kind)
+
+        HStack(spacing: 12) {
+            Image(systemName: kind.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(coordinate == nil ? Theme.textSecondary : kind.tint)
+                .frame(width: 32, height: 32)
+                .background(
+                    (coordinate == nil ? Theme.textSecondary : kind.tint).opacity(0.14),
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(settings.label(for: kind))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
+
+                if coordinate != nil {
+                    HStack(spacing: 6) {
+                        if resolvingPlace == kind { ProgressView().controlSize(.mini) }
+                        Text(placeNames[kind] ?? coordinateDescription(for: kind))
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(2)
+                    }
+                } else {
+                    Text(kind.unsetMessage)
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Menu {
+                Button("Choose on map", systemImage: "mappin.and.ellipse") {
+                    pickingPlace = kind
+                }
+                Button("Use current location", systemImage: "location.fill") {
+                    Task { await useCurrentLocation(for: kind) }
+                }
+                .disabled(!location.isAuthorized)
+                if coordinate != nil {
+                    Divider()
+                    Button("Remove", systemImage: "trash", role: .destructive) {
+                        remove(kind)
+                    }
+                }
+            } label: {
+                Image(systemName: coordinate == nil ? "plus.circle.fill" : "ellipsis.circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(coordinate == nil ? "Add \(kind.title)" : "Edit \(kind.title)")
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func coordinateDescription(for kind: SavedPlaceKind) -> String {
+        guard let coordinate = settings.coordinate(for: kind) else { return "" }
         return String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude)
     }
 
-    private func useCurrentLocationAsHome() async {
+    private func remove(_ kind: SavedPlaceKind) {
+        withAnimation(.smooth(duration: 0.25)) {
+            settings.setCoordinate(nil, for: kind)
+        }
+        placeNames[kind] = nil
+        show(status: "\(kind.title) removed.")
+    }
+
+    private func useCurrentLocation(for kind: SavedPlaceKind) async {
         activity = "Finding you…"
         defer { activity = nil }
         guard let fix = await location.resolveLocation() else {
             errorMessage = "Couldn't get a location fix. Try again outdoors or with Wi-Fi on."
             return
         }
-        settings.homeCoordinate = fix.coordinate
-        await resolveHomePlaceName()
-        if let homePlaceName { settings.homeLabel = homePlaceName }
-        show(status: "Home set to your current location.")
+        settings.setCoordinate(fix.coordinate, for: kind)
+        await resolvePlaceName(for: kind)
+        show(status: "\(kind.title) set to your current location.")
     }
 
     /// One-off reverse geocode. Park geocoding goes through `RegionResolver`'s throttled
     /// queue; this is a single user-triggered lookup, so it can go direct.
-    private func resolveHomePlaceName() async {
-        guard let coordinate = settings.homeCoordinate else {
-            homePlaceName = nil
+    private func resolvePlaceName(for kind: SavedPlaceKind) async {
+        guard let coordinate = settings.coordinate(for: kind) else {
+            placeNames[kind] = nil
             return
         }
-        isResolvingHomeName = true
-        defer { isResolvingHomeName = false }
+        resolvingPlace = kind
+        defer { resolvingPlace = nil }
 
         let placemarks = try? await CLGeocoder().reverseGeocodeLocation(
             CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
@@ -332,7 +384,7 @@ struct SettingsScreen: View {
         let parts = [placemark.locality ?? placemark.subAdministrativeArea, placemark.administrativeArea]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
-        homePlaceName = parts.isEmpty ? placemark.country : parts.joined(separator: ", ")
+        placeNames[kind] = parts.isEmpty ? placemark.country : parts.joined(separator: ", ")
     }
 
     // MARK: - Radius
@@ -749,13 +801,14 @@ struct SettingsScreen: View {
     }
 }
 
-/// Pan-to-place picker for the home coordinate.
+/// Pan-to-place picker for one of the saved places.
 ///
 /// A fixed crosshair over a moving map beats a draggable pin: it works one-handed, and
 /// the target stays under your thumb instead of under your finger.
-struct SettingsHomeLocationPicker: View {
+struct SettingsPlaceLocationPicker: View {
     @Environment(\.dismiss) private var dismiss
 
+    let kind: SavedPlaceKind
     let initialCoordinate: CLLocationCoordinate2D?
     let initialLabel: String
     let onSave: (CLLocationCoordinate2D, String) -> Void
@@ -766,10 +819,12 @@ struct SettingsHomeLocationPicker: View {
     @State private var label: String
 
     init(
+        kind: SavedPlaceKind,
         initialCoordinate: CLLocationCoordinate2D?,
         initialLabel: String,
         onSave: @escaping (CLLocationCoordinate2D, String) -> Void
     ) {
+        self.kind = kind
         self.initialCoordinate = initialCoordinate
         self.initialLabel = initialLabel
         self.onSave = onSave
@@ -804,14 +859,14 @@ struct SettingsHomeLocationPicker: View {
                     hasCentre = true
                 }
                 .ignoresSafeArea(edges: .bottom)
-                .accessibilityLabel("Map. Pan to place your home location.")
+                .accessibilityLabel("Map. Pan to place your \(kind.sheetLabel) location.")
 
                 crosshair
                     .allowsHitTesting(false)
 
                 controls
             }
-            .navigationTitle("Home location")
+            .navigationTitle("\(kind.title) location")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -844,7 +899,7 @@ struct SettingsHomeLocationPicker: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
 
-            TextField("Label, e.g. Home", text: $label)
+            TextField("Label, e.g. \(kind.title)", text: $label)
                 .textInputAutocapitalization(.words)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -859,9 +914,9 @@ struct SettingsHomeLocationPicker: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
-                Button("Set home") {
+                Button("Set \(kind.sheetLabel)") {
                     let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
-                    onSave(centre, trimmed.isEmpty ? "Home" : trimmed)
+                    onSave(centre, trimmed.isEmpty ? kind.title : trimmed)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)

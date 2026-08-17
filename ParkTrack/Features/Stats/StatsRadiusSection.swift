@@ -12,6 +12,8 @@ struct StatsRadiusSection: View {
     @Binding var selectedAnchor: StatsAnchor
     let onDropPin: () -> Void
 
+    @Environment(AppSettings.self) private var settings
+
     @State private var exploreMiles: Double = 15
     @State private var detail: RadiusCompletion?
     let cache: StatsCache
@@ -78,7 +80,7 @@ struct StatsRadiusSection: View {
             RadiusProgressSheet(
                 completion: completion,
                 origin: origin,
-                anchorLabel: anchor.sheetLabel
+                anchorLabel: anchor.sheetLabel(in: settings)
             )
             .presentationDetents([.medium, .large])
         }
@@ -86,9 +88,11 @@ struct StatsRadiusSection: View {
 
     private var anchorPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Only the places that exist. Removing school in Settings takes its segment
+            // away rather than leaving a control that measures from nowhere.
             Picker("Measure from", selection: $selectedAnchor) {
-                ForEach(StatsAnchor.allCases) { option in
-                    Label(option.title, systemImage: option.systemImage).tag(option)
+                ForEach(StatsAnchor.available(in: settings)) { option in
+                    Label(option.title(in: settings), systemImage: option.systemImage).tag(option)
                 }
             }
             .pickerStyle(.segmented)

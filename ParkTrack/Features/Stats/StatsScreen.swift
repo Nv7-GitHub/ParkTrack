@@ -42,7 +42,7 @@ struct StatsScreen: View {
     private var anchorCoordinate: CLLocationCoordinate2D? {
         switch anchor {
         case .currentLocation: return location.currentLocation?.coordinate
-        case .home: return settings.homeCoordinate
+        case .place(let kind): return settings.coordinate(for: kind)
         case .pin: return droppedPin
         }
     }
@@ -164,6 +164,13 @@ struct StatsScreen: View {
         }
         .task(id: statsSignature) { await warmCache() }
         .task(id: anchor) { await warmCache() }
+        // Removing the place you were measuring from would otherwise leave the screen
+        // anchored to somewhere that no longer exists, with no segment to move off.
+        .onChange(of: settings.savedPlaces) { _, places in
+            if case .place(let kind) = anchor, !places.contains(kind) {
+                anchor = .currentLocation
+            }
+        }
     }
 
     // MARK: Headline

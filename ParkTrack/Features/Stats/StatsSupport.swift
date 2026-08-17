@@ -6,27 +6,45 @@ import CoreLocation
 ///
 /// The anchor is a user choice rather than a fixed point because "how much have I
 /// explored" means something different depending on whether you're standing somewhere
-/// new, sitting at home, or planning a trip around a spot you dropped on the map.
-enum StatsAnchor: String, CaseIterable, Identifiable {
+/// new, sitting at home, at school or at work, or planning a trip around a spot you
+/// dropped on the map.
+///
+/// The saved places are whichever ones the user has actually set, so a picker never offers
+/// a centre that does not exist and removing a place removes its segment.
+enum StatsAnchor: Hashable, Identifiable {
     case currentLocation
-    case home
+    case place(SavedPlaceKind)
     case pin
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .currentLocation: return "current"
+        case .place(let kind): return kind.rawValue
+        case .pin: return "pin"
+        }
+    }
 
-    var title: String {
+    /// What the picker offers right now: where you are, everywhere you've saved, and a pin.
+    @MainActor
+    static func available(in settings: AppSettings) -> [StatsAnchor] {
+        [.currentLocation] + settings.savedPlaces.map(StatsAnchor.place) + [.pin]
+    }
+
+    @MainActor
+    func title(in settings: AppSettings) -> String {
         switch self {
         case .currentLocation: return "Current"
-        case .home: return "Home"
+        case .place(let kind): return settings.label(for: kind)
         case .pin: return "Pin"
         }
     }
 
     /// How the anchor reads inside a sentence, as opposed to on a segmented control.
-    var sheetLabel: String {
+    @MainActor
+    func sheetLabel(in settings: AppSettings) -> String {
         switch self {
         case .currentLocation: return "you"
-        case .home: return "home"
+        case .place(let kind): return settings.label(for: kind).lowercased()
         case .pin: return "your pin"
         }
     }
@@ -34,7 +52,7 @@ enum StatsAnchor: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .currentLocation: return "location.fill"
-        case .home: return "house.fill"
+        case .place(let kind): return kind.systemImage
         case .pin: return "mappin"
         }
     }
@@ -42,7 +60,7 @@ enum StatsAnchor: String, CaseIterable, Identifiable {
     var unavailableMessage: String {
         switch self {
         case .currentLocation: return "Allow location access to measure rings from where you are."
-        case .home: return "Set a home location in Settings to measure rings from it."
+        case .place(let kind): return "Add a \(kind.sheetLabel) location in Settings to measure rings from it."
         case .pin: return "Drop a pin anywhere on the map to measure rings from it."
         }
     }
