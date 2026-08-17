@@ -98,6 +98,12 @@ final class RegionIndexer {
         )
     }
 
+    /// Indexes a suggestion picked from the search list.
+    @discardableResult
+    func indexSuggestion(_ suggestion: PlaceSuggestion, kind: RegionKind) async -> RegionIndex? {
+        await indexPlace(named: suggestion.query, kind: kind)
+    }
+
     /// Re-sweeps a region that was already indexed. Parks open and close; this is how a
     /// number that has gone stale gets corrected.
     func reindex(_ region: RegionIndex) async {
@@ -121,6 +127,7 @@ final class RegionIndexer {
         placemark: CLPlacemark? = nil,
         force: Bool = false
     ) async -> RegionIndex? {
+        _ = force  // The sweep below is unconditionally forced; see the comment there.
         guard activeRegionName == nil else { return nil }
 
         let identifier = RegionIndex.identity(kind: kind, name: name, container: container)
@@ -159,10 +166,14 @@ final class RegionIndexer {
             activeRegionName = nil
         }
 
+        // Always forced, even for a first index. An unforced sweep skips ground the startup
+        // pass already covered — but that pass tiles a 25-mile radius coarsely, and reusing
+        // it would let a city be called "indexed" off a scan too sparse to have seen all of
+        // it. Indexing is a claim that the place was searched properly, so it searches.
         _ = await discovery.sweep(
             around: center,
             radiusMiles: radius / Format.metersPerMile,
-            force: force
+            force: true
         )
 
         // A cut-short sweep has not seen the whole place, and recording it as indexed would

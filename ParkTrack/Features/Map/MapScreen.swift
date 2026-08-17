@@ -89,6 +89,15 @@ struct MapScreen: View {
             MapReader { proxy in
                 mapView
                     .simultaneousGesture(dropPinGesture(proxy: proxy))
+                    // A dropped pin is a scratch mark, not a selection, so a tap on open map
+                    // should take it back. Simultaneous rather than exclusive so it doesn't
+                    // swallow taps on the park markers layered above the map.
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            guard droppedPin != nil else { return }
+                            withAnimation(.smooth(duration: 0.2)) { droppedPin = nil }
+                        }
+                    )
                     .overlay {
                         if layers.fogOfWar {
                             FogOfWarOverlay(holes: fogHoles(proxy: proxy))

@@ -17,6 +17,8 @@ struct RegionIndexManager: View {
     @State private var kind: RegionKind = .city
     @State private var isWorking = false
     @State private var message: String?
+    @State private var completer = PlaceCompleter()
+    @State private var indexingSuggestion: PlaceSuggestion?
 
     private var indexer: RegionIndexer? { services.regionIndexer }
 
@@ -39,31 +41,86 @@ struct RegionIndexManager: View {
                             .accessibilityLabel("Index a city or a county")
 
                             HStack(spacing: 8) {
-                                TextField(kind == .city ? "City name" : "County name", text: $query)
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(Theme.textSecondary)
+                                TextField(kind == .city ? "Search for a city" : "Search for a county", text: $query)
                                     .textInputAutocapitalization(.words)
                                     .autocorrectionDisabled()
                                     .submitLabel(.search)
                                     .onSubmit { Task { await indexTyped() } }
-                                    .padding(.vertical, 10)
-                                    .padding(.horizontal, 12)
-                                    .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous)
-                                            .strokeBorder(Theme.separator, lineWidth: 1)
-                                    )
+                                    .onChange(of: query) { _, new in completer.update(query: new) }
+                                if !query.isEmpty {
+                                    Button {
+                                        query = ""
+                                        completer.clear()
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(Theme.textSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Clear search")
+                                }
+                            }
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 12)
+                            .background(Theme.background, in: RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous)
+                                    .strokeBorder(Theme.separator, lineWidth: 1)
+                            )
 
-                                Button {
-                                    Task { await indexTyped() }
-                                } label: {
-                                    if isWorking {
-                                        ProgressView()
-                                    } else {
-                                        Image(systemName: "arrow.down.circle.fill")
+                            // Suggestions as you type. Submitting the raw text still works, but
+                            // picking a suggestion is unambiguous: many places share a name and
+                            // only the full "city, state, country" resolves to the right one.
+                            if !completer.suggestions.isEmpty {
+                                VStack(spacing: 0) {
+                                    ForEach(completer.suggestions.prefix(6)) { suggestion in
+                                        Button {
+                                            Task { await index(suggestion) }
+                                        } label: {
+                                            HStack(spacing: 10) {
+                                                Image(systemName: kind == .county ? "map" : "building.2")
+                                                    .font(.footnote)
+                                                    .foregroundStyle(Theme.accent)
+                                                VStack(alignment: .leading, spacing: 1) {
+                                                    Text(suggestion.title)
+                                                        .font(.subheadline.weight(.medium))
+                                                        .foregroundStyle(Theme.textPrimary)
+                                                    if !suggestion.subtitle.isEmpty {
+                                                        Text(suggestion.subtitle)
+                                                            .font(.caption)
+                                                            .foregroundStyle(Theme.textSecondary)
+                                                    }
+                                                }
+                                                Spacer(minLength: 8)
+                                                if indexingSuggestion == suggestion {
+                                                    ProgressView()
+                                                } else {
+                                                    Image(systemName: "arrow.down.circle")
+                                                        .foregroundStyle(Theme.textSecondary)
+                                                }
+                                            }
+                                            .padding(.vertical, 9)
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(isWorking)
+                                        if suggestion != completer.suggestions.prefix(6).last {
+                                            Divider().overlay(Theme.separator)
+                                        }
                                     }
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .tint(Theme.accent)
-                                .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
+                            } else if completer.isSearching {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                    Text("Searching…")
+                                        .font(.caption)
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                            } else if query.trimmingCharacters(in: .whitespaces).count >= 2, !isWorking {
+                                Text("No places matched \"\(query)\".")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.textSecondary)
                             }
 
                             Button {
@@ -125,6 +182,21 @@ struct RegionIndexManager: View {
                 }
             }
         }
+    }
+
+    private func index(_ suggestion: PlaceSuggestion) async {
+        guard let indexer, !isWorking else { return }
+        isWorking = true
+        indexingSuggestion = suggestion
+        message = nil
+        if await indexer.indexSuggestion(suggestion, kind: kind) != nil {
+            query = ""
+            completer.clear()
+        } else {
+            message = indexer.lastError ?? "Couldn't index \(suggestion.title)."
+        }
+        indexingSuggestion = nil
+        isWorking = false
     }
 
     private func indexTyped() async {

@@ -246,3 +246,45 @@ final class NeighbourRegionInferenceTests: XCTestCase {
         XCTAssertFalse(RegionResolver.adoptRegion(for: unplaced, from: []))
     }
 }
+
+/// How much of a swept cluster gets placed without touching the geocoder. The geocoder is
+/// rate-limited to roughly a request a second, so the answer decides whether placing a
+/// city's worth of parks takes moments or minutes.
+@MainActor
+final class RegionResolutionCostTests: XCTestCase {
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+        context = ModelContext(container)
+    }
+
+    func testNeighbourInferencePlacesTheBulkOfACluster() throws {
+        // A realistic shape: a cluster where the map named some parks and not others.
+        var placed: [Park] = []
+        var unplaced: [Park] = []
+        for index in 0..<60 {
+            let park = Park(
+                identifier: "p\(index)",
+                name: "Park \(index)",
+                latitude: 47.60 + Double(index % 10) * 0.002,
+                longitude: -122.20 + Double(index / 10) * 0.002
+            )
+            context.insert(park)
+            if index % 2 == 0 {
+                park.locality = "Sample City"
+                park.subAdministrativeArea = "Sample County"
+                park.administrativeArea = "Example State"
+                park.regionResolvedAt = Date()
+                placed.append(park)
+            } else {
+                unplaced.append(park)
+            }
+        }
+
+        let adopted = unplaced.count { RegionResolver.adoptRegion(for: $0, from: placed) }
+        XCTAssertEqual(adopted, unplaced.count, "Every park inside an agreeing cluster should be placed without the geocoder")
+        XCTAssertTrue(unplaced.allSatisfy { $0.locality == "Sample City" })
+    }
+}

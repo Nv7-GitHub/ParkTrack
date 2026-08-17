@@ -50,6 +50,7 @@
 		6637DA2895DCABE7949745DD /* ServiceHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B1C5C072454B25786D75336 /* ServiceHub.swift */; };
 		6C5110DC9FD53F9AB0EC5230 /* RegionRaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D945D12F1BD90E3E9A34286 /* RegionRaceView.swift */; };
 		6F2149BB0F1B0D538D76FA5F /* StatsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C8D36829360DC48255D6090 /* StatsEngine.swift */; };
+		74600818756869C180033D5B /* PlaceCompleter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A71994A3E6C8E114EB4399D /* PlaceCompleter.swift */; };
 		78F1F370B7B67E64E3A13072 /* MapScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EADE91C60B3BBF86768A026 /* MapScreen.swift */; };
 		7A89C0729225125DD2AC207F /* Friend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 640F2D1F13F9C3DCF72EECEE /* Friend.swift */; };
 		7AB656604969E389BA6B8B43 /* FriendsLeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1547326E14C2B2CEE3D34C52 /* FriendsLeaderboardView.swift */; };
@@ -136,6 +137,7 @@
 		6404AEF6E642BBAE14E9067E /* FriendMediaViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendMediaViewer.swift; sourceTree = "<group>"; };
 		640F2D1F13F9C3DCF72EECEE /* Friend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Friend.swift; sourceTree = "<group>"; };
 		687B6EB121E0D28092971744 /* Signing.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Signing.xcconfig; sourceTree = "<group>"; };
+		6A71994A3E6C8E114EB4399D /* PlaceCompleter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceCompleter.swift; sourceTree = "<group>"; };
 		745C1692332393A859502171 /* StatsRegionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRegionSection.swift; sourceTree = "<group>"; };
 		754C504BFC13EBB0DC9B91F3 /* HomeRecommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRecommendations.swift; sourceTree = "<group>"; };
 		7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRecordsSection.swift; sourceTree = "<group>"; };
@@ -333,6 +335,7 @@
 				B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */,
 				ED97EEC1FC26C6236CC253EA /* MediaCapture.swift */,
 				1BF135FF739A8C73A655BB55 /* ParkDiscoveryService.swift */,
+				6A71994A3E6C8E114EB4399D /* PlaceCompleter.swift */,
 				03A625A0912BAB2B123DB493 /* RecommendationEngine.swift */,
 				DECC6FAD2AE69932634B9120 /* RegionIndexer.swift */,
 				7D7E513241A7B3EB27B7A940 /* RegionResolver.swift */,
@@ -598,6 +601,7 @@
 				E70992CD6F9F973A740C53B0 /* ParkTrackApp.swift in Sources */,
 				174C6B95EEDCDE9317C80BE8 /* ParksListScreen.swift in Sources */,
 				56F9172A0CB705F355C0BDA0 /* PersistenceController.swift in Sources */,
+				74600818756869C180033D5B /* PlaceCompleter.swift in Sources */,
 				A8C9F79A763A71D726F1A329 /* RecommendationEngine.swift in Sources */,
 				A8B0C8A1F11FB60E69AA5B30 /* RegionIndex.swift in Sources */,
 				14D4EA23980FB2F60A32AE84 /* RegionIndexManager.swift in Sources */,
