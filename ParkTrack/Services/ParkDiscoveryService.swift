@@ -83,7 +83,18 @@ struct SweptCoverage {
     /// Squares are rebuilt from metres every time they are compared, and that round trip
     /// through degrees is not bit-exact.
     private static let slack = 1e-9
-    private static let limit = 24
+
+    /// Room for a whole index run and then some.
+    ///
+    /// This used to be 24, which is ample for browsing — a screen is swept in a handful of
+    /// wide squares — and hopeless for indexing, which records one small square per tile and
+    /// is allowed `maxIndexSearches` of them. Indexing San Francisco and killing the app
+    /// part-way therefore kept 24 tiles out of a few hundred, and reopening started again
+    /// from almost nothing.
+    ///
+    /// The cap is barely approached in practice: a finished index replaces all of its tiles
+    /// with the single square it completed, so only an interrupted one holds many at once.
+    private static let limit = 512
 
     private var squares: [Square] = []
 
@@ -118,12 +129,20 @@ struct SweptCoverage {
         // must not erase the memory of a careful one underneath it.
         squares.removeAll { square.contains($0) && $0.resolution >= square.resolution }
         squares.append(square)
-        // Over the cap the smallest square goes, not the oldest: the widest square is the one
-        // backing the most rings and the most expensive to search again, and it is usually
-        // also the oldest — around wherever the user opened the app.
-        if squares.count > Self.limit,
-           let smallest = squares.indices.min(by: { squares[$0].area < squares[$1].area }) {
-            squares.remove(at: smallest)
+        // Over the cap, the least carefully searched square goes first, and among equals the
+        // smallest. Dropping by size alone — which is what this did — always chose an index
+        // tile, because index tiles are the smallest things here: the sweep that most needs
+        // its progress remembered was the one whose progress was discarded. Coarse ground is
+        // the cheaper loss; a wide square costs a handful of requests to redo, where the fine
+        // tiles collectively stand for hundreds.
+        if squares.count > Self.limit {
+            let victim = squares.indices.min { lhs, rhs in
+                if squares[lhs].resolution != squares[rhs].resolution {
+                    return squares[lhs].resolution > squares[rhs].resolution
+                }
+                return squares[lhs].area < squares[rhs].area
+            }
+            if let victim { squares.remove(at: victim) }
         }
     }
 
@@ -258,12 +277,48 @@ final class ParkDiscoveryService {
         })
     }
 
-    /// Writes the current coverage back. The list is capped at a couple of dozen squares that
-    /// swallow each other, so replacing it wholesale is cheaper than reconciling it.
+    /// Writes the current coverage back, touching only what actually changed.
+    ///
+    /// An index calls this every few tiles so that killing the app loses at most a handful
+    /// of searches. It used to delete every row and reinsert the lot, which was fair enough
+    /// when coverage held a couple of dozen squares — but an index in progress holds one per
+    /// tile, so a long sweep was rewriting hundreds of rows dozens of times, on the main
+    /// actor, while the user watched a progress bar. Nearly all of those rows are identical
+    /// from one call to the next.
+    ///
+    /// A square's bounds and resolution are its identity: `record` never keeps two of the
+    /// same, and one that is swallowed is gone rather than altered. So reconciling by key is
+    /// exact, and a call that changes nothing writes nothing at all — which also spares
+    /// every derived cache in the app a needless invalidation.
     private func persistCoverage() {
         let existing = (try? modelContext.fetch(FetchDescriptor<ScannedArea>())) ?? []
-        for area in existing { modelContext.delete(area) }
+
+        var stored: [String: ScannedArea] = [:]
+        for area in existing {
+            let key = Self.coverageKey(
+                minLatitude: area.minLatitude,
+                maxLatitude: area.maxLatitude,
+                minLongitude: area.minLongitude,
+                maxLongitude: area.maxLongitude,
+                resolution: area.resolution
+            )
+            // A duplicate can only be leftover from an interrupted write; keep one.
+            if stored.updateValue(area, forKey: key) != nil {
+                modelContext.delete(area)
+            }
+        }
+
+        var wanted: Set<String> = []
         for entry in coverage.bounds {
+            let key = Self.coverageKey(
+                minLatitude: entry.minLatitude,
+                maxLatitude: entry.maxLatitude,
+                minLongitude: entry.minLongitude,
+                maxLongitude: entry.maxLongitude,
+                resolution: entry.resolution
+            )
+            wanted.insert(key)
+            guard stored[key] == nil else { continue }
             modelContext.insert(ScannedArea(
                 minLatitude: entry.minLatitude,
                 maxLatitude: entry.maxLatitude,
@@ -272,7 +327,25 @@ final class ParkDiscoveryService {
                 resolution: entry.resolution
             ))
         }
-        try? modelContext.save()
+
+        for (key, area) in stored where !wanted.contains(key) {
+            modelContext.delete(area)
+        }
+
+        if modelContext.hasChanges { try? modelContext.save() }
+    }
+
+    /// Identity of a swept square. Rounded well below the precision any search works at, so
+    /// a value that has been through `Double` arithmetic still matches the row it wrote.
+    private nonisolated static func coverageKey(
+        minLatitude: Double,
+        maxLatitude: Double,
+        minLongitude: Double,
+        maxLongitude: Double,
+        resolution: Double
+    ) -> String {
+        func rounded(_ value: Double) -> Int64 { Int64((value * 1e7).rounded()) }
+        return "\(rounded(minLatitude)),\(rounded(maxLatitude)),\(rounded(minLongitude)),\(rounded(maxLongitude)),\(rounded(resolution))"
     }
 
     // MARK: - Discovery

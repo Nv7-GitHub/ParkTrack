@@ -13,14 +13,17 @@ xcodebuild -project ParkTrack.xcodeproj -scheme ParkTrack \
 
 ## Testing
 
-That command runs the everyday suite — the unit tests, a few seconds for the lot.
+That command runs the everyday suite: the `Unit` test plan, a few seconds for the lot and
+entirely offline — nothing in it reaches the network.
 
-Two groups are opt-in, because both are minutes rather than seconds and neither answers a
-question the unit tests can't:
+Two groups are opt-in. Both are minutes rather than seconds, and both spend real
+`MKLocalSearch` requests against a rate limit shared with whatever your own phone is doing,
+so neither belongs in a loop:
 
 ```
-# Screenshot tour of every tab. For changes only a picture can confirm.
-xcodebuild -project ParkTrack.xcodeproj -scheme ParkTrack \
+# Screenshot tour of every tab. Launches the real app, so it sweeps the map for real.
+# For changes only a picture can confirm.
+xcodebuild -project ParkTrack.xcodeproj -scheme ParkTrack -testPlan Full \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:ParkTrackUITests test
 
