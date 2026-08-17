@@ -9,6 +9,9 @@ import Charts
 /// with the real counts. That keeps the shape of both readable without a second chart.
 struct StatsTimelineSection: View {
     let parks: [Park]
+    let signature: StatsSignature
+    @State private var pointsCache = DerivedCache<[TimelinePoint]>()
+    @State private var visitPointsCache = DerivedCache<[TimelinePoint]>()
 
     enum Range: String, CaseIterable, Identifiable {
         case sixMonths, year, all
@@ -34,8 +37,9 @@ struct StatsTimelineSection: View {
 
     @State private var range: Range = .year
 
-    init(parks: [Park]) {
+    init(parks: [Park], signature: StatsSignature) {
         self.parks = parks
+        self.signature = signature
     }
 
     /// "All" is bounded by the first visit on record so the axis never stretches over
@@ -52,11 +56,15 @@ struct StatsTimelineSection: View {
     }
 
     private var points: [TimelinePoint] {
-        StatsEngine.monthlyTimeline(parks: parks, monthsBack: monthsBack)
+        pointsCache.value(for: signature.adding(Double(monthsBack))) {
+            StatsEngine.monthlyTimeline(parks: parks, monthsBack: monthsBack)
+        }
     }
 
     private var visitPoints: [TimelinePoint] {
-        StatsEngine.visitTimeline(parks: parks, monthsBack: monthsBack)
+        visitPointsCache.value(for: signature.adding(Double(monthsBack))) {
+            StatsEngine.visitTimeline(parks: parks, monthsBack: monthsBack)
+        }
     }
 
     var body: some View {

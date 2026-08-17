@@ -31,6 +31,8 @@ struct FriendsScreen: View {
 
     @Query(sort: \Friend.addedAt) private var friends: [Friend]
     @Query private var parks: [Park]
+    @State private var recordsCache = DerivedCache<Records>()
+    @State private var streaksCache = DerivedCache<Streaks>()
 
     @State private var pane: Pane = .leaderboard
     @State private var metric: LeaderboardMetric = .parks
@@ -117,8 +119,17 @@ struct FriendsScreen: View {
     /// The user's own row, computed from the same engine the Stats tab uses so the two
     /// screens can never disagree about how many parks you've been to.
     private var myEntry: LeaderboardEntry {
-        let records = StatsEngine.records(parks: parks, origin: originLocation)
-        let streaks = StatsEngine.streaks(parks: parks)
+        let signature = StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: originLocation?.coordinate
+        )
+        let records = recordsCache.value(for: signature) {
+            StatsEngine.records(parks: parks, origin: originLocation)
+        }
+        let streaks = streaksCache.value(for: signature) {
+            StatsEngine.streaks(parks: parks)
+        }
         return LeaderboardEntry(
             id: settings.friendCode,
             name: trimmedDisplayName.isEmpty ? "You" : trimmedDisplayName,
@@ -205,14 +216,34 @@ private struct FriendsSampleDataBanner: View {
 }
 
 /// Asks for a display name, which publishing is gated on.
+/// The card is only on screen while no name has been saved, so the field edits a local
+/// draft and writes back on submit or when it loses focus. Binding straight to
+/// `settings.displayName` meant the first keystroke satisfied the "no name yet" condition
+/// that put this card on screen, and it vanished mid-word taking the keyboard with it.
 private struct FriendsDisplayNameCard: View {
     @Bindable var settings: AppSettings
+
+    @State private var draft = ""
+    @FocusState private var isFocused: Bool
+
+    private func commit() {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        settings.displayName = trimmed
+    }
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 10) {
                 SectionHeader("Pick a name", subtitle: "Friends see this next to your numbers")
-                TextField("Your name", text: $settings.displayName)
+                TextField("Your name", text: $draft)
+                    .focused($isFocused)
+                    .submitLabel(.done)
+                    .onSubmit(commit)
+                    .onChange(of: isFocused) { _, focused in
+                        if !focused { commit() }
+                    }
+                    .onAppear { draft = settings.displayName }
                     .textInputAutocapitalization(.words)
                     .autocorrectionDisabled()
                     .font(.body)
@@ -224,7 +255,7 @@ private struct FriendsDisplayNameCard: View {
                             .strokeBorder(Theme.separator, lineWidth: 1)
                     )
                     .accessibilityLabel("Your display name")
-                Text("Your stats stay unpublished until you set one.")
+                Text("Your stats stay unpublished until you set one. Tap Done to save it.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
             }

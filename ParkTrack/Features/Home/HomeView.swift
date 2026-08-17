@@ -19,6 +19,10 @@ struct HomeView: View {
     @Environment(ServiceHub.self) private var services
 
     @Query(sort: \Park.name) private var parks: [Park]
+    @State private var recordsCache = DerivedCache<Records>()
+    @State private var streaksCache = DerivedCache<Streaks>()
+    @State private var completionsCache = DerivedCache<[RadiusCompletion]>()
+    @State private var recommendationsCache = DerivedCache<[Recommendation]>()
     @Query(sort: \Visit.date, order: .reverse) private var visits: [Visit]
 
     @State private var path = NavigationPath()
@@ -273,31 +277,51 @@ struct HomeView: View {
             ?? settings.homeCoordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
+    // Each of these costs milliseconds over a few hundred parks and none of them change
+    // between one body evaluation and the next unless the data or the anchor moved, so they
+    // go through a cache keyed on exactly that. See DerivedCache.
+    private var statsSignature: StatsSignature {
+        StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: anchorCoordinate,
+            extra: settings.radiiMiles
+        )
+    }
+
     private var records: Records {
-        StatsEngine.records(parks: parks, origin: originLocation)
+        recordsCache.value(for: statsSignature) {
+            StatsEngine.records(parks: parks, origin: originLocation)
+        }
     }
 
     private var streaks: Streaks {
-        StatsEngine.streaks(parks: parks)
+        streaksCache.value(for: statsSignature) {
+            StatsEngine.streaks(parks: parks)
+        }
     }
 
     private var completions: [RadiusCompletion] {
         guard let anchorCoordinate else { return [] }
-        return StatsEngine.radiusCompletions(
-            parks: parks,
-            center: anchorCoordinate,
-            radiiMiles: settings.radiiMiles
-        )
+        return completionsCache.value(for: statsSignature) {
+            StatsEngine.radiusCompletions(
+                parks: parks,
+                center: anchorCoordinate,
+                radiiMiles: settings.radiiMiles
+            )
+        }
     }
 
     private var recommendations: [Recommendation] {
-        RecommendationEngine.recommendations(
-            parks: parks,
-            origin: originLocation,
-            home: settings.homeCoordinate,
-            radiiMiles: settings.radiiMiles,
-            limit: 8
-        )
+        recommendationsCache.value(for: statsSignature) {
+            RecommendationEngine.recommendations(
+                parks: parks,
+                origin: originLocation,
+                home: settings.homeCoordinate,
+                radiiMiles: settings.radiiMiles,
+                limit: 8
+            )
+        }
     }
 
     private var recentVisits: [Visit] {

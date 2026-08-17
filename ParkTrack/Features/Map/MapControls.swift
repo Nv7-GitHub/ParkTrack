@@ -52,30 +52,42 @@ struct BulkModeBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // The caption never pluralises. "parks selected" is wider than "park selected",
+            // and that one extra character grew this column enough to wrap "Mark Visited"
+            // onto a second line, which changed the height of the whole bar between one
+            // selection and two.
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(count)")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
                     .contentTransition(.numericText())
-                Text(count == 1 ? "park selected" : "parks selected")
+                    .lineLimit(1)
+                Text("selected")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
             }
+            .layoutPriority(0)
 
             Spacer(minLength: 4)
 
             Button("Cancel", action: onCancel)
                 .font(.subheadline.weight(.medium))
+                .lineLimit(1)
                 .buttonStyle(.bordered)
                 .tint(Theme.bark)
+                .layoutPriority(1)
 
             Button(action: onConfirm) {
                 Label("Mark Visited", systemImage: "checkmark.circle.fill")
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
             .disabled(count == 0)
+            .layoutPriority(1)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -164,5 +176,30 @@ struct MapSearchResultRow: View {
         let distance = distanceMeters.map(Format.distance)
         let parts = [candidate.addressLine, distance].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
+/// The park's name beside its pin. Kept short and high-contrast: on a map it competes with
+/// terrain, roads and Apple's own labels, so it carries its own backing rather than relying
+/// on whatever happens to be underneath.
+struct ParkNameLabel: View {
+    let name: String
+    let isVisited: Bool
+
+    var body: some View {
+        Text(name)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: 118)
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(isVisited ? Theme.canopy : Theme.textPrimary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(Theme.separator.opacity(0.6), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.12), radius: 3, y: 1)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }

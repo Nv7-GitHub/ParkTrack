@@ -25,6 +25,9 @@ struct MapScreen: View {
     @State private var liveRegion: MKCoordinateRegion?
 
     @State private var layers = MapLayerOptions()
+    @State private var completionsCache = DerivedCache<[RadiusCompletion]>()
+    @State private var visibleCache = DerivedCache<[Park]>()
+    @State private var revealedCache = DerivedCache<[Park]>()
     @State private var scanner = MapScanCoordinator()
 
     private var discovery: ParkDiscoveryService? { services.discovery }
@@ -46,7 +49,7 @@ struct MapScreen: View {
 
     /// Past this many pins the map stops being readable and starts being slow.
     private static let annotationLimit = 300
-    private static let footprintLimit = 250
+    private static let revealLimit = 250
 
     private enum MapSheet: Identifiable {
         case detail(Park)
@@ -135,23 +138,9 @@ struct MapScreen: View {
     @MapContentBuilder
     private var mapContent: some MapContent {
         UserAnnotation()
-        footprintContent
         ringContent
         parkContent
         droppedPinContent
-    }
-
-    /// Overlapping translucent bubbles around visited parks: the union is what the user
-    /// reads as "how much ground have I covered", and it grows every time they log a visit.
-    @MapContentBuilder
-    private var footprintContent: some MapContent {
-        if layers.showsFootprint {
-            ForEach(footprintParks, id: \.identifier) { park in
-                MapCircle(center: park.coordinate, radius: layers.footprintRadiusMeters)
-                    .foregroundStyle(Theme.accent.opacity(layers.fogOfWar ? 0.10 : 0.16))
-                    .stroke(Theme.accent.opacity(0.35), lineWidth: 1)
-            }
-        }
     }
 
     @MapContentBuilder
@@ -179,9 +168,29 @@ struct MapScreen: View {
                     isSelected: selectedParkIdentifier == park.identifier,
                     isBulkSelected: bulkSelection.contains(park.identifier)
                 )
+                // An overlay rather than a stack: the label must not shift the pin off the
+                // coordinate it is marking.
+                .overlay(alignment: .bottom) {
+                    if showsParkNames {
+                        ParkNameLabel(name: park.name, isVisited: park.isVisited)
+                            .offset(y: 26)
+                    }
+                }
                 .onTapGesture { handleTap(on: park) }
             }
             .annotationTitles(.hidden)
+        }
+    }
+
+    /// Names are legible when there are few enough of them to read. Tied to the settled
+    /// camera rather than the live one so panning never re-lays out every label mid-gesture.
+    private var showsParkNames: Bool {
+        switch layers.parkNames {
+        case .never: return false
+        case .always: return true
+        case .automatic:
+            guard let span = settledRegion?.span else { return false }
+            return span.latitudeDelta < 0.055 && visibleParks.count <= 40
         }
     }
 
@@ -309,28 +318,58 @@ struct MapScreen: View {
 
     private var radiusCompletions: [RadiusCompletion] {
         guard let anchor = anchorCoordinate else { return [] }
-        return StatsEngine.radiusCompletions(parks: parks, center: anchor, radiiMiles: settings.radiiMiles)
+        return completionsCache.value(
+            for: StatsSignature(
+                parkCount: parks.count,
+                visitCount: modelContext.visitCount(),
+                anchor: anchor,
+                extra: settings.radiiMiles
+            )
+        ) {
+            StatsEngine.radiusCompletions(parks: parks, center: anchor, radiiMiles: settings.radiiMiles)
+        }
     }
 
     /// Only what's on screen, and when even that is too much, visited parks win: the
     /// filled-in pins are the ones carrying the user's progress.
     private var visibleParks: [Park] {
-        let pool = layers.showsUnvisited ? parks : parks.filter(\.isVisited)
-        guard let region = settledRegion else {
-            return Array(prioritised(pool).prefix(Self.annotationLimit))
+        visibleCache.value(for: viewportSignature) {
+            let pool = layers.showsUnvisited ? parks : parks.filter(\.isVisited)
+            guard let region = settledRegion else {
+                return Array(prioritised(pool).prefix(Self.annotationLimit))
+            }
+            let inView = pool.filter { Self.region(region, contains: $0.coordinate, padding: 1.15) }
+            guard inView.count > Self.annotationLimit else { return inView }
+            return Array(prioritised(inView).prefix(Self.annotationLimit))
         }
-        let inView = pool.filter { Self.region(region, contains: $0.coordinate, padding: 1.15) }
-        guard inView.count > Self.annotationLimit else { return inView }
-        return Array(prioritised(inView).prefix(Self.annotationLimit))
     }
 
-    /// Footprint bubbles reach beyond the viewport, so they're gathered from a wider box
-    /// than the annotations — a bubble whose centre is just off screen still paints on it.
-    private var footprintParks: [Park] {
-        let visited = parks.filter(\.isVisited)
-        guard let region = settledRegion else { return Array(visited.prefix(Self.footprintLimit)) }
-        let nearby = visited.filter { Self.region(region, contains: $0.coordinate, padding: 1.8) }
-        return Array(nearby.prefix(Self.footprintLimit))
+    /// Everything the two viewport scans depend on. Panning changes it; a location tick, a
+    /// sheet opening or a scroll does not — and those were re-filtering every cached park.
+    private var viewportSignature: StatsSignature {
+        StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: settledRegion?.center,
+            extra: [
+                settledRegion?.span.latitudeDelta ?? 0,
+                settledRegion?.span.longitudeDelta ?? 0,
+                layers.showsUnvisited ? 1 : 0,
+                layers.fogOfWar ? 1 : 0,
+                layers.revealRadiusMiles
+            ]
+        )
+    }
+
+    /// Fog holes reach beyond the viewport, so they're gathered from a wider box than the
+    /// annotations — a hole whose centre is just off screen still clears part of the screen.
+    private var revealedParks: [Park] {
+        revealedCache.value(for: viewportSignature) {
+            let visited = parks.filter(\.isVisited)
+            guard let region = settledRegion else { return Array(visited.prefix(Self.revealLimit)) }
+            let nearby = visited.filter { Self.region(region, contains: $0.coordinate, padding: 1.8) }
+            return Array(nearby.prefix(Self.revealLimit))
+        }
     }
 
     private func prioritised(_ list: [Park]) -> [Park] {
@@ -354,8 +393,8 @@ struct MapScreen: View {
     /// Projects the explored bubbles into screen space for the fog layer to subtract.
     private func fogHoles(proxy: MapProxy) -> [FogOfWarOverlay.FogHole] {
         _ = liveRegion
-        let radiusMeters = layers.footprintRadiusMeters
-        return footprintParks.compactMap { park in
+        let radiusMeters = layers.revealRadiusMeters
+        return revealedParks.compactMap { park in
             guard let center = proxy.convert(park.coordinate, to: .local) else { return nil }
             let edgeCoordinate = CLLocationCoordinate2D(
                 latitude: park.coordinate.latitude + radiusMeters / 111_320,

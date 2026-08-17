@@ -7,15 +7,33 @@ import CoreLocation
 /// the whole layer configuration in one comparison, and so the layers panel only needs
 /// one binding.
 struct MapLayerOptions: Equatable {
-    var showsFootprint = true
-    /// Radius of the explored bubble drawn around every visited park.
-    var footprintRadiusMiles: Double = 0.5
+    /// Fog of war dims everything and clears a circle around each visited park, so the
+    /// unexplored parts of the map read as unexplored. That reveal is the only thing this
+    /// radius drives — the map no longer paints bubbles on visited parks when fog is off,
+    /// because they cluttered exactly the area the user most wants to read.
     var fogOfWar = false
+    var revealRadiusMiles: Double = 0.5
     var showsRadiusRings = true
     var showsUnvisited = true
+    /// Park names next to their pins. Automatic by default: names appear once the camera is
+    /// close enough that they will not overlap into noise.
+    var parkNames: ParkNameVisibility = .automatic
 
-    var footprintRadiusMeters: CLLocationDistance {
-        footprintRadiusMiles * Format.metersPerMile
+    var revealRadiusMeters: CLLocationDistance {
+        revealRadiusMiles * Format.metersPerMile
+    }
+}
+
+enum ParkNameVisibility: String, CaseIterable, Identifiable {
+    case automatic, always, never
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic: return "When close"
+        case .always: return "Always"
+        case .never: return "Never"
+        }
     }
 }
 
@@ -35,26 +53,30 @@ struct MapLayersPanel: View {
                         VStack(alignment: .leading, spacing: 14) {
                             SectionHeader("Coverage", subtitle: "\(visitedCount) of \(totalCount) cached parks visited")
 
-                            Toggle(isOn: $options.showsFootprint) {
-                                Label("Explored footprint", systemImage: "circle.dotted.circle")
+                            Picker(selection: $options.parkNames) {
+                                ForEach(ParkNameVisibility.allCases) { option in
+                                    Text(option.label).tag(option)
+                                }
+                            } label: {
+                                Label("Park names", systemImage: "textformat.size")
                             }
-                            .accessibilityHint("Draws a bubble around every park you have visited")
+                            .accessibilityHint("When to show park names beside their pins")
 
-                            if options.showsFootprint {
+                            if options.fogOfWar {
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack {
-                                        Text("Bubble radius")
+                                        Text("Revealed radius")
                                             .font(.subheadline)
                                             .foregroundStyle(Theme.textSecondary)
                                         Spacer()
-                                        Text(Format.miles(options.footprintRadiusMiles))
+                                        Text(Format.miles(options.revealRadiusMiles))
                                             .font(.subheadline.weight(.semibold).monospacedDigit())
                                             .foregroundStyle(Theme.textPrimary)
                                     }
-                                    Slider(value: $options.footprintRadiusMiles, in: 0.25...3, step: 0.25)
+                                    Slider(value: $options.revealRadiusMiles, in: 0.25...3, step: 0.25)
                                         .tint(Theme.accent)
-                                        .accessibilityLabel("Explored bubble radius")
-                                        .accessibilityValue(Format.miles(options.footprintRadiusMiles))
+                                        .accessibilityLabel("Fog of war revealed radius")
+                                        .accessibilityValue(Format.miles(options.revealRadiusMiles))
                                 }
                             }
 

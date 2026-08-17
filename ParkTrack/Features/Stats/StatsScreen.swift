@@ -13,6 +13,18 @@ struct StatsScreen: View {
     @Environment(AppSettings.self) private var settings
 
     @Query(sort: \Park.name) private var parks: [Park]
+    /// Computed once per render and passed down: every section needs the same answer to
+    /// "did my inputs change", and working it out six times is itself measurable.
+    private var statsSignature: StatsSignature {
+        StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: anchorLocation?.coordinate
+        )
+    }
+
+    @State private var recordsCache = DerivedCache<Records>()
+    @State private var streaksCache = DerivedCache<Streaks>()
 
     @State private var anchor: StatsAnchor = .currentLocation
     @State private var droppedPin: CLLocationCoordinate2D?
@@ -31,11 +43,15 @@ struct StatsScreen: View {
     }
 
     private var records: Records {
-        StatsEngine.records(parks: parks, origin: anchorLocation)
+        recordsCache.value(for: statsSignature) {
+            StatsEngine.records(parks: parks, origin: anchorLocation)
+        }
     }
 
     private var streaks: Streaks {
-        StatsEngine.streaks(parks: parks)
+        streaksCache.value(for: statsSignature) {
+            StatsEngine.streaks(parks: parks)
+        }
     }
 
     private var yearSummary: YearInReviewSummary {
@@ -64,6 +80,7 @@ struct StatsScreen: View {
 
                             StatsRadiusSection(
                                 parks: parks,
+                                signature: statsSignature,
                                 anchor: anchor,
                                 anchorCoordinate: anchorCoordinate,
                                 radiiMiles: settings.radiiMiles,
@@ -71,11 +88,11 @@ struct StatsScreen: View {
                                 onDropPin: { isPickingPin = true }
                             )
 
-                            StatsRegionSection(parks: parks)
+                            StatsRegionSection(parks: parks, signature: statsSignature)
 
-                            StatsTimelineSection(parks: parks)
+                            StatsTimelineSection(parks: parks, signature: statsSignature)
 
-                            StatsRhythmSection(parks: parks)
+                            StatsRhythmSection(parks: parks, signature: statsSignature)
 
                             StatsRecordsSection(records: records, streaks: streaks)
 

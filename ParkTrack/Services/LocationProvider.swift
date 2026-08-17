@@ -17,6 +17,11 @@ final class LocationProvider: NSObject {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        // Without a distance filter Core Location republishes constantly, and because every
+        // screen derives its stats from `currentLocation`, each of those ticks re-ran the
+        // radius, records and recommendation passes over every cached park. Nothing in this
+        // app changes meaningfully over a few metres.
+        manager.distanceFilter = 25
         authorizationStatus = manager.authorizationStatus
     }
 
@@ -45,6 +50,21 @@ final class LocationProvider: NSObject {
         manager.stopUpdatingLocation()
     }
 
+    /// Publishes a fix only when it actually moves the user, or genuinely improves on what
+    /// we had. `distanceFilter` is a hint Core Location does not always honour, and a fix
+    /// that lands two metres away is not worth invalidating every derived stat in the app.
+    private func acceptIfMeaningful(_ candidate: CLLocation) {
+        guard let existing = currentLocation else {
+            currentLocation = candidate
+            return
+        }
+        let moved = candidate.distance(from: existing)
+        let isMuchMoreAccurate = candidate.horizontalAccuracy < existing.horizontalAccuracy / 2
+        let isStale = candidate.timestamp.timeIntervalSince(existing.timestamp) > 120
+        guard moved >= 25 || isMuchMoreAccurate || isStale else { return }
+        currentLocation = candidate
+    }
+
     /// Current location if we already have a recent one, otherwise waits briefly for a fix.
     func resolveLocation(timeout: Duration = .seconds(5)) async -> CLLocation? {
         if let currentLocation, Date().timeIntervalSince(currentLocation.timestamp) < 60 {
@@ -64,7 +84,7 @@ extension LocationProvider: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let latest = locations.last else { return }
         Task { @MainActor in
-            self.currentLocation = latest
+            self.acceptIfMeaningful(latest)
         }
     }
 

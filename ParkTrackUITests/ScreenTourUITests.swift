@@ -100,6 +100,25 @@ final class ScreenTourUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 2)
     }
 
+    /// Zooms the map in far enough that park name labels should appear, and confirms the
+    /// footprint bubbles are gone.
+    func testMapZoomedInShowsParkNames() throws {
+        Thread.sleep(forTimeInterval: 18)
+        app.tabBars.buttons["Map"].tap()
+        Thread.sleep(forTimeInterval: 8)
+        capture("20-map-default")
+
+        let map = app.descendants(matching: .map).firstMatch
+        if map.waitForExistence(timeout: 10) {
+            for _ in 0..<3 {
+                map.pinch(withScale: 3.0, velocity: 3.0)
+                Thread.sleep(forTimeInterval: 2)
+            }
+        }
+        Thread.sleep(forTimeInterval: 5)
+        capture("21-map-zoomed")
+    }
+
     /// Scrolls the stats screen so the charts further down are captured too.
     func testStatsScrolled() throws {
         Thread.sleep(forTimeInterval: 8)

@@ -5,6 +5,8 @@ import SwiftUI
 /// the places the user's own parks turned out to be in.
 struct StatsRegionSection: View {
     let parks: [Park]
+    let signature: StatsSignature
+    @State private var completionsCache = DerivedCache<[RegionCompletion]>()
 
     enum Scope: String, CaseIterable, Identifiable {
         case city, county, state
@@ -28,15 +30,18 @@ struct StatsRegionSection: View {
 
     private let collapsedLimit = 6
 
-    init(parks: [Park]) {
+    init(parks: [Park], signature: StatsSignature) {
         self.parks = parks
+        self.signature = signature
     }
 
     private var completions: [RegionCompletion] {
-        switch scope {
-        case .city: return StatsEngine.completionByCity(parks: parks)
-        case .county: return StatsEngine.completionByCounty(parks: parks)
-        case .state: return StatsEngine.completionByState(parks: parks)
+        completionsCache.value(for: signature.adding(Double(scope.hashValue % 7))) {
+            switch scope {
+            case .city: return StatsEngine.completionByCity(parks: parks)
+            case .county: return StatsEngine.completionByCounty(parks: parks)
+            case .state: return StatsEngine.completionByState(parks: parks)
+            }
         }
     }
 

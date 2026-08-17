@@ -16,6 +16,7 @@
 		174C6B95EEDCDE9317C80BE8 /* ParksListScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBBE391192EA924945BF0F9 /* ParksListScreen.swift */; };
 		19E4AFCF7593BEFF62ECBFAA /* MockSocialBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C04C3FE47A398B8B8F136E /* MockSocialBackend.swift */; };
 		1BEDB0CC80354B41D56899B0 /* HomeRecommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754C504BFC13EBB0DC9B91F3 /* HomeRecommendations.swift */; };
+		1D69E0AD6734FCA82D0ECCA4 /* PerformanceProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C87268F1C82625A97261321 /* PerformanceProbeTests.swift */; };
 		1DCBE570638E3BCD332A04AE /* MapAnnotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CAC8D6CA251A22378A10841 /* MapAnnotations.swift */; };
 		1FA4357E3FDF23A44D7F7E8C /* RecommendationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F732AC5B6708FFC99F6B1975 /* RecommendationEngineTests.swift */; };
 		2041B60420C8DF1760F9135E /* MediaCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED97EEC1FC26C6236CC253EA /* MediaCapture.swift */; };
@@ -37,6 +38,7 @@
 		48C108CC77F7EDBF3FC325F1 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 997999F0F575A142910327F4 /* AppSettings.swift */; };
 		4A1CBD3AB1358FF956A595FC /* StatsRadiusSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B53F55F964FA32C984F2D6 /* StatsRadiusSection.swift */; };
 		4CD49FFCD5C40214CABFA720 /* SocialService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A8AAC930AEC868F445EF14 /* SocialService.swift */; };
+		51974DDD7E3E50B071B6DDE7 /* DerivedCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C355C9566E2D158E04AC4A3 /* DerivedCache.swift */; };
 		527354723237AABB909AE173 /* StatsEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5003CD1A57BEB4A4FFBB5D04 /* StatsEngineTests.swift */; };
 		56F9172A0CB705F355C0BDA0 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD30510A3D319A31882FDD4 /* PersistenceController.swift */; };
 		5C570D1CF16A7318A09FFBC3 /* HomeMapPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93BB5941EA6EA3D0E69FD0A2 /* HomeMapPickerSheet.swift */; };
@@ -99,6 +101,7 @@
 		13B69D497AACB8E3F01448C5 /* FriendAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendAvatar.swift; sourceTree = "<group>"; };
 		1547326E14C2B2CEE3D34C52 /* FriendsLeaderboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsLeaderboardView.swift; sourceTree = "<group>"; };
 		1BF135FF739A8C73A655BB55 /* ParkDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkDiscoveryService.swift; sourceTree = "<group>"; };
+		1C87268F1C82625A97261321 /* PerformanceProbeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceProbeTests.swift; sourceTree = "<group>"; };
 		2384F23374D6DF26F0A05CF5 /* Visit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Visit.swift; sourceTree = "<group>"; };
 		23BCE0E68A16EF63D53874E1 /* HomeHeroHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeHeroHeader.swift; sourceTree = "<group>"; };
 		272D2DC7BF500CE72EBAD96D /* YearInReviewCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YearInReviewCard.swift; sourceTree = "<group>"; };
@@ -128,6 +131,7 @@
 		745C1692332393A859502171 /* StatsRegionSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRegionSection.swift; sourceTree = "<group>"; };
 		754C504BFC13EBB0DC9B91F3 /* HomeRecommendations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRecommendations.swift; sourceTree = "<group>"; };
 		7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRecordsSection.swift; sourceTree = "<group>"; };
+		7C355C9566E2D158E04AC4A3 /* DerivedCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivedCache.swift; sourceTree = "<group>"; };
 		7D7E513241A7B3EB27B7A940 /* RegionResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionResolver.swift; sourceTree = "<group>"; };
 		8179CEC55FB21D4093286CB1 /* HomeParkSearchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeParkSearchSheet.swift; sourceTree = "<group>"; };
 		83E5683236CB070B1FC76925 /* SearchThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchThrottle.swift; sourceTree = "<group>"; };
@@ -203,6 +207,7 @@
 			isa = PBXGroup;
 			children = (
 				2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */,
+				1C87268F1C82625A97261321 /* PerformanceProbeTests.swift */,
 				F732AC5B6708FFC99F6B1975 /* RecommendationEngineTests.swift */,
 				54196F743DDC4AA5DF1E1F43 /* SmokeTests.swift */,
 				5003CD1A57BEB4A4FFBB5D04 /* StatsEngineTests.swift */,
@@ -307,6 +312,7 @@
 			isa = PBXGroup;
 			children = (
 				997999F0F575A142910327F4 /* AppSettings.swift */,
+				7C355C9566E2D158E04AC4A3 /* DerivedCache.swift */,
 				B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */,
 				ED97EEC1FC26C6236CC253EA /* MediaCapture.swift */,
 				1BF135FF739A8C73A655BB55 /* ParkDiscoveryService.swift */,
@@ -538,6 +544,7 @@
 				64FD9AB14813932B81518678 /* CloudKitSocialBackend.swift in Sources */,
 				9B314360D14237E2DCB9FE69 /* Components.swift in Sources */,
 				356263933DB849C604D02F77 /* DataExport.swift in Sources */,
+				51974DDD7E3E50B071B6DDE7 /* DerivedCache.swift in Sources */,
 				22AF82F9E3D90504C122E725 /* Formatters.swift in Sources */,
 				7A89C0729225125DD2AC207F /* Friend.swift in Sources */,
 				CDCF42D616A22EFF25DD92C8 /* FriendAvatar.swift in Sources */,
@@ -599,6 +606,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				16030B0B3C22F71DD428417F /* DiscoveryTests.swift in Sources */,
+				1D69E0AD6734FCA82D0ECCA4 /* PerformanceProbeTests.swift in Sources */,
 				1FA4357E3FDF23A44D7F7E8C /* RecommendationEngineTests.swift in Sources */,
 				0D78AF78C5FCA752CF97F000 /* SmokeTests.swift in Sources */,
 				527354723237AABB909AE173 /* StatsEngineTests.swift in Sources */,
