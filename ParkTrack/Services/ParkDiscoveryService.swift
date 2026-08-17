@@ -287,11 +287,22 @@ final class ParkDiscoveryService {
         let truncated: Bool
     }
 
-    /// Tiles beyond this and one region would occupy the searcher for many minutes.
-    nonisolated static let maxIndexGridSide = 22
+    /// Where an adaptive sweep starts. Big enough that empty country costs one request,
+    /// small enough that a town is not one saturated tile from the outset.
+    nonisolated static let coarseTileMeters: CLLocationDistance = 26_000
+
+    /// Results at or above this count mean the map ran out of room to answer, so the tile is
+    /// split. `MKLocalSearch` tops out around 25.
+    nonisolated static let saturatedResultCount = 20
+
+    /// Refinement stops here. Below roughly 1.5 km a tile is smaller than the parks in it.
+    nonisolated static let minimumTileSpanDegrees = 0.014
+
+    /// Hard ceiling on one region's searches, so a pathological area cannot run forever.
+    nonisolated static let maxIndexSearches = 320
 
     /// How many tiles in a row may fail before a dense sweep gives up.
-    nonisolated static let maxConsecutiveTileFailures = 6
+    nonisolated static let maxConsecutiveTileFailures = 12
 
     /// Sweeps an area at even density, for indexing.
     ///
@@ -320,54 +331,88 @@ final class ParkDiscoveryService {
         }
 
         let sideMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * 2 * Format.metersPerMile
-        let needed = Int((sideMeters / Self.targetTileMeters).rounded(.up))
-        let gridSide = max(1, min(needed, Self.maxIndexGridSide))
-        let truncated = needed > gridSide
-
         let square = MKCoordinateRegion(
             center: coordinate,
             latitudinalMeters: sideMeters,
             longitudinalMeters: sideMeters
         )
 
+        // Adaptive rather than uniform. A fixed grid fine enough for a city centre costs
+        // hundreds of requests across a county, nearly all of them spent confirming that
+        // farmland is still empty. Instead every tile starts coarse and is split into four
+        // only when its answer comes back at the map's per-request cap, which is the one
+        // signal that a tile is hiding parks. Dense ground gets the fine grid it needs and
+        // empty ground is dismissed in a single request.
+        var queue: [MKCoordinateRegion] = Self.tiles(
+            for: square,
+            side: max(1, Int((sideMeters / Self.coarseTileMeters).rounded(.up)))
+        )
         var found: [String: Park] = [:]
         var order: [String] = []
-        var completed = true
+        var searches = 0
         var failures = 0
+        var retries: [String: Int] = [:]
+        var completed = true
+        var truncated = false
 
-        let plan = Self.tiles(for: square, side: gridSide)
-        onProgress?(SweepProgress(tilesSearched: 0, tilesTotal: plan.count, parksFound: 0))
+        func report() {
+            onProgress?(SweepProgress(
+                tilesSearched: searches,
+                tilesTotal: searches + queue.count,
+                parksFound: order.count
+            ))
+        }
+        report()
 
-        for (index, tile) in plan.enumerated() {
+        while !queue.isEmpty {
             if Task.isCancelled { completed = false; break }
-            let outcome = await Self.candidates(inTiles: [tile], wideOver: tile)
+            if searches >= Self.maxIndexSearches { truncated = true; break }
+
+            let tile = queue.removeFirst()
+            let outcome = await Self.candidates(in: tile)
+            searches += 1
             if Task.isCancelled { completed = false; break }
 
-            for park in persist(outcome.candidates) where found[park.identifier] == nil {
+            for park in persist(Self.confined(outcome.candidates, to: tile)) where found[park.identifier] == nil {
                 found[park.identifier] = park
                 order.append(park.identifier)
             }
 
-            // A dense sweep is dozens or hundreds of requests and the map service throttles
-            // in bursts, so a few refusals in a row are normal and abandoning on the first
-            // couple would strand most attempts. It gives up only when a run of tiles fails,
-            // by which point something is actually wrong.
             if outcome.failure != nil {
                 lastError = outcome.failure
                 failures += 1
                 if failures >= Self.maxConsecutiveTileFailures { completed = false; break }
-                // Back off before the next tile rather than hammering a service already
-                // telling us to slow down.
-                try? await Task.sleep(for: .milliseconds(600 * failures))
+                // Being refused is not the same as having searched. The tile goes back on the
+                // queue so its ground is not quietly dropped from a count that claims to be
+                // exhaustive, and the throttle widens the gap on its own.
+                if retries[Self.key(for: tile), default: 0] < Self.maxTileRetries {
+                    retries[Self.key(for: tile), default: 0] += 1
+                    queue.append(tile)
+                }
+                try? await Task.sleep(for: .milliseconds(900 * failures))
             } else {
                 failures = 0
+                if outcome.rawCount >= Self.saturatedResultCount,
+                   tile.span.latitudeDelta > Self.minimumTileSpanDegrees {
+                    queue.append(contentsOf: Self.tiles(for: tile, side: 2))
+                }
             }
 
-            onProgress?(SweepProgress(
-                tilesSearched: index + 1,
-                tilesTotal: plan.count,
-                parksFound: order.count
-            ))
+            report()
+        }
+
+        // One text pass over the whole area, for parks the map never categorised. Done once
+        // rather than per tile: it used to run alongside every tile, which doubled the cost
+        // of a sweep to no benefit, since an uncategorised park is found just as well by a
+        // wide query as a narrow one.
+        if completed, !Task.isCancelled {
+            if let wide = try? await Self.search(query: "park", region: square, poiFiltered: false, requireParkLike: true) {
+                for park in persist(Self.confined(wide, to: square)) where found[park.identifier] == nil {
+                    found[park.identifier] = park
+                    order.append(park.identifier)
+                }
+            }
+            report()
         }
 
         if completed && !truncated {
@@ -379,6 +424,22 @@ final class ParkDiscoveryService {
             completed: completed,
             truncated: truncated
         )
+    }
+
+    /// How many times one tile may be re-queued after the map service refuses it.
+    nonisolated static let maxTileRetries = 3
+
+    private nonisolated static func key(for region: MKCoordinateRegion) -> String {
+        "\(region.center.latitude),\(region.center.longitude),\(region.span.latitudeDelta)"
+    }
+
+    /// Drops results that landed outside the tile actually searched. `MKLocalSearch` treats a
+    /// region as a hint, so a query can answer with somewhere else entirely.
+    private nonisolated static func confined(
+        _ candidates: [ParkCandidate],
+        to region: MKCoordinateRegion
+    ) -> [ParkCandidate] {
+        deduped(candidates.filter { SweptCoverage.region(region, contains: $0.coordinate) })
     }
 
     /// Yields until no sweep is in flight. Everything here is main-actor bound, so this is a
@@ -535,6 +596,10 @@ final class ParkDiscoveryService {
     private struct TileOutcome {
         var candidates: [ParkCandidate] = []
         var failure: String?
+        /// Raw results the map returned, before filtering. A tile that comes back at the
+        /// per-request cap is hiding parks it did not have room to mention, which is the
+        /// signal to look at that tile more closely.
+        var rawCount: Int = 0
     }
 
     /// Scans `region` tile by tile, for callers that hand us one region rather than a plan.
@@ -601,16 +666,38 @@ final class ParkDiscoveryService {
     private nonisolated static func candidates(in region: MKCoordinateRegion) async -> TileOutcome {
         var outcome = TileOutcome()
         do {
-            outcome.candidates = try await search(
+            let (found, raw) = try await searchCounting(
                 query: "park",
                 region: region,
                 poiFiltered: true,
                 requireParkLike: true
             )
+            outcome.candidates = found
+            outcome.rawCount = raw
         } catch {
             outcome.failure = message(for: error)
         }
         return outcome
+    }
+
+    /// As `search`, but also reports how many results came back before filtering.
+    private nonisolated static func searchCounting(
+        query: String,
+        region: MKCoordinateRegion?,
+        poiFiltered: Bool,
+        requireParkLike: Bool
+    ) async throws -> ([ParkCandidate], Int) {
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        request.resultTypes = .pointOfInterest
+        if poiFiltered {
+            request.pointOfInterestFilter = MKPointOfInterestFilter(including: [.park, .nationalPark])
+        }
+        if let region { request.region = region }
+
+        let response = try await SearchThrottle.shared.run(request)
+        let mapped = response.mapItems.compactMap { candidate(from: $0, requireParkLike: requireParkLike) }
+        return (mapped, response.mapItems.count)
     }
 
     private nonisolated static func search(

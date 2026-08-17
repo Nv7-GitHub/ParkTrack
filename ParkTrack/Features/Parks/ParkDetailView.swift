@@ -267,6 +267,23 @@ struct ParkDetailView: View {
             .buttonStyle(.borderedProminent)
             .tint(Theme.accent)
 
+            // The one-tap version of the same thing, for backfilling somewhere you have been
+            // plenty of times and have nothing to say about — the bulk flow's behaviour, for a
+            // single park. It records a visit dated today with no details; the sheet above is
+            // there when the details matter.
+            if !park.isVisited {
+                Button {
+                    markVisited()
+                } label: {
+                    Label("I've been here before", systemImage: "checkmark.circle")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.moss)
+            }
+
             HStack(spacing: 10) {
                 Button {
                     toggleWishlist()
@@ -318,6 +335,13 @@ struct ParkDetailView: View {
     }
 
     // MARK: Mutations
+
+    /// Records a bare visit for today, the way bulk marking does.
+    private func markVisited() {
+        let visit = Visit(park: park)
+        modelContext.insert(visit)
+        try? modelContext.save()
+    }
 
     private func toggleWishlist() {
         withAnimation(.smooth) { park.isWishlisted.toggle() }

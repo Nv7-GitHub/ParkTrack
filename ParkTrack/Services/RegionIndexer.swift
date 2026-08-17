@@ -25,6 +25,34 @@ final class RegionIndexer {
     /// moving rather than an indeterminate spinner for minutes.
     private(set) var progress: ParkDiscoveryService.SweepProgress?
 
+    /// The running index, owned here rather than by whichever sheet started it.
+    ///
+    /// Every index used to be launched from a `Task` inside a view, which tied minutes of
+    /// searching to the lifetime of a sheet the user is entitled to close. Indexing belongs
+    /// to the service: the UI asks for it, watches `activeRegionName` and `progress`, and can
+    /// come and go while it runs.
+    private var indexTask: Task<Void, Never>?
+
+    var isIndexing: Bool { indexTask != nil }
+
+    /// Starts work in the background and returns immediately. Requests made while another is
+    /// running are queued by the awaits inside, not dropped.
+    func enqueue(_ work: @escaping () async -> Void) {
+        let previous = indexTask
+        indexTask = Task { [weak self] in
+            await previous?.value
+            await work()
+            if self?.indexTask?.isCancelled == false, self?.activeRegionName == nil {
+                self?.indexTask = nil
+            }
+        }
+    }
+
+    /// Waits for everything queued, for callers that need the result.
+    func waitForIndexing() async {
+        await indexTask?.value
+    }
+
     /// A state is far too large to sweep tile by tile in one go; indexing is offered for
     /// cities and counties, and a state's number stays the sum of what is known.
     static let indexableKinds: [RegionKind] = [.city, .county]

@@ -15,7 +15,6 @@ struct RegionProgressSheet: View {
     @Environment(ServiceHub.self) private var services
 
     @State private var showsVisited = false
-    @State private var isIndexing = false
     @State private var indexError: String?
 
     private var visitedParks: [Park] {
@@ -108,7 +107,7 @@ struct RegionProgressSheet: View {
                 Button {
                     Task { await index() }
                 } label: {
-                    if isIndexing {
+                    if (services.regionIndexer?.isIndexing ?? false) {
                         HStack(spacing: 8) {
                             ProgressView()
                             Text("Indexing \(completion.name)…")
@@ -120,9 +119,9 @@ struct RegionProgressSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
-                .disabled(isIndexing)
+                .disabled((services.regionIndexer?.isIndexing ?? false))
 
-                if isIndexing {
+                if (services.regionIndexer?.isIndexing ?? false) {
                     IndexProgressView(progress: services.regionIndexer?.progress)
                 }
 
@@ -173,14 +172,16 @@ struct RegionProgressSheet: View {
     }
 
     private func index() async {
-        guard let indexer = services.regionIndexer, !isIndexing else { return }
-        isIndexing = true
+        guard let indexer = services.regionIndexer else { return }
         indexError = nil
-        let result = await indexer.indexPlace(named: completion.name, kind: completion.kind)
-        if result == nil {
-            indexError = indexer.lastError ?? "Couldn't index \(completion.name)."
+        let name = completion.name
+        let kind = completion.kind
+        // Handed to the service, so closing this sheet does not stop the sweep.
+        indexer.enqueue {
+            if await indexer.indexPlace(named: name, kind: kind) == nil {
+                indexError = indexer.lastError ?? "Couldn't index \(name)."
+            }
         }
-        isIndexing = false
     }
 }
 

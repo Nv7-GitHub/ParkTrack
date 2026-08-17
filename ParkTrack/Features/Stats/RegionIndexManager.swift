@@ -15,10 +15,8 @@ struct RegionIndexManager: View {
 
     @State private var query = ""
     @State private var kind: RegionKind = .city
-    @State private var isWorking = false
     @State private var message: String?
     @State private var completer = PlaceCompleter()
-    @State private var indexingSuggestion: PlaceSuggestion?
 
     private var indexer: RegionIndexer? { services.regionIndexer }
 
@@ -93,7 +91,7 @@ struct RegionIndexManager: View {
                                                     }
                                                 }
                                                 Spacer(minLength: 8)
-                                                if indexingSuggestion == suggestion {
+                                                if false {
                                                     ProgressView()
                                                 } else {
                                                     Image(systemName: "arrow.down.circle")
@@ -104,7 +102,7 @@ struct RegionIndexManager: View {
                                             .contentShape(Rectangle())
                                         }
                                         .buttonStyle(.plain)
-                                        .disabled(isWorking)
+                                        .disabled((indexer?.isIndexing ?? false))
                                         if suggestion != completer.suggestions.prefix(6).last {
                                             Divider().overlay(Theme.separator)
                                         }
@@ -117,7 +115,7 @@ struct RegionIndexManager: View {
                                         .font(.caption)
                                         .foregroundStyle(Theme.textSecondary)
                                 }
-                            } else if query.trimmingCharacters(in: .whitespaces).count >= 2, !isWorking {
+                            } else if query.trimmingCharacters(in: .whitespaces).count >= 2, !(indexer?.isIndexing ?? false) {
                                 Text("No places matched \"\(query)\".")
                                     .font(.caption)
                                     .foregroundStyle(Theme.textSecondary)
@@ -131,7 +129,7 @@ struct RegionIndexManager: View {
                             }
                             .buttonStyle(.bordered)
                             .tint(Theme.sky)
-                            .disabled(isWorking || location.currentLocation == nil)
+                            .disabled((indexer?.isIndexing ?? false) || location.currentLocation == nil)
 
                             if let active = indexer?.activeRegionName {
                                 VStack(alignment: .leading, spacing: 6) {
@@ -170,7 +168,7 @@ struct RegionIndexManager: View {
                                 Button {
                                     Task { await refreshStale() }
                                 } label: {
-                                    if isWorking {
+                                    if (indexer?.isIndexing ?? false) {
                                         HStack(spacing: 8) {
                                             ProgressView()
                                             Text(indexer?.activeRegionName.map { "Sweeping \($0)…" } ?? "Working…")
@@ -182,7 +180,7 @@ struct RegionIndexManager: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .tint(Theme.accent)
-                                .disabled(isWorking)
+                                .disabled((indexer?.isIndexing ?? false))
                             }
                         }
                     }
@@ -221,53 +219,46 @@ struct RegionIndexManager: View {
     }
 
     private func index(_ suggestion: PlaceSuggestion) async {
-        guard let indexer, !isWorking else { return }
-        isWorking = true
-        indexingSuggestion = suggestion
+        guard let indexer else { return }
         message = nil
-        if await indexer.indexSuggestion(suggestion, kind: kind) != nil {
-            query = ""
-            completer.clear()
-        } else {
-            message = indexer.lastError ?? "Couldn't index \(suggestion.title)."
+        let chosen = kind
+        query = ""
+        completer.clear()
+        indexer.enqueue {
+            if await indexer.indexSuggestion(suggestion, kind: chosen) == nil {
+                message = indexer.lastError ?? "Couldn't index \(suggestion.title)."
+            }
         }
-        indexingSuggestion = nil
-        isWorking = false
     }
 
     private func indexTyped() async {
-        guard let indexer, !isWorking else { return }
-        isWorking = true
+        guard let indexer else { return }
         message = nil
         let name = query
-        if await indexer.indexPlace(named: name, kind: kind) != nil {
-            query = ""
-        } else {
-            message = indexer.lastError ?? "Couldn't index \"\(name)\"."
+        let chosen = kind
+        query = ""
+        completer.clear()
+        indexer.enqueue {
+            if await indexer.indexPlace(named: name, kind: chosen) == nil {
+                message = indexer.lastError ?? "Couldn't index \"\(name)\"."
+            }
         }
-        isWorking = false
     }
 
     private func indexHere() async {
-        guard let indexer, let coordinate = location.currentLocation?.coordinate, !isWorking else { return }
-        isWorking = true
+        guard let indexer, let coordinate = location.currentLocation?.coordinate else { return }
         message = nil
-        await indexer.indexArea(around: coordinate)
-        isWorking = false
+        indexer.enqueue { await indexer.indexArea(around: coordinate) }
     }
 
     private func reindex(_ region: RegionIndex) async {
-        guard let indexer, !isWorking else { return }
-        isWorking = true
-        await indexer.reindex(region)
-        isWorking = false
+        guard let indexer else { return }
+        indexer.enqueue { await indexer.reindex(region) }
     }
 
     private func refreshStale() async {
-        guard let indexer, !isWorking else { return }
-        isWorking = true
-        await indexer.refreshOutdatedIndexes()
-        isWorking = false
+        guard let indexer else { return }
+        indexer.enqueue { await indexer.refreshOutdatedIndexes() }
     }
 
     private func delete(_ region: RegionIndex) {

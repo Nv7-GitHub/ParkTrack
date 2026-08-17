@@ -82,6 +82,26 @@ final class LiveMapKitProbeTests: XCTestCase {
         // a requirement the app can impose.
     }
 
+    /// What indexing actually costs now. Prints requests and wall clock for a city-sized and
+    /// a county-sized area, which is the number the user experiences as "slow".
+    @MainActor
+    func testDenseSweepCost() async throws {
+        for (label, radius) in [("county", 25.0)] {
+            let container = PersistenceController.makeInMemoryContainer()
+            let service = ParkDiscoveryService(modelContext: ModelContext(container))
+            var searches = 0
+            let start = Date()
+            let result = await service.sweepDense(
+                around: CLLocationCoordinate2D(latitude: 47.6101, longitude: -122.2015),
+                radiusMiles: radius
+            ) { progress in
+                searches = progress.tilesSearched
+            }
+            let seconds = Int(Date().timeIntervalSince(start))
+            print("PROBE \(label) radius=\(radius)mi searches=\(searches) seconds=\(seconds) parks=\(result.found.count) truncated=\(result.truncated) completed=\(result.completed) error=\(service.lastError ?? "none")")
+        }
+    }
+
     @MainActor
     func testServiceSweepFindsParks() async throws {
         let container = PersistenceController.makeInMemoryContainer()
