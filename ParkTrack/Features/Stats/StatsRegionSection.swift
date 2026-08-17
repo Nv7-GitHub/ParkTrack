@@ -66,7 +66,7 @@ struct StatsRegionSection: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(
                 title: "Completion by area",
-                subtitle: "Indexed places count every park in them, not just the ones you've found"
+                subtitle: "Places you've started, most complete first"
             ) {
                 Button {
                     isPresentingIndexManager = true

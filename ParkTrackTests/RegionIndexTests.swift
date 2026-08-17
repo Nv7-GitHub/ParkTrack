@@ -374,3 +374,53 @@ final class SweepResumeTests: XCTestCase {
         XCTAssertFalse(index.needsReindexing, "A finished index of the current generation is never swept again on its own")
     }
 }
+
+/// How the completion-by-area list is ordered. Sorting purely by size buried the place the
+/// user was closest to finishing under whichever city happened to be biggest.
+@MainActor
+final class RegionCompletionOrderTests: XCTestCase {
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+        context = ModelContext(container)
+    }
+
+    private func park(_ name: String, city: String, visited: Bool) {
+        let park = Park(identifier: name, name: name, latitude: 1, longitude: 1)
+        park.locality = city
+        park.administrativeArea = "Example State"
+        context.insert(park)
+        if visited { context.insert(Visit(park: park)) }
+    }
+
+    private func allParks() throws -> [Park] {
+        try context.fetch(FetchDescriptor<Park>())
+    }
+
+    func testStartedPlacesComeBeforeUntouchedOnes() throws {
+        // A big city never visited, and a small one partly done.
+        for index in 0..<20 { park("Big \(index)", city: "Big City", visited: false) }
+        for index in 0..<4 { park("Small \(index)", city: "Small City", visited: index < 2) }
+
+        let ordered = StatsEngine.completionByCity(parks: try allParks())
+        XCTAssertEqual(ordered.first?.name, "Small City")
+    }
+
+    func testMoreCompleteComesFirstAmongStartedPlaces() throws {
+        for index in 0..<10 { park("A\(index)", city: "Nearly Done", visited: index < 8) }
+        for index in 0..<10 { park("B\(index)", city: "Just Begun", visited: index < 1) }
+
+        let ordered = StatsEngine.completionByCity(parks: try allParks())
+        XCTAssertEqual(ordered.map(\.name).prefix(2).first, "Nearly Done")
+    }
+
+    func testUntouchedPlacesFallBackToSize() throws {
+        for index in 0..<3 { park("S\(index)", city: "Smaller", visited: false) }
+        for index in 0..<9 { park("L\(index)", city: "Larger", visited: false) }
+
+        let ordered = StatsEngine.completionByCity(parks: try allParks())
+        XCTAssertEqual(ordered.first?.name, "Larger")
+    }
+}

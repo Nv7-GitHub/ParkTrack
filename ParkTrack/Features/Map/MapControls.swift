@@ -139,11 +139,14 @@ struct MapSearchResultRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: "tree.fill")
+                // Parks and everything else are both searchable, and they behave differently
+                // when tapped, so they look different here: a park is collected, a landmark
+                // only moves the map.
+                Image(systemName: candidate.isParkLike ? "tree.fill" : "mappin")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(candidate.isParkLike ? Theme.accent : Theme.sunset)
                     .frame(width: 30, height: 30)
-                    .background(Theme.accent.opacity(0.14), in: Circle())
+                    .background((candidate.isParkLike ? Theme.accent : Theme.sunset).opacity(0.14), in: Circle())
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(candidate.name)
@@ -151,7 +154,12 @@ struct MapSearchResultRow: View {
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                     if let subtitle {
-                        Text(subtitle)
+                        Text(candidate.isParkLike ? subtitle : "Go here · not added as a park")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    } else if !candidate.isParkLike {
+                        Text("Go here · not added as a park")
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)

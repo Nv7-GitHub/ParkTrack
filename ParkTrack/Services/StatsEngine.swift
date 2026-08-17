@@ -181,7 +181,16 @@ enum StatsEngine {
                     kind: kind
                 )
             }
-            .sorted { $0.total == $1.total ? $0.name < $1.name : $0.total > $1.total }
+            // Places you have actually been come first, then the ones you are furthest through,
+            // then the biggest. Sorting purely by size — which is what this used to do — put
+            // whichever city happens to be largest at the top whether or not the user had ever
+            // set foot in it, and buried the place they were two parks from finishing.
+            .sorted { lhs, rhs in
+                if (lhs.visited > 0) != (rhs.visited > 0) { return lhs.visited > 0 }
+                if lhs.fraction != rhs.fraction { return lhs.fraction > rhs.fraction }
+                if lhs.total != rhs.total { return lhs.total > rhs.total }
+                return lhs.name < rhs.name
+            }
     }
 
     // MARK: - Timelines

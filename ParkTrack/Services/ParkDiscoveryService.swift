@@ -18,6 +18,11 @@ struct ParkCandidate: Identifiable, Hashable {
     /// Straight off the map result's placemark. Search already knows what city a result is
     /// in, so taking it here means most parks never need the rate-limited reverse geocoder
     /// — which is what makes indexing a whole city in one pass practical.
+    /// Whether this result looks like a park at all. A search covers everything on the map,
+    /// so a coffee shop can be a perfectly good way to navigate — it just is not a park, and
+    /// must never be filed as one.
+    var isParkLike: Bool = true
+
     var locality: String?
     var subAdministrativeArea: String?
     var administrativeArea: String?
@@ -584,6 +589,10 @@ final class ParkDiscoveryService {
             MKCoordinateRegion(center: $0, latitudinalMeters: 80_000, longitudinalMeters: 80_000)
         }
         do {
+            // Deliberately unfiltered: a landmark is often an easier thing to search for than
+            // the park beside it, so the map's whole index is fair game for getting the camera
+            // somewhere. What a result *is* travels with it as `isParkLike`, and only the
+            // parks are ever added to the catalogue.
             return try await Self.search(query: trimmed, region: region, poiFiltered: false, requireParkLike: false)
         } catch {
             lastError = Self.message(for: error)
@@ -845,6 +854,7 @@ final class ParkDiscoveryService {
             coordinate: coordinate,
             category: item.pointOfInterestCategory?.rawValue,
             addressLine: item.placemark.title,
+            isParkLike: isParkLike(name: name, category: item.pointOfInterestCategory),
             locality: item.placemark.locality,
             subAdministrativeArea: item.placemark.subAdministrativeArea,
             administrativeArea: item.placemark.administrativeArea,

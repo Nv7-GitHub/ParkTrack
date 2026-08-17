@@ -177,7 +177,9 @@ final class StatsEngineTests: XCTestCase {
 
     // MARK: - Region completion
 
-    func testCompletionByCityExcludesUngeocodedParksAndSortsByTotal() {
+    /// Ungeocoded parks are excluded outright, and the list leads with the place the user is
+    /// furthest through rather than the one that happens to be largest.
+    func testCompletionByCityExcludesUngeocodedParksAndSortsByProgress() {
         makePark("A", city: "Riverton", state: "ST", visits: [date(2026, 1, 2)])
         makePark("B", city: "Riverton", state: "ST")
         makePark("C", city: "Riverton", state: "ST")
@@ -185,13 +187,17 @@ final class StatsEngineTests: XCTestCase {
         makePark("E")
 
         let cities = StatsEngine.completionByCity(parks: allParks())
-        XCTAssertEqual(cities.map(\.name), ["Riverton", "Hillside"])
-        XCTAssertEqual(cities[0].total, 3)
-        XCTAssertEqual(cities[0].visited, 1)
-        XCTAssertEqual(cities[0].fraction, 1.0 / 3.0, accuracy: 0.0001)
-        XCTAssertEqual(cities[0].remaining.map(\.name), ["B", "C"])
-        XCTAssertEqual(cities[1].fraction, 1)
-        XCTAssertTrue(cities[1].remaining.isEmpty)
+        XCTAssertEqual(cities.map(\.name), ["Hillside", "Riverton"], "Finished Hillside outranks a third-done Riverton")
+
+        let riverton = try! XCTUnwrap(cities.first { $0.name == "Riverton" })
+        XCTAssertEqual(riverton.total, 3)
+        XCTAssertEqual(riverton.visited, 1)
+        XCTAssertEqual(riverton.fraction, 1.0 / 3.0, accuracy: 0.0001)
+        XCTAssertEqual(riverton.remaining.map(\.name), ["B", "C"])
+
+        let hillside = try! XCTUnwrap(cities.first { $0.name == "Hillside" })
+        XCTAssertEqual(hillside.fraction, 1)
+        XCTAssertTrue(hillside.remaining.isEmpty)
     }
 
     func testEqualTotalsAreOrderedByName() {

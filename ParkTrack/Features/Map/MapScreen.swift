@@ -43,6 +43,7 @@ struct MapScreen: View {
 
     @State private var searchText = ""
     @State private var searchResults: [ParkCandidate] = []
+    @State private var searchFoundNothing = false
     @State private var searchTask: Task<Void, Never>?
 
     @State private var hasCenteredOnUser = false
@@ -126,6 +127,7 @@ struct MapScreen: View {
                 if trimmed.isEmpty {
                     searchTask?.cancel()
                     searchResults = []
+                    searchFoundNothing = false
                 } else if trimmed.count >= 2 {
                     // Results as you type, rather than only on return.
                     searchResults = Self.localMatches(for: trimmed, in: parks)
@@ -293,6 +295,8 @@ struct MapScreen: View {
         VStack(spacing: 8) {
             if !searchResults.isEmpty {
                 searchResultsCard
+            } else if searchFoundNothing {
+                MapStatusPill(text: "No parks match that name", systemImage: "magnifyingglass")
             }
             if scanner.isScanning {
                 MapStatusPill(text: "Scanning this area…", showsSpinner: true)
@@ -594,13 +598,26 @@ struct MapScreen: View {
 
     private func fly(to candidate: ParkCandidate) {
         guard let discovery else { return }
-        let park = discovery.park(for: candidate)
-        try? modelContext.save()
 
         searchTask?.cancel()
         searchResults = []
+        searchFoundNothing = false
         searchText = ""
-        selectedParkIdentifier = park.identifier
+
+        if candidate.isParkLike {
+            let park = discovery.park(for: candidate)
+            try? modelContext.save()
+            selectedParkIdentifier = park.identifier
+            droppedPin = nil
+        } else {
+            // A landmark is a way to get the camera somewhere, not a park. It is marked with
+            // the same pin a long press drops, so adding a park nearby is one tap away if that
+            // is what the user was heading for.
+            selectedParkIdentifier = nil
+            withAnimation(.smooth(duration: 0.25)) {
+                droppedPin = candidate.coordinate
+            }
+        }
 
         withAnimation(.smooth(duration: 0.8)) {
             camera = .region(
@@ -631,6 +648,7 @@ struct MapScreen: View {
             // could arrive on screen as a couple of entries.
             var seen = Set(local.map(\.id))
             searchResults = local + remote.filter { seen.insert($0.id).inserted }
+            searchFoundNothing = searchResults.isEmpty
         }
     }
 
@@ -648,7 +666,8 @@ struct MapScreen: View {
                     name: $0.name,
                     coordinate: $0.coordinate,
                     category: $0.categoryRaw,
-                    addressLine: $0.regionLabel
+                    addressLine: $0.regionLabel,
+                    isParkLike: true
                 )
             }
     }
