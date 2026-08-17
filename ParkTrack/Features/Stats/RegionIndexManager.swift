@@ -151,6 +151,39 @@ struct RegionIndexManager: View {
                         }
                     }
 
+                    // Records from an older indexer: still named, no longer believed.
+                    let stale = indexes.filter(\.needsReindexing)
+                    if !stale.isEmpty {
+                        Card {
+                            VStack(alignment: .leading, spacing: 10) {
+                                SectionHeader(
+                                    "Needs re-indexing",
+                                    subtitle: "\(stale.count) place\(stale.count == 1 ? "" : "s") counted by an older version"
+                                )
+                                Text("Those totals came from a coarser search, so they're treated as partial until swept again. Re-indexing a county can take a few minutes.")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Button {
+                                    Task { await refreshStale() }
+                                } label: {
+                                    if isWorking {
+                                        HStack(spacing: 8) {
+                                            ProgressView()
+                                            Text(indexer?.activeRegionName.map { "Sweeping \($0)…" } ?? "Working…")
+                                        }
+                                    } else {
+                                        Label("Re-index \(stale.count) place\(stale.count == 1 ? "" : "s")", systemImage: "arrow.clockwise")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(Theme.accent)
+                                .disabled(isWorking)
+                            }
+                        }
+                    }
+
                     if indexes.isEmpty {
                         EmptyStateView(
                             systemImage: "square.stack.3d.down.right",
@@ -227,6 +260,13 @@ struct RegionIndexManager: View {
         isWorking = false
     }
 
+    private func refreshStale() async {
+        guard let indexer, !isWorking else { return }
+        isWorking = true
+        await indexer.refreshOutdatedIndexes()
+        isWorking = false
+    }
+
     private func delete(_ region: RegionIndex) {
         services.modelContext?.delete(region)
     }
@@ -248,8 +288,13 @@ private struct RegionIndexRow: View {
                         Pill(text: region.kind.title, systemImage: "mappin.and.ellipse")
                         if region.isIndexing {
                             Pill(text: "Sweeping", systemImage: "arrow.triangle.2.circlepath", tint: Theme.sky)
+                        } else if region.needsReindexing {
+                            Pill(text: "Needs re-index", systemImage: "exclamationmark.arrow.circlepath", tint: Theme.sunset)
                         } else if region.isIndexed {
                             Pill(text: "\(region.parkCount) parks", systemImage: "tree.fill", tint: Theme.fern)
+                            if region.isApproximate {
+                                Pill(text: "Approximate", systemImage: "tilde", tint: Theme.bark)
+                            }
                         }
                     }
                     if let indexedAt = region.indexedAt {

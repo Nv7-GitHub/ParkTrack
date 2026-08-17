@@ -9,6 +9,8 @@ struct RadiusCompletion: Identifiable {
     let total: Int
     let fraction: Double
     let remaining: [Park]
+    /// The visited half, so a ring's detail can show progress rather than only a to-do list.
+    var visitedParks: [Park] = []
 }
 
 /// How much of a named area (city, county, state) has been visited.
@@ -19,9 +21,14 @@ struct RegionCompletion: Identifiable {
     let total: Int
     let fraction: Double
     let remaining: [Park]
+    /// The visited half of the same group, so a detail view can show both sides.
+    var visitedParks: [Park] = []
     /// True when `total` came from a completed sweep of this place rather than from however
     /// many of its parks happen to have been found so far.
     var isIndexed: Bool = false
+    /// True when the indexed total is a floor: the place was too large to sweep at full
+    /// density, so there are probably more parks in it than this.
+    var isApproximate: Bool = false
     var indexedAt: Date?
     /// Key shared with friends, so a head-to-head counts both sides against the same total.
     var identifier: String = ""
@@ -101,7 +108,8 @@ enum StatsEngine {
             visited: visited,
             total: total,
             fraction: total == 0 ? 0 : Double(visited) / Double(total),
-            remaining: remaining
+            remaining: remaining,
+            visitedParks: inRing.filter { $0.0.isVisited }.sorted { $0.1 < $1.1 }.map { $0.0 }
         )
     }
 
@@ -162,7 +170,9 @@ enum StatsEngine {
                     total: total,
                     fraction: total == 0 ? 0 : Double(visited) / Double(total),
                     remaining: members.filter { !$0.isVisited }.sorted { $0.name < $1.name },
+                    visitedParks: members.filter(\.isVisited),
                     isIndexed: indexed != nil,
+                    isApproximate: indexed?.isApproximate ?? false,
                     indexedAt: indexed?.indexedAt,
                     identifier: indexed?.identifier
                         ?? members.compactMap { RegionIndex.identity(kind: kind, park: $0) }.first

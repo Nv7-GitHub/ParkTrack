@@ -111,6 +111,10 @@ struct StatsRegionSection: View {
                                             Text("Partial — index \(completion.name) for a real total")
                                                 .font(.caption2)
                                                 .foregroundStyle(Theme.textSecondary)
+                                        } else if completion.isApproximate {
+                                            Text("Approximate — \(completion.name) is too large to search exhaustively")
+                                                .font(.caption2)
+                                                .foregroundStyle(Theme.textSecondary)
                                         }
                                     }
                                 }
@@ -148,12 +152,8 @@ struct StatsRegionSection: View {
             RegionIndexManager()
         }
         .sheet(item: $detail) { completion in
-            StatsRemainingParksSheet(
-                title: completion.name,
-                subtitle: "in \(completion.name)",
-                parks: completion.remaining
-            )
-            .presentationDetents([.medium, .large])
+            RegionProgressSheet(completion: completion, origin: nil)
+                .presentationDetents([.medium, .large])
         }
     }
 }

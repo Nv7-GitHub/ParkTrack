@@ -43,8 +43,12 @@ enum RecommendationEngine {
         static let weekendPick = 0.55
     }
 
-    /// A ring or region only counts as "worth finishing" once it is genuinely close to done,
-    /// otherwise every park in a big untouched area would claim the reason.
+    /// No single reason may take more than this share of the list. Without it one reason
+    /// crowds out the rest — a user with visits spread thinly saw nothing but "new
+    /// territory", because that was the only reason every unvisited park could claim.
+    private static let maxShareOfOneReason = 0.4
+
+    /// A set this close to done is treated as a headline finish, and says so.
     private static let nearlyDoneRemaining = 5
     private static let nearlyDoneFraction = 0.5
 
@@ -79,21 +83,47 @@ enum RecommendationEngine {
         rows += newTerritoryRows(visited: visited, candidates: candidates, anchor: anchor)
         rows += weekendRows(candidates, anchor: anchor, radiiMiles: radii)
 
-        var best: [String: Recommendation] = [:]
-        for row in rows where (best[row.park.identifier]?.score ?? -1) < row.score {
-            best[row.park.identifier] = row
+        let ranked = rows.sorted { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            let l = lhs.distanceMeters ?? .greatestFiniteMagnitude
+            let r = rhs.distanceMeters ?? .greatestFiniteMagnitude
+            if l != r { return l < r }
+            return lhs.park.name < rhs.park.name
+        }
+        return diversified(ranked, limit: limit)
+    }
+
+    /// Picks the best rows without letting one reason fill the list, and without showing the
+    /// same park twice.
+    ///
+    /// Order matters here. Collapsing each park to its single best-scoring reason first — the
+    /// obvious way to deduplicate — destroys the variety before the cap can protect it: when
+    /// most unvisited parks are in untouched places, they all become "new territory" and
+    /// there is nothing of another kind left to promote. So the cap is applied across all
+    /// rows, and a park is only claimed once it is actually picked.
+    ///
+    /// The second pass ignores the cap, so a short list is still a full list.
+    private static func diversified(_ ranked: [Recommendation], limit: Int) -> [Recommendation] {
+        let perReasonCap = max(1, Int((Double(limit) * maxShareOfOneReason).rounded(.up)))
+        var counts: [RecommendationReason: Int] = [:]
+        var claimed: Set<String> = []
+        var picked: [Recommendation] = []
+
+        for row in ranked where picked.count < limit {
+            guard !claimed.contains(row.park.identifier) else { continue }
+            guard counts[row.reason, default: 0] < perReasonCap else { continue }
+            counts[row.reason, default: 0] += 1
+            claimed.insert(row.park.identifier)
+            picked.append(row)
         }
 
-        return best.values
-            .sorted { lhs, rhs in
-                if lhs.score != rhs.score { return lhs.score > rhs.score }
-                let l = lhs.distanceMeters ?? .greatestFiniteMagnitude
-                let r = rhs.distanceMeters ?? .greatestFiniteMagnitude
-                if l != r { return l < r }
-                return lhs.park.name < rhs.park.name
-            }
-            .prefix(limit)
-            .map { $0 }
+        for row in ranked where picked.count < limit {
+            guard !claimed.contains(row.park.identifier) else { continue }
+            claimed.insert(row.park.identifier)
+            picked.append(row)
+        }
+
+        return picked
     }
 
     // MARK: - Anchor
@@ -131,10 +161,20 @@ enum RecommendationEngine {
     /// afterwards, partly about how few stragglers are left.
     private static func completionScore(visited: Int, total: Int, remaining: Int) -> Double? {
         guard total > 0, visited > 0, remaining > 0 else { return nil }
+        // Every started set can be finished, so every started set is a candidate — it used to
+        // take a hard gate at half done or five left, which meant a user partway through
+        // anywhere got no finishing suggestions at all. Progress now moves the score instead
+        // of deciding whether the reason exists, so a nearly-done city outranks a barely
+        // started one without silencing it.
         let alreadyDone = Double(visited) / Double(total)
-        guard remaining <= nearlyDoneRemaining || alreadyDone >= nearlyDoneFraction else { return nil }
         let after = Double(visited + 1) / Double(total)
-        return 0.65 * after + 0.35 * (1 / Double(remaining))
+        return 0.40 * after + 0.25 * (1 / Double(remaining)) + 0.35 * alreadyDone
+    }
+
+    /// Whether a set is close enough to done to be worth shouting about in the headline.
+    private static func isNearlyDone(visited: Int, total: Int, remaining: Int) -> Bool {
+        guard total > 0 else { return false }
+        return remaining <= nearlyDoneRemaining || Double(visited) / Double(total) >= nearlyDoneFraction
     }
 
     // MARK: - Reasons
@@ -211,7 +251,9 @@ enum RecommendationEngine {
                     park: park,
                     reason: .finishRadius,
                     score: Weight.finishRadius * base,
-                    headline: "\(remaining.count) Left in Your \(Format.miles(radius)) Ring",
+                    headline: isNearlyDone(visited: visitedCount, total: inside.count, remaining: remaining.count)
+                        ? "Only \(remaining.count) Left in Your \(Format.miles(radius)) Ring"
+                        : "\(remaining.count) Left in Your \(Format.miles(radius)) Ring",
                     detail: "Visiting this would put you at \(Format.percent(after)) within \(Format.miles(radius)).",
                     distanceMeters: meters
                 ))
@@ -249,7 +291,9 @@ enum RecommendationEngine {
                     park: park,
                     reason: .finishRegion,
                     score: Weight.finishRegion * base,
-                    headline: "\(remaining.count) Left in \(region)",
+                    headline: isNearlyDone(visited: visitedCount, total: group.count, remaining: remaining.count)
+                        ? "Nearly Done with \(region)"
+                        : "\(remaining.count) Left in \(region)",
                     detail: "Visiting this would put you at \(Format.percent(after)) of \(region).",
                     distanceMeters: distance(park, from: anchor)
                 ))

@@ -75,11 +75,10 @@ struct StatsRadiusSection: View {
             }
         }
         .sheet(item: $detail) { completion in
-            StatsRemainingParksSheet(
-                title: "Left within \(Format.miles(completion.radiusMiles))",
-                subtitle: "within \(Format.miles(completion.radiusMiles))",
-                parks: completion.remaining,
-                origin: origin
+            RadiusProgressSheet(
+                completion: completion,
+                origin: origin,
+                anchorLabel: anchor.sheetLabel
             )
             .presentationDetents([.medium, .large])
         }

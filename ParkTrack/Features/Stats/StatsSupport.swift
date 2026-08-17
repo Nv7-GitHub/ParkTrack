@@ -22,6 +22,15 @@ enum StatsAnchor: String, CaseIterable, Identifiable {
         }
     }
 
+    /// How the anchor reads inside a sentence, as opposed to on a segmented control.
+    var sheetLabel: String {
+        switch self {
+        case .currentLocation: return "you"
+        case .home: return "home"
+        case .pin: return "your pin"
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .currentLocation: return "location.fill"

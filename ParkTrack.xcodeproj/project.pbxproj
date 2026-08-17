@@ -15,6 +15,7 @@
 		160081CB3569EF49AFDF1329 /* StatsRegionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745C1692332393A859502171 /* StatsRegionSection.swift */; };
 		16030B0B3C22F71DD428417F /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */; };
 		174C6B95EEDCDE9317C80BE8 /* ParksListScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBBE391192EA924945BF0F9 /* ParksListScreen.swift */; };
+		177A0747F43177634F5BEE92 /* RadiusProgressSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B748800A9F512138E3939812 /* RadiusProgressSheet.swift */; };
 		19E4AFCF7593BEFF62ECBFAA /* MockSocialBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C04C3FE47A398B8B8F136E /* MockSocialBackend.swift */; };
 		1BEDB0CC80354B41D56899B0 /* HomeRecommendations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 754C504BFC13EBB0DC9B91F3 /* HomeRecommendations.swift */; };
 		1D69E0AD6734FCA82D0ECCA4 /* PerformanceProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C87268F1C82625A97261321 /* PerformanceProbeTests.swift */; };
@@ -42,6 +43,7 @@
 		4CD49FFCD5C40214CABFA720 /* SocialService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A8AAC930AEC868F445EF14 /* SocialService.swift */; };
 		51974DDD7E3E50B071B6DDE7 /* DerivedCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C355C9566E2D158E04AC4A3 /* DerivedCache.swift */; };
 		527354723237AABB909AE173 /* StatsEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5003CD1A57BEB4A4FFBB5D04 /* StatsEngineTests.swift */; };
+		5420C8D07AA5BDC815201571 /* RegionProgressSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82022E6745194387AC3C835 /* RegionProgressSheet.swift */; };
 		56F9172A0CB705F355C0BDA0 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD30510A3D319A31882FDD4 /* PersistenceController.swift */; };
 		5C570D1CF16A7318A09FFBC3 /* HomeMapPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93BB5941EA6EA3D0E69FD0A2 /* HomeMapPickerSheet.swift */; };
 		5C7F0E898C5A2C74BC9C104A /* LiveMapKitProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F7E4894A3B5F68E6FA55F7 /* LiveMapKitProbeTests.swift */; };
@@ -154,6 +156,8 @@
 		A94530D184B1227E16A33097 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
 		B57DB326DB3267E1F5BA6C4E /* ParkRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkRow.swift; sourceTree = "<group>"; };
+		B748800A9F512138E3939812 /* RadiusProgressSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RadiusProgressSheet.swift; sourceTree = "<group>"; };
+		B82022E6745194387AC3C835 /* RegionProgressSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionProgressSheet.swift; sourceTree = "<group>"; };
 		B93A9B73CF891B5DD4931472 /* FriendVisitRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendVisitRow.swift; sourceTree = "<group>"; };
 		BA0966F8C2BED50015717C12 /* DataExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataExport.swift; sourceTree = "<group>"; };
 		BD35EE28EC7E4939C3E4B87C /* RegionIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionIndexTests.swift; sourceTree = "<group>"; };
@@ -258,7 +262,9 @@
 		4A2FA4B889025C6EEF107744 /* Stats */ = {
 			isa = PBXGroup;
 			children = (
+				B748800A9F512138E3939812 /* RadiusProgressSheet.swift */,
 				E4832852DC3352814011047A /* RegionIndexManager.swift */,
+				B82022E6745194387AC3C835 /* RegionProgressSheet.swift */,
 				03B53F55F964FA32C984F2D6 /* StatsRadiusSection.swift */,
 				7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */,
 				745C1692332393A859502171 /* StatsRegionSection.swift */,
@@ -602,10 +608,12 @@
 				174C6B95EEDCDE9317C80BE8 /* ParksListScreen.swift in Sources */,
 				56F9172A0CB705F355C0BDA0 /* PersistenceController.swift in Sources */,
 				74600818756869C180033D5B /* PlaceCompleter.swift in Sources */,
+				177A0747F43177634F5BEE92 /* RadiusProgressSheet.swift in Sources */,
 				A8C9F79A763A71D726F1A329 /* RecommendationEngine.swift in Sources */,
 				A8B0C8A1F11FB60E69AA5B30 /* RegionIndex.swift in Sources */,
 				14D4EA23980FB2F60A32AE84 /* RegionIndexManager.swift in Sources */,
 				36418F1C327822A916B3F405 /* RegionIndexer.swift in Sources */,
+				5420C8D07AA5BDC815201571 /* RegionProgressSheet.swift in Sources */,
 				6C5110DC9FD53F9AB0EC5230 /* RegionRaceView.swift in Sources */,
 				B713A25B961266482AB7B77A /* RegionResolver.swift in Sources */,
 				3E7C18B98793524C82446DCC /* RootView.swift in Sources */,

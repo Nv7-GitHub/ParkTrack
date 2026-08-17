@@ -49,7 +49,10 @@ final class RegionIndexTests: XCTestCase {
             radiusMeters: 8_000
         )
         index.parkCount = parkCount
-        if indexed { index.indexedAt = Date() }
+        if indexed {
+            index.indexedAt = Date()
+            index.indexerVersion = RegionIndex.currentIndexerVersion
+        }
         context.insert(index)
         return index
     }
@@ -127,6 +130,40 @@ final class RegionIndexTests: XCTestCase {
         let completion = StatsEngine.completionByCity(parks: parks, indexes: [index]).first
         XCTAssertEqual(completion?.total, 5)
         XCTAssertEqual(completion?.fraction, 1.0)
+    }
+
+    /// Totals from an older indexer came from a coarser sweep and cannot be compared with
+    /// today's, so they must not be used until the place has been swept again.
+    func testIndexFromAnOlderGenerationIsNotTrusted() {
+        let parks = [makePark("A", city: "Sample City", visited: true), makePark("B", city: "Sample City")]
+        let index = makeIndex(kind: .city, name: "Sample City", container: "Example State", parkCount: 40)
+        index.indexerVersion = RegionIndex.currentIndexerVersion - 1
+
+        XCTAssertFalse(index.isIndexed)
+        XCTAssertTrue(index.needsReindexing, "The place is still worth indexing, it just needs re-sweeping")
+
+        let completion = StatsEngine.completionByCity(parks: parks, indexes: [index]).first
+        XCTAssertEqual(completion?.total, 2, "A stale generation's total must not be used")
+        XCTAssertEqual(completion?.isIndexed, false)
+    }
+
+    func testApproximateFlagSurfacesOnTheCompletion() {
+        let parks = [makePark("A", city: "Sample City", visited: true)]
+        let index = makeIndex(kind: .city, name: "Sample City", container: "Example State", parkCount: 12)
+        index.isApproximate = true
+        let completion = StatsEngine.completionByCity(parks: parks, indexes: [index]).first
+        XCTAssertEqual(completion?.isApproximate, true)
+    }
+
+    func testCompletionCarriesBothHalves() {
+        let parks = [
+            makePark("A", city: "Sample City", visited: true),
+            makePark("B", city: "Sample City", visited: true),
+            makePark("C", city: "Sample City")
+        ]
+        let completion = StatsEngine.completionByCity(parks: parks).first
+        XCTAssertEqual(completion?.visitedParks.count, 2)
+        XCTAssertEqual(completion?.remaining.count, 1)
     }
 
     func testAnIncompleteIndexIsIgnored() {

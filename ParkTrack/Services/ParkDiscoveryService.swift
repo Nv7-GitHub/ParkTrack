@@ -266,6 +266,84 @@ final class ParkDiscoveryService {
         return order.compactMap { found[$0] }
     }
 
+    /// What a uniform-density sweep managed to do.
+    struct DenseSweepResult {
+        let found: [Park]
+        /// False when the sweep was cancelled or gave up after repeated failures.
+        let completed: Bool
+        /// True when the area needed more tiles than the budget allows, so the result is a
+        /// floor rather than a full count.
+        let truncated: Bool
+    }
+
+    /// Tiles beyond this and one region would occupy the searcher for many minutes.
+    nonisolated static let maxIndexGridSide = 22
+
+    /// Sweeps an area at even density, for indexing.
+    ///
+    /// The ordinary sweep grows in concentric levels that trible in size, so its outer tiles
+    /// end up tens of kilometres across — and a single search answers with at most a couple
+    /// of dozen results, so a wide tile silently sees a fraction of what is in it. That is
+    /// fine for filling a map as the user pans, and wrong for a count that claims to be the
+    /// number of parks in a place. Here every tile is the same small size, whatever the
+    /// extent, and the caller is told when the area was too big to cover at that density.
+    @discardableResult
+    func sweepDense(around coordinate: CLLocationCoordinate2D, radiusMiles: Double) async -> DenseSweepResult {
+        guard !isSweeping else { return DenseSweepResult(found: [], completed: false, truncated: false) }
+        isSweeping = true
+        isSearching = true
+        lastError = nil
+        defer {
+            isSweeping = false
+            isSearching = false
+        }
+
+        let sideMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * 2 * Format.metersPerMile
+        let needed = Int((sideMeters / Self.targetTileMeters).rounded(.up))
+        let gridSide = max(1, min(needed, Self.maxIndexGridSide))
+        let truncated = needed > gridSide
+
+        let square = MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: sideMeters,
+            longitudinalMeters: sideMeters
+        )
+
+        var found: [String: Park] = [:]
+        var order: [String] = []
+        var completed = true
+        var failures = 0
+
+        for tile in Self.tiles(for: square, side: gridSide) {
+            if Task.isCancelled { completed = false; break }
+            let outcome = await Self.candidates(inTiles: [tile], wideOver: tile)
+            if Task.isCancelled { completed = false; break }
+
+            for park in persist(outcome.candidates) where found[park.identifier] == nil {
+                found[park.identifier] = park
+                order.append(park.identifier)
+            }
+
+            if outcome.failure != nil {
+                lastError = outcome.failure
+                failures += 1
+                if failures >= Self.maxFailedLevels { completed = false; break }
+            } else {
+                failures = 0
+            }
+        }
+
+        if completed && !truncated {
+            coverage.record(square)
+        }
+        lastSweepCompleted = completed
+        return DenseSweepResult(
+            found: order.compactMap { found[$0] },
+            completed: completed,
+            truncated: truncated
+        )
+    }
+
     /// Whether every part of a completion ring has actually been searched.
     ///
     /// The rings need this to know when a percentage is a fraction of a known total and

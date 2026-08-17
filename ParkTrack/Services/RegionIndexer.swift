@@ -49,6 +49,26 @@ final class RegionIndexer {
 
     /// Indexes whatever city and county the coordinate falls in. This is the automatic path:
     /// wherever the user is gets indexed once, in the background, and then stays indexed.
+    /// Places an older generation recorded, whose totals are no longer believed.
+    ///
+    /// Deliberately not swept automatically. Re-indexing a county is hundreds of searches and
+    /// several minutes, and doing that unasked on launch — for every stale place at once —
+    /// would hammer the map service and take control away from the user. Their totals are
+    /// already distrusted, so the cost of waiting for a tap is only that a percentage stays
+    /// marked partial until then.
+    func outdatedIndexes() -> [RegionIndex] {
+        allIndexes().filter(\.needsReindexing)
+    }
+
+    /// Re-sweeps every stale place. Called when the user asks, never on its own.
+    func refreshOutdatedIndexes() async {
+        let stale = allIndexes().filter(\.needsReindexing)
+        for region in stale {
+            if Task.isCancelled { return }
+            await reindex(region)
+        }
+    }
+
     func indexArea(around coordinate: CLLocationCoordinate2D) async {
         guard let placemark = await reverseGeocode(coordinate) else { return }
         for kind in Self.indexableKinds {
@@ -166,19 +186,19 @@ final class RegionIndexer {
             activeRegionName = nil
         }
 
-        // Always forced, even for a first index. An unforced sweep skips ground the startup
-        // pass already covered — but that pass tiles a 25-mile radius coarsely, and reusing
-        // it would let a city be called "indexed" off a scan too sparse to have seen all of
-        // it. Indexing is a claim that the place was searched properly, so it searches.
-        _ = await discovery.sweep(
+        // A uniform-density sweep, not the ordinary one. The ordinary sweep widens in levels
+        // that grow threefold, so its outer tiles are tens of kilometres across and see only a
+        // fraction of what is in them — which is how a county came to report itself fully
+        // indexed while missing most of its parks.
+        let result = await discovery.sweepDense(
             around: center,
-            radiusMiles: radius / Format.metersPerMile,
-            force: true
+            radiusMiles: radius / Format.metersPerMile
         )
+        record.isApproximate = result.truncated
 
         // A cut-short sweep has not seen the whole place, and recording it as indexed would
         // publish a total that is simply wrong — including to friends racing against it.
-        guard discovery.lastSweepCompleted, !Task.isCancelled else {
+        guard result.completed, !Task.isCancelled else {
             record.lastError = "Indexing \(name) was interrupted. Try again."
             lastError = record.lastError
             try? modelContext.save()
@@ -201,6 +221,7 @@ final class RegionIndexer {
 
         record.parkCount = count
         record.indexedAt = Date()
+        record.indexerVersion = RegionIndex.currentIndexerVersion
         record.lastError = nil
         try? modelContext.save()
         return record

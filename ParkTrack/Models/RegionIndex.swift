@@ -48,6 +48,19 @@ final class RegionIndex {
     var indexedAt: Date?
     /// Parks found inside this region by the completed sweep.
     var parkCount: Int = 0
+    /// Which generation of the indexer produced this record.
+    ///
+    /// Totals written by an older, weaker sweep are not comparable with today's, and they are
+    /// the denominator behind every percentage and every friend race — so a record from a
+    /// previous generation is retired and swept again rather than trusted. Defaults to 0,
+    /// which is exactly what records written before this existed decode as.
+    var indexerVersion: Int = 0
+
+    /// True when the place was too large to sweep at full density, so the count is a floor
+    /// rather than a total. A county can be hundreds of kilometres across and the map answers
+    /// each search with a couple of dozen results at most.
+    var isApproximate: Bool = false
+
     /// Set while a sweep is running so the UI can show progress and refuse to start twice.
     var isIndexing: Bool = false
     var lastError: String?
@@ -78,7 +91,16 @@ extension RegionIndex {
         CLLocationCoordinate2D(latitude: centerLatitude, longitude: centerLongitude)
     }
     var radiusMiles: Double { radiusMeters / Format.metersPerMile }
-    var isIndexed: Bool { indexedAt != nil }
+    var isIndexed: Bool { indexedAt != nil && indexerVersion >= RegionIndex.currentIndexerVersion }
+
+    /// Bump when a change makes previously recorded totals untrustworthy. Generation 1 is the
+    /// first that always sweeps at region resolution instead of reusing whatever ground a
+    /// coarse startup pass had covered, and that refuses to record an empty result.
+    static let currentIndexerVersion = 1
+
+    /// True for a record written by an older generation, which still names a place worth
+    /// indexing but whose count can no longer be believed.
+    var needsReindexing: Bool { indexedAt != nil && indexerVersion < RegionIndex.currentIndexerVersion }
 
     /// "Redmond, WA" style label, falling back to whatever detail exists.
     var displayName: String {

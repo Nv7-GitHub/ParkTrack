@@ -134,6 +134,7 @@ struct HomeRadiusDetailView: View {
 
     @Environment(ServiceHub.self) private var services
     @Query private var parks: [Park]
+    @State private var showsVisited = false
 
     private var completion: RadiusCompletion {
         StatsEngine.radiusCompletion(parks: parks, center: route.center, radiusMiles: route.radiusMiles)
@@ -182,6 +183,8 @@ struct HomeRadiusDetailView: View {
                     }
                 }
 
+                // Both halves, not just the to-do list: "how am I doing here" is the question
+                // the ring raises, and only the remaining parks cannot answer it.
                 if completion.remaining.isEmpty {
                     EmptyStateView(
                         systemImage: isSwept ? "checkmark.seal" : "binoculars",
@@ -189,22 +192,19 @@ struct HomeRadiusDetailView: View {
                         message: emptyStateMessage(for: completion)
                     )
                 } else {
-                    VStack(spacing: 0) {
-                        ForEach(completion.remaining) { park in
-                            NavigationLink(value: park) {
-                                row(park)
-                            }
-                            .buttonStyle(.plain)
-                            if park.identifier != completion.remaining.last?.identifier {
-                                Divider().overlay(Theme.separator).padding(.leading, 16)
-                            }
-                        }
+                    parkList(title: "Still to go · \(completion.remaining.count)", parks: completion.remaining)
+                }
+
+                if !completion.visitedParks.isEmpty {
+                    DisclosureGroup(isExpanded: $showsVisited) {
+                        parkList(title: nil, parks: completion.visitedParks)
+                            .padding(.top, 8)
+                    } label: {
+                        Text("Been to · \(completion.visited)")
+                            .font(.headline)
+                            .foregroundStyle(Theme.textPrimary)
                     }
-                    .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
-                            .strokeBorder(Theme.separator, lineWidth: 0.5)
-                    )
+                    .tint(Theme.accent)
                 }
             }
             .padding(16)
@@ -216,6 +216,34 @@ struct HomeRadiusDetailView: View {
 
     /// A percentage over ground we haven't searched is a guess, so say so before saying
     /// anything else about the total.
+    @ViewBuilder
+    private func parkList(title: String?, parks: [Park]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let title {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(spacing: 0) {
+                ForEach(parks) { park in
+                    NavigationLink(value: park) {
+                        row(park)
+                    }
+                    .buttonStyle(.plain)
+                    if park.identifier != parks.last?.identifier {
+                        Divider().overlay(Theme.separator).padding(.leading, 16)
+                    }
+                }
+            }
+            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                    .strokeBorder(Theme.separator, lineWidth: 0.5)
+            )
+        }
+    }
+
     private func summary(for completion: RadiusCompletion) -> String {
         guard isSwept else {
             return "We're still searching within \(Format.miles(route.radiusMiles)), so this total will grow and the percentage is provisional."

@@ -229,3 +229,72 @@ final class RecommendationEngineTests: XCTestCase {
         XCTAssertTrue(fresh.detail.contains("Delta"))
     }
 }
+
+/// The list has to answer "how do I finish what I've started", not just "where haven't you
+/// been". A user partway through several places was seeing nothing but new territory.
+@MainActor
+final class RecommendationVarietyTests: XCTestCase {
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+        context = ModelContext(container)
+    }
+
+    private func park(_ name: String, city: String, lat: Double, lon: Double, visited: Bool) -> Park {
+        let park = Park(identifier: name, name: name, latitude: lat, longitude: lon)
+        park.locality = city
+        park.administrativeArea = "Example State"
+        context.insert(park)
+        if visited { context.insert(Visit(park: park)) }
+        return park
+    }
+
+    /// A city barely started still deserves finishing suggestions — this is the case the old
+    /// "half done or five left" gate silently dropped.
+    func testPartlyStartedRegionStillProducesFinishingAdvice() {
+        var parks: [Park] = []
+        for index in 0..<20 {
+            parks.append(park(
+                "Home \(index)",
+                city: "Sample City",
+                lat: 47.60 + Double(index) * 0.001,
+                lon: -122.20,
+                visited: index < 3
+            ))
+        }
+        let origin = CLLocation(latitude: 47.60, longitude: -122.20)
+        let results = RecommendationEngine.recommendations(
+            parks: parks, origin: origin, home: origin.coordinate,
+            radiiMiles: [2.5, 5, 10], limit: 8
+        )
+        XCTAssertTrue(
+            results.contains { $0.reason == .finishRegion || $0.reason == .finishRadius },
+            "Expected finishing suggestions, got: \(Set(results.map(\.reason.rawValue)).sorted())"
+        )
+    }
+
+    func testNoSingleReasonFillsTheList() {
+        var parks: [Park] = []
+        for index in 0..<40 {
+            parks.append(park(
+                "City\(index % 8) Park \(index)",
+                city: "City \(index % 8)",
+                lat: 47.60 + Double(index) * 0.004,
+                lon: -122.20 + Double(index) * 0.004,
+                visited: index % 8 == 0
+            ))
+        }
+        let origin = CLLocation(latitude: 47.60, longitude: -122.20)
+        let results = RecommendationEngine.recommendations(
+            parks: parks, origin: origin, home: origin.coordinate,
+            radiiMiles: [2.5, 5, 10], limit: 10
+        )
+        let counts = Dictionary(grouping: results, by: \.reason).mapValues(\.count)
+        XCTAssertGreaterThanOrEqual(Set(results.map(\.reason)).count, 3, "Expected a mix of reasons, got \(counts)")
+        for (reason, count) in counts {
+            XCTAssertLessThanOrEqual(count, 6, "\(reason) dominated the list: \(counts)")
+        }
+    }
+}
