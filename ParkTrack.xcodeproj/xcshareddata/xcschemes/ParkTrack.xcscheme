@@ -50,6 +50,17 @@
                ReferencedContainer = "container:ParkTrack.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "90108CDC50BFF08C315857EA"
+               BuildableName = "ParkTrackUITests.xctest"
+               BlueprintName = "ParkTrackUITests"
+               ReferencedContainer = "container:ParkTrack.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

@@ -41,6 +41,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrackTests
         GENERATE_INFOPLIST_FILE: YES
+  ParkTrackUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ParkTrackUITests
+    dependencies:
+      - target: ParkTrack
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nv7.parktrack.ParkTrackUITests
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   ParkTrack:
     build:
@@ -52,3 +63,4 @@ schemes:
       config: Debug
       targets:
         - ParkTrackTests
+        - ParkTrackUITests

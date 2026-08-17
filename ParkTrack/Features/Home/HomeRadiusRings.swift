@@ -141,7 +141,10 @@ struct HomeRadiusDetailView: View {
                             Text("\(completion.visited) of \(completion.total) visited")
                                 .font(.headline)
                                 .foregroundStyle(Theme.textPrimary)
-                            Text(completion.remaining.isEmpty
+                            // No parks known here is not the same as having visited them all.
+                            Text(completion.total == 0
+                                 ? "No parks found within \(Format.miles(route.radiusMiles)) yet."
+                                 : completion.remaining.isEmpty
                                  ? "This ring is complete. Widen your radius for a new challenge."
                                  : "\(Format.parkCount(completion.remaining.count)) still to go within \(Format.miles(route.radiusMiles)).")
                                 .font(.subheadline)

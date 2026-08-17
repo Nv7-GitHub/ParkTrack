@@ -38,10 +38,10 @@ final class ParkDiscoveryService {
     private(set) var isSearching = false
     private(set) var lastError: String?
 
-    /// Above this many concurrent `MKLocalSearch` calls Apple starts throttling us.
-    private nonisolated static let maxConcurrentSearches = 4
     /// Tiles beyond this are more requests than any one scan should cost the user.
-    nonisolated static let maxTilesPerScan = 16
+    /// Every search is serialized by `SearchThrottle`, so this is a time budget as much
+    /// as a request budget.
+    nonisolated static let maxTilesPerScan = 9
     /// Roughly 6 km, small enough that the per-request result cap rarely truncates a tile.
     private nonisolated static let targetTileSpanDegrees = 0.06
 
@@ -219,50 +219,46 @@ final class ParkDiscoveryService {
         var failure: String?
     }
 
-    /// Runs every tile of `region`, at most `maxConcurrentSearches` at a time, and merges.
+    /// Scans `region` tile by tile.
+    ///
+    /// Searches run one at a time through `SearchThrottle`: MapKit throttles bursts, and a
+    /// throttled scan used to come back empty. Each tile uses the precise POI filter, and a
+    /// single region-wide text pass catches parks Apple never categorised — which keeps the
+    /// whole scan to `maxTilesPerScan + 1` requests instead of twice that.
     private nonisolated static func candidates(coveringTilesOf region: MKCoordinateRegion) async -> TileOutcome {
-        let tiles = tiles(for: region, maxTiles: maxTilesPerScan)
-
         var merged = TileOutcome()
-        await withTaskGroup(of: TileOutcome.self) { group in
-            var next = 0
-            while next < tiles.count && next < maxConcurrentSearches {
-                let tile = tiles[next]
-                group.addTask { await candidates(in: tile) }
-                next += 1
-            }
-            while let batch = await group.next() {
-                merged.candidates.append(contentsOf: batch.candidates)
-                if merged.failure == nil { merged.failure = batch.failure }
-                if next < tiles.count {
-                    let tile = tiles[next]
-                    group.addTask { await candidates(in: tile) }
-                    next += 1
-                }
-            }
+
+        for tile in tiles(for: region, maxTiles: maxTilesPerScan) {
+            let outcome = await candidates(in: tile)
+            merged.candidates.append(contentsOf: outcome.candidates)
+            if merged.failure == nil { merged.failure = outcome.failure }
         }
+
+        do {
+            let wide = try await search(query: "park", region: region, poiFiltered: false, requireParkLike: true)
+            merged.candidates.append(contentsOf: wide)
+        } catch {
+            if merged.failure == nil { merged.failure = message(for: error) }
+        }
+
         merged.candidates = deduped(merged.candidates)
         // A tile that failed while others succeeded isn't worth bothering the user about.
         if !merged.candidates.isEmpty { merged.failure = nil }
         return merged
     }
 
-    /// One tile, two passes: the POI filter is precise but sparse, the plain text query
-    /// catches parks Apple never categorised. Merged, they cover far more ground.
+    /// One tile, POI-filtered. The uncategorised sweep happens once for the whole region.
     private nonisolated static func candidates(in region: MKCoordinateRegion) async -> TileOutcome {
         var outcome = TileOutcome()
-        for poiFiltered in [true, false] {
-            do {
-                let found = try await search(
-                    query: "park",
-                    region: region,
-                    poiFiltered: poiFiltered,
-                    requireParkLike: true
-                )
-                outcome.candidates.append(contentsOf: found)
-            } catch {
-                if outcome.failure == nil { outcome.failure = message(for: error) }
-            }
+        do {
+            outcome.candidates = try await search(
+                query: "park",
+                region: region,
+                poiFiltered: true,
+                requireParkLike: true
+            )
+        } catch {
+            outcome.failure = message(for: error)
         }
         return outcome
     }
@@ -281,7 +277,7 @@ final class ParkDiscoveryService {
         }
         if let region { request.region = region }
 
-        let response = try await MKLocalSearch(request: request).start()
+        let response = try await SearchThrottle.shared.run(request)
         return response.mapItems.compactMap { item in
             candidate(from: item, requireParkLike: requireParkLike)
         }

@@ -21,6 +21,7 @@
 		21A3C3583FA345ED1F6E24C5 /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94530D184B1227E16A33097 /* SettingsScreen.swift */; };
 		22AF82F9E3D90504C122E725 /* Formatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5AF97EE5F8D0E0881DCFF7F /* Formatters.swift */; };
 		27324185771C0B2889C15800 /* FriendMediaViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6404AEF6E642BBAE14E9067E /* FriendMediaViewer.swift */; };
+		284499ECD30542F447C6C759 /* SearchThrottle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83E5683236CB070B1FC76925 /* SearchThrottle.swift */; };
 		2E2BC1966622B11E588AD063 /* ParkRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B57DB326DB3267E1F5BA6C4E /* ParkRow.swift */; };
 		2F0EF006F74A5B4E4AC968B5 /* FriendsFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 050E2E8415F00895760977C7 /* FriendsFeedView.swift */; };
 		31E878FC45D3AD824801563A /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A800F5DB061B60D3FDFDF5FD /* HomeView.swift */; };
@@ -56,6 +57,7 @@
 		AD24ACCD324AFE239175A88A /* FriendDetailScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B45D0DECD757974113ECD2 /* FriendDetailScreen.swift */; };
 		B713A25B961266482AB7B77A /* RegionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D7E513241A7B3EB27B7A940 /* RegionResolver.swift */; };
 		B7CB6683900DBB40615002DB /* Visit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2384F23374D6DF26F0A05CF5 /* Visit.swift */; };
+		C4A906159C014C0996BD5277 /* ScreenTourUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C7563A60E38AA97927CD7C /* ScreenTourUITests.swift */; };
 		CDCF42D616A22EFF25DD92C8 /* FriendAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13B69D497AACB8E3F01448C5 /* FriendAvatar.swift */; };
 		CE439DBBA783CB43F842562F /* MapLayerOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5A31BBD54B032503B025D4 /* MapLayerOptions.swift */; };
 		CE64E3AAE42098C5D6EEEDA1 /* ParkDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BF135FF739A8C73A655BB55 /* ParkDiscoveryService.swift */; };
@@ -72,6 +74,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		30E13A79370FE73FAC66D594 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9651B765766EB358BC1572A8 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8A5EE0A6842C0BE85F53A7CF;
+			remoteInfo = ParkTrack;
+		};
 		90676CA7BB20AD488711B358 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 9651B765766EB358BC1572A8 /* Project object */;
@@ -119,10 +128,12 @@
 		7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRecordsSection.swift; sourceTree = "<group>"; };
 		7D7E513241A7B3EB27B7A940 /* RegionResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionResolver.swift; sourceTree = "<group>"; };
 		8179CEC55FB21D4093286CB1 /* HomeParkSearchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeParkSearchSheet.swift; sourceTree = "<group>"; };
+		83E5683236CB070B1FC76925 /* SearchThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchThrottle.swift; sourceTree = "<group>"; };
 		906113B637ACE062E0A628B1 /* FriendsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsScreen.swift; sourceTree = "<group>"; };
 		93BB5941EA6EA3D0E69FD0A2 /* HomeMapPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMapPickerSheet.swift; sourceTree = "<group>"; };
 		951199E3976402CE7E762306 /* HomeRecentVisits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRecentVisits.swift; sourceTree = "<group>"; };
 		997999F0F575A142910327F4 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		A7C7563A60E38AA97927CD7C /* ScreenTourUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTourUITests.swift; sourceTree = "<group>"; };
 		A800F5DB061B60D3FDFDF5FD /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		A94530D184B1227E16A33097 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
 		B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
@@ -136,6 +147,7 @@
 		D71DBCFC0F44B633C7621FF4 /* Park.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Park.swift; sourceTree = "<group>"; };
 		DC5A31BBD54B032503B025D4 /* MapLayerOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerOptions.swift; sourceTree = "<group>"; };
 		DCD54EE8B166E95C3660D228 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
+		E2603B37CC4BFD2506C80CF2 /* ParkTrackUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ParkTrackUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E37DDC27A47FEADF156B8428 /* HomeQuickActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeQuickActions.swift; sourceTree = "<group>"; };
 		ECBBE391192EA924945BF0F9 /* ParksListScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParksListScreen.swift; sourceTree = "<group>"; };
 		ED97EEC1FC26C6236CC253EA /* MediaCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCapture.swift; sourceTree = "<group>"; };
@@ -184,6 +196,7 @@
 			children = (
 				C9091A4498E1E31B8482BD5E /* ParkTrack.app */,
 				F0B68403A967BA9D71BAB106 /* ParkTrackTests.xctest */,
+				E2603B37CC4BFD2506C80CF2 /* ParkTrackUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -214,6 +227,14 @@
 				272D2DC7BF500CE72EBAD96D /* YearInReviewCard.swift */,
 			);
 			path = Stats;
+			sourceTree = "<group>";
+		};
+		566ED514B87A23B6DD747733 /* ParkTrackUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A7C7563A60E38AA97927CD7C /* ScreenTourUITests.swift */,
+			);
+			path = ParkTrackUITests;
 			sourceTree = "<group>";
 		};
 		62F47B62D9EF3EBEC590FD5F /* Models */ = {
@@ -247,6 +268,7 @@
 			children = (
 				4939E8E56EC824B81B7164A4 /* ParkTrack */,
 				2B0AD788209515ADDF29F99D /* ParkTrackTests */,
+				566ED514B87A23B6DD747733 /* ParkTrackUITests */,
 				34BD7F28BA2CF16514AF1D17 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -269,6 +291,7 @@
 				1BF135FF739A8C73A655BB55 /* ParkDiscoveryService.swift */,
 				03A625A0912BAB2B123DB493 /* RecommendationEngine.swift */,
 				7D7E513241A7B3EB27B7A940 /* RegionResolver.swift */,
+				83E5683236CB070B1FC76925 /* SearchThrottle.swift */,
 				4B1C5C072454B25786D75336 /* ServiceHub.swift */,
 				2C8D36829360DC48255D6090 /* StatsEngine.swift */,
 				A4A73608F64CFF08A7E84725 /* Social */,
@@ -367,6 +390,24 @@
 			productReference = C9091A4498E1E31B8482BD5E /* ParkTrack.app */;
 			productType = "com.apple.product-type.application";
 		};
+		90108CDC50BFF08C315857EA /* ParkTrackUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4C97F8218D855328C35EF219 /* Build configuration list for PBXNativeTarget "ParkTrackUITests" */;
+			buildPhases = (
+				E9D1374B833E70B7C64DA62A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8D23069926C32167B2E84757 /* PBXTargetDependency */,
+			);
+			name = ParkTrackUITests;
+			packageProductDependencies = (
+			);
+			productName = ParkTrackUITests;
+			productReference = E2603B37CC4BFD2506C80CF2 /* ParkTrackUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		D4DE6A9F83403F6DD04DA3DF /* ParkTrackTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 36B92FBF0520675341EC16CB /* Build configuration list for PBXNativeTarget "ParkTrackTests" */;
@@ -398,6 +439,11 @@
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
+					90108CDC50BFF08C315857EA = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+						TestTargetID = 8A5EE0A6842C0BE85F53A7CF;
+					};
 					D4DE6A9F83403F6DD04DA3DF = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -420,6 +466,7 @@
 			targets = (
 				8A5EE0A6842C0BE85F53A7CF /* ParkTrack */,
 				D4DE6A9F83403F6DD04DA3DF /* ParkTrackTests */,
+				90108CDC50BFF08C315857EA /* ParkTrackUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -473,6 +520,7 @@
 				A8C9F79A763A71D726F1A329 /* RecommendationEngine.swift in Sources */,
 				B713A25B961266482AB7B77A /* RegionResolver.swift in Sources */,
 				3E7C18B98793524C82446DCC /* RootView.swift in Sources */,
+				284499ECD30542F447C6C759 /* SearchThrottle.swift in Sources */,
 				6637DA2895DCABE7949745DD /* ServiceHub.swift in Sources */,
 				21A3C3583FA345ED1F6E24C5 /* SettingsScreen.swift in Sources */,
 				4CD49FFCD5C40214CABFA720 /* SocialService.swift in Sources */,
@@ -501,9 +549,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E9D1374B833E70B7C64DA62A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C4A906159C014C0996BD5277 /* ScreenTourUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		8D23069926C32167B2E84757 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8A5EE0A6842C0BE85F53A7CF /* ParkTrack */;
+			targetProxy = 30E13A79370FE73FAC66D594 /* PBXContainerItemProxy */;
+		};
 		B032AD0A5E49C1409048D809 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 8A5EE0A6842C0BE85F53A7CF /* ParkTrack */;
@@ -630,6 +691,40 @@
 			};
 			name = Debug;
 		};
+		9433F73F6AAFF55E4A44FAA6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrackUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ParkTrack;
+			};
+			name = Debug;
+		};
+		A0AAE5DB02A233F4AC5B704C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.nv7.parktrack.ParkTrackUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ParkTrack;
+			};
+			name = Release;
+		};
 		C68D783274C315B480C4174C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -729,6 +824,15 @@
 			buildConfigurations = (
 				8823F09F83A6CA73B8E3D63E /* Debug */,
 				67D81790DA14445585165C4B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4C97F8218D855328C35EF219 /* Build configuration list for PBXNativeTarget "ParkTrackUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9433F73F6AAFF55E4A44FAA6 /* Debug */,
+				A0AAE5DB02A233F4AC5B704C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
