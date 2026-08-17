@@ -47,8 +47,18 @@ struct SweptCoverage {
         let maxLatitude: Double
         let minLongitude: Double
         let maxLongitude: Double
+        /// The span of the individual search that covered this ground, in degrees.
+        ///
+        /// Coverage is not one quality. A viewport scan sweeps a whole screen in a few wide
+        /// requests, and each request answers with at most a couple of dozen results, so wide
+        /// ground is thinly seen. An index searches in small tiles precisely so nothing is
+        /// missed. Both are "searched", but only the fine one can back a claim about how many
+        /// parks a place has — so the resolution travels with the record, and indexing reuses
+        /// only ground already searched at least as finely as it would search it itself.
+        var resolution: Double = ScannedArea.coarsest
 
-        init(_ region: MKCoordinateRegion) {
+        init(_ region: MKCoordinateRegion, resolution: Double = ScannedArea.coarsest) {
+            self.resolution = resolution
             minLatitude = region.center.latitude - region.span.latitudeDelta / 2
             maxLatitude = region.center.latitude + region.span.latitudeDelta / 2
             minLongitude = region.center.longitude - region.span.longitudeDelta / 2
@@ -78,13 +88,13 @@ struct SweptCoverage {
     private var squares: [Square] = []
 
     /// The recorded squares as plain bounds, for saving.
-    var bounds: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double)] {
-        squares.map { ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude) }
+    var bounds: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double, resolution: Double)] {
+        squares.map { ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude, $0.resolution) }
     }
 
     /// Rebuilds coverage from saved bounds.
     mutating func restore(
-        _ saved: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double)]
+        _ saved: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double, resolution: Double)]
     ) {
         for entry in saved {
             let region = MKCoordinateRegion(
@@ -97,14 +107,16 @@ struct SweptCoverage {
                     longitudeDelta: entry.maxLongitude - entry.minLongitude
                 )
             )
-            record(region)
+            record(region, resolution: entry.resolution)
         }
     }
 
-    mutating func record(_ region: MKCoordinateRegion) {
-        let square = Square(region)
+    mutating func record(_ region: MKCoordinateRegion, resolution: Double? = nil) {
+        let square = Square(region, resolution: resolution ?? region.span.latitudeDelta)
         guard square.isUsable else { return }
-        squares.removeAll { square.contains($0) }
+        // Only swallow ground that was not searched more finely than this. A wide, thin pass
+        // must not erase the memory of a careful one underneath it.
+        squares.removeAll { square.contains($0) && $0.resolution >= square.resolution }
         squares.append(square)
         // Over the cap the smallest square goes, not the oldest: the widest square is the one
         // backing the most rings and the most expensive to search again, and it is usually
@@ -130,6 +142,14 @@ struct SweptCoverage {
         let square = Square(region)
         guard square.isUsable else { return false }
         return squares.contains { $0.contains(square) }
+    }
+
+    /// Whether this ground has been searched at least as finely as `resolution` — the test an
+    /// exhaustive index applies before deciding it can skip a tile.
+    func coversFinely(_ region: MKCoordinateRegion, resolution: Double) -> Bool {
+        let square = Square(region)
+        guard square.isUsable else { return false }
+        return squares.contains { $0.contains(square) && $0.resolution <= resolution * 1.05 }
     }
 
     /// Whether the ring of `radiusMiles` around `center` sits entirely on swept ground.
@@ -234,7 +254,7 @@ final class ParkDiscoveryService {
     private func loadCoverage() {
         let saved = (try? modelContext.fetch(FetchDescriptor<ScannedArea>())) ?? []
         coverage.restore(saved.map {
-            ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude)
+            ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude, $0.resolution)
         })
     }
 
@@ -248,7 +268,8 @@ final class ParkDiscoveryService {
                 minLatitude: entry.minLatitude,
                 maxLatitude: entry.maxLatitude,
                 minLongitude: entry.minLongitude,
-                maxLongitude: entry.maxLongitude
+                maxLongitude: entry.maxLongitude,
+                resolution: entry.resolution
             ))
         }
         try? modelContext.save()
@@ -439,7 +460,7 @@ final class ParkDiscoveryService {
             // Ground a previous attempt already searched — including one that was cut short —
             // is not searched again. This is what makes retrying a big region resume rather
             // than start from nothing.
-            if coverage.covers(tile) { continue }
+            if coverage.coversFinely(tile, resolution: tile.span.latitudeDelta) { continue }
 
             let outcome = await Self.candidates(in: tile)
             searches += 1
@@ -470,7 +491,7 @@ final class ParkDiscoveryService {
                     // not yet covered.
                     queue.append(contentsOf: Self.tiles(for: tile, side: 2))
                 } else {
-                    coverage.record(tile)
+                    coverage.record(tile, resolution: tile.span.latitudeDelta)
                     tilesSinceSave += 1
                     if tilesSinceSave >= Self.coverageSaveInterval {
                         tilesSinceSave = 0
@@ -497,7 +518,8 @@ final class ParkDiscoveryService {
         }
 
         if completed && !truncated {
-            coverage.record(square)
+            // The region as a whole, at the resolution its tiles were actually searched.
+            coverage.record(square, resolution: Self.targetTileMeters / 111_000)
         }
         // Whatever was finished is written down either way. A sweep that stopped early still
         // searched real ground, and losing that is what made a retry repeat everything.
@@ -564,9 +586,14 @@ final class ParkDiscoveryService {
     /// Records ground a viewport scan covered, so panning back over it is free. Without this
     /// the map's scans and the indexer's sweeps kept separate memories and re-searched each
     /// other's ground.
-    func noteScanned(region: MKCoordinateRegion) {
-        coverage.record(region)
+    func noteScanned(region: MKCoordinateRegion, resolution: Double? = nil) {
+        coverage.record(region, resolution: resolution)
         persistCoverage()
+    }
+
+    /// Whether this ground has been searched at least as finely as an index would search it.
+    func hasSweptFinely(region: MKCoordinateRegion, resolution: Double) -> Bool {
+        coverage.coversFinely(region, resolution: resolution)
     }
 
     /// Whether every part of a completion ring has actually been searched.

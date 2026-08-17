@@ -11,17 +11,36 @@ import SwiftData
 /// re-scan is a dozen requests against a rate limit.
 @Model
 final class ScannedArea {
+    /// Stands in for "as coarse as it gets". A literal because SwiftData's macro cannot take
+    /// an expression as a stored property's default, and 999 degrees is wider than the world.
+    static let coarsest: Double = 999
+
     var minLatitude: Double = 0
     var maxLatitude: Double = 0
     var minLongitude: Double = 0
     var maxLongitude: Double = 0
     var scannedAt: Date = Date()
 
-    init(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double) {
+    /// How finely this ground was searched, as the span in degrees of the individual search
+    /// that covered it. A screen swept in a few wide requests and a city indexed in small
+    /// tiles are both "searched", but only the fine one can back a claim about how many parks
+    /// a place has — so an exhaustive index reuses ground only at its own grade or better.
+    /// Records written before this existed decode as the coarsest possible value, which is the
+    /// safe reading: they are reused for map browsing but never to shortcut an index.
+    var resolution: Double = 999
+
+    init(
+        minLatitude: Double,
+        maxLatitude: Double,
+        minLongitude: Double,
+        maxLongitude: Double,
+        resolution: Double = ScannedArea.coarsest
+    ) {
         self.minLatitude = minLatitude
         self.maxLatitude = maxLatitude
         self.minLongitude = minLongitude
         self.maxLongitude = maxLongitude
+        self.resolution = resolution
         self.scannedAt = Date()
     }
 }

@@ -459,3 +459,65 @@ final class ParkAuditTests: XCTestCase {
         XCTAssertEqual(Set(flagged.map(\.name)), ["Corner Roasters", "Hardware Store"])
     }
 }
+
+/// Indexing reuses ground it has already searched properly, and refuses to reuse ground that
+/// was only skimmed. Without the distinction an index would either redo work it had already
+/// done, or quietly certify a city off a viewport scan that saw a fraction of it.
+@MainActor
+final class CoverageResolutionTests: XCTestCase {
+    private var container: ModelContainer!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+    }
+
+    private func region(lat: Double, lon: Double, span: Double) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
+        )
+    }
+
+    func testFineGroundIsReusedByAnIndex() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        let tile = region(lat: 47.6, lon: -122.2, span: 0.06)
+        service.noteScanned(region: tile, resolution: 0.06)
+
+        XCTAssertTrue(service.hasSweptFinely(region: tile, resolution: 0.06))
+    }
+
+    func testCoarseGroundIsNotReusedByAnIndex() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        // A whole city skimmed in one wide request.
+        service.noteScanned(region: region(lat: 47.6, lon: -122.2, span: 0.5), resolution: 0.5)
+
+        let indexTile = region(lat: 47.6, lon: -122.2, span: 0.06)
+        XCTAssertFalse(
+            service.hasSweptFinely(region: indexTile, resolution: 0.06),
+            "A wide, thin pass must not let an index skip ground it never really looked at"
+        )
+        // It still counts for map browsing, which is all it ever claimed to be.
+        XCTAssertTrue(service.hasSwept(region: indexTile))
+    }
+
+    func testFineRecordSurvivesACoarsePassOverTheSameGround() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        let tile = region(lat: 47.6, lon: -122.2, span: 0.06)
+        service.noteScanned(region: tile, resolution: 0.06)
+        service.noteScanned(region: region(lat: 47.6, lon: -122.2, span: 0.6), resolution: 0.6)
+
+        XCTAssertTrue(
+            service.hasSweptFinely(region: tile, resolution: 0.06),
+            "A later skim must not erase the memory of a careful search underneath it"
+        )
+    }
+
+    func testResolutionSurvivesARelaunch() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        let tile = region(lat: 47.6, lon: -122.2, span: 0.06)
+        service.noteScanned(region: tile, resolution: 0.06)
+
+        let relaunched = ParkDiscoveryService(modelContext: ModelContext(container))
+        XCTAssertTrue(relaunched.hasSweptFinely(region: tile, resolution: 0.06))
+    }
+}

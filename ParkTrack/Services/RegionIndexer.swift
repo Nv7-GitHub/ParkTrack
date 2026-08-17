@@ -284,7 +284,9 @@ final class RegionIndexer {
         // A uniform-density sweep, not the ordinary one. The ordinary sweep widens in levels
         // that grow threefold, so its outer tiles are tens of kilometres across and see only a
         // fraction of what is in them — which is how a county came to report itself fully
-        // indexed while missing most of its parks.
+        // indexed while missing most of its parks. The sweep reuses any ground already
+        // searched at this grade, including tiles from an earlier attempt that ran out of
+        // time, and re-searches anything that was only skimmed.
         let result = await discovery.sweepDense(
             around: center,
             radiusMiles: radius / Format.metersPerMile
