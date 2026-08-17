@@ -23,8 +23,8 @@ struct StatsScreen: View {
         )
     }
 
-    @State private var recordsCache = DerivedCache<Records>()
-    @State private var streaksCache = DerivedCache<Streaks>()
+    @State private var cache = StatsCache()
+    @Query private var indexes: [RegionIndex]
 
     @State private var anchor: StatsAnchor = .currentLocation
     @State private var droppedPin: CLLocationCoordinate2D?
@@ -43,15 +43,11 @@ struct StatsScreen: View {
     }
 
     private var records: Records {
-        recordsCache.value(for: statsSignature) {
-            StatsEngine.records(parks: parks, origin: anchorLocation)
-        }
+        cache.records ?? StatsEngine.records(parks: parks, origin: anchorLocation)
     }
 
     private var streaks: Streaks {
-        streaksCache.value(for: statsSignature) {
-            StatsEngine.streaks(parks: parks)
-        }
+        cache.streaks ?? StatsEngine.streaks(parks: parks)
     }
 
     private var yearSummary: YearInReviewSummary {
@@ -60,6 +56,21 @@ struct StatsScreen: View {
             year: Calendar.current.component(.year, from: Date()),
             streakWeeks: streaks.currentWeeks,
             displayName: settings.displayName
+        )
+    }
+
+    /// Computes the screen's figures once, off the tab transition. Without this the sections
+    /// each did their own work the moment they were built, which froze the tab bar on the way
+    /// in and hitched again at every section on the way down.
+    private func warmCache() async {
+        await cache.warm(
+            parks: parks,
+            signature: statsSignature,
+            indexes: indexes,
+            origin: anchorLocation,
+            anchor: anchorCoordinate,
+            radiiMiles: settings.radiiMiles,
+            timelineMonths: 12
         )
     }
 
@@ -81,6 +92,7 @@ struct StatsScreen: View {
                             StatsRadiusSection(
                                 parks: parks,
                                 signature: statsSignature,
+                                cache: cache,
                                 anchor: anchor,
                                 anchorCoordinate: anchorCoordinate,
                                 radiiMiles: settings.radiiMiles,
@@ -88,11 +100,11 @@ struct StatsScreen: View {
                                 onDropPin: { isPickingPin = true }
                             )
 
-                            StatsRegionSection(parks: parks, signature: statsSignature)
+                            StatsRegionSection(parks: parks, signature: statsSignature, cache: cache)
 
-                            StatsTimelineSection(parks: parks, signature: statsSignature)
+                            StatsTimelineSection(parks: parks, signature: statsSignature, cache: cache)
 
-                            StatsRhythmSection(parks: parks, signature: statsSignature)
+                            StatsRhythmSection(parks: parks, signature: statsSignature, cache: cache)
 
                             StatsRecordsSection(records: records, streaks: streaks)
 
@@ -117,9 +129,15 @@ struct StatsScreen: View {
             }
         }
         .task {
+            // Figures first, and only then the slow background errands, so the screen settles
+            // before anything else competes for the main thread.
+            await warmCache()
             _ = await location.resolveLocation()
+            await warmCache()
             await RegionResolver.shared.resolveMissingRegions(context: modelContext, limit: 12)
         }
+        .task(id: statsSignature) { await warmCache() }
+        .task(id: anchor) { await warmCache() }
     }
 
     // MARK: Headline

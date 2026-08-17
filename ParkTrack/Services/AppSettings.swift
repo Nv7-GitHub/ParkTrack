@@ -20,10 +20,6 @@ final class AppSettings {
     /// The radius rings the completion screens are built around.
     static let defaultRadiiMiles: [Double] = [2.5, 5, 10]
 
-    /// How far the automatic launch sweep reaches. A pull to refresh goes as wide as the
-    /// user's rings ask; this is only about not spending minutes of searching unprompted.
-    static let startupSweepRadiusMiles: Double = 10
-
     private let defaults: UserDefaults
 
     var homeCoordinate: CLLocationCoordinate2D? {

@@ -33,7 +33,7 @@ final class DerivedCache<Value> {
 /// Coordinates are rounded to roughly a hundred metres: GPS jitter of a few metres cannot
 /// change a completion count, and treating it as a new input is what made the map stutter
 /// while standing still.
-struct StatsSignature: Equatable {
+struct StatsSignature: Equatable, Hashable {
     let parkCount: Int
     let visitCount: Int
     let anchorLatitude: Double?

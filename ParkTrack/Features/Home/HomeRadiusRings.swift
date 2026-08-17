@@ -66,10 +66,14 @@ struct HomeRadiusRings: View {
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(Theme.textSecondary)
 
+            // "Scanning" used to mean "not fully covered", which is not the same thing at
+            // all: a ring wider than the launch sweep is never covered, so it claimed to be
+            // scanning on every launch while nothing was running. Now it says what is true —
+            // searching, done, or a floor nobody is currently working on.
             Pill(
-                text: swept ? "Swept" : "Scanning",
-                systemImage: swept ? "checkmark" : "binoculars",
-                tint: swept ? Theme.moss : Theme.sky
+                text: swept ? "Swept" : (isSearching ? "Scanning" : "Partial"),
+                systemImage: swept ? "checkmark" : (isSearching ? "binoculars" : "plus.magnifyingglass"),
+                tint: swept ? Theme.moss : (isSearching ? Theme.sky : Theme.bark)
             )
         }
         .padding(.vertical, 14)
@@ -85,6 +89,12 @@ struct HomeRadiusRings: View {
             ? "\(completion.visited) of \(completion.total) parks visited"
             : "\(completion.visited) of at least \(completion.total) parks visited. Still searching this area.")
         .accessibilityHint("Shows the parks you have left in this ring")
+    }
+
+    /// Whether a sweep is actually running right now, as opposed to ground simply not being
+    /// covered yet.
+    private var isSearching: Bool {
+        services.discovery?.isSearching ?? false
     }
 
     private func isSwept(_ radiusMiles: Double) -> Bool {
@@ -142,6 +152,10 @@ struct HomeRadiusDetailView: View {
 
     /// Whether discovery has actually searched this ring, or is still working outwards
     /// towards it. Everything the screen claims about totals hangs off this.
+    private var isSearching: Bool {
+        services.discovery?.isSearching ?? false
+    }
+
     private var isSwept: Bool {
         services.discovery?.hasSwept(around: route.center, radiusMiles: route.radiusMiles) ?? false
     }
@@ -177,7 +191,11 @@ struct HomeRadiusDetailView: View {
                                 .foregroundStyle(Theme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
                             if !isSwept {
-                                Pill(text: "Still scanning", systemImage: "binoculars", tint: Theme.sky)
+                                Pill(
+                                    text: isSearching ? "Still scanning" : "Partial count",
+                                    systemImage: isSearching ? "binoculars" : "plus.magnifyingglass",
+                                    tint: isSearching ? Theme.sky : Theme.bark
+                                )
                             }
                         }
                     }

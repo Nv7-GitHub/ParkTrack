@@ -82,6 +82,7 @@
 		D680971D7D80D261742A979A /* AddParkHereSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3833B26BA4F91A7A61AD3573 /* AddParkHereSheet.swift */; };
 		D95471ACA9D0FBBBD02CABA5 /* HomeHeroHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23BCE0E68A16EF63D53874E1 /* HomeHeroHeader.swift */; };
 		DB1AC95E391C6DDF767D80E5 /* LogVisitSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CF3A425F5E675CF8BBF8294 /* LogVisitSheet.swift */; };
+		E01825C94C68D995A2E1F682 /* StatsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D891B5279709EEB3FC5E43AD /* StatsCache.swift */; };
 		E2A05C4567B69F56F3E7ABDF /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */; };
 		E70992CD6F9F973A740C53B0 /* ParkTrackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF64A33B7AE66CA42FDB62A /* ParkTrackApp.swift */; };
 		E7E3781BC6746A5F60ECD930 /* AddFriendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3274780BF0159D9BD6A725B /* AddFriendSheet.swift */; };
@@ -173,6 +174,7 @@
 		C9091A4498E1E31B8482BD5E /* ParkTrack.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ParkTrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D1AC6F85ADB93D5BA266D6D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D71DBCFC0F44B633C7621FF4 /* Park.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Park.swift; sourceTree = "<group>"; };
+		D891B5279709EEB3FC5E43AD /* StatsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsCache.swift; sourceTree = "<group>"; };
 		DA3F5FFE2FBC0058BF164666 /* RegionIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionIndex.swift; sourceTree = "<group>"; };
 		DC5A31BBD54B032503B025D4 /* MapLayerOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerOptions.swift; sourceTree = "<group>"; };
 		DCD54EE8B166E95C3660D228 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
@@ -273,6 +275,7 @@
 				B748800A9F512138E3939812 /* RadiusProgressSheet.swift */,
 				E4832852DC3352814011047A /* RegionIndexManager.swift */,
 				B82022E6745194387AC3C835 /* RegionProgressSheet.swift */,
+				D891B5279709EEB3FC5E43AD /* StatsCache.swift */,
 				03B53F55F964FA32C984F2D6 /* StatsRadiusSection.swift */,
 				7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */,
 				745C1692332393A859502171 /* StatsRegionSection.swift */,
@@ -632,6 +635,7 @@
 				6637DA2895DCABE7949745DD /* ServiceHub.swift in Sources */,
 				21A3C3583FA345ED1F6E24C5 /* SettingsScreen.swift in Sources */,
 				4CD49FFCD5C40214CABFA720 /* SocialService.swift in Sources */,
+				E01825C94C68D995A2E1F682 /* StatsCache.swift in Sources */,
 				6F2149BB0F1B0D538D76FA5F /* StatsEngine.swift in Sources */,
 				4A1CBD3AB1358FF956A595FC /* StatsRadiusSection.swift in Sources */,
 				A24F887F30FED8742AFFF73D /* StatsRecordsSection.swift in Sources */,

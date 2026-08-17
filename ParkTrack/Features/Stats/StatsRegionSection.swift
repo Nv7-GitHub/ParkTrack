@@ -11,7 +11,7 @@ struct StatsRegionSection: View {
     @Environment(ServiceHub.self) private var services
     @Query private var indexes: [RegionIndex]
     @State private var isPresentingIndexManager = false
-    @State private var completionsCache = DerivedCache<[RegionCompletion]>()
+    let cache: StatsCache
 
     enum Scope: String, CaseIterable, Identifiable {
         case city, county, state
@@ -35,20 +35,13 @@ struct StatsRegionSection: View {
 
     private let collapsedLimit = 6
 
-    init(parks: [Park], signature: StatsSignature) {
+    init(parks: [Park], signature: StatsSignature, cache: StatsCache) {
         self.parks = parks
         self.signature = signature
+        self.cache = cache
     }
 
-    private var completions: [RegionCompletion] {
-        completionsCache.value(for: signature.adding(Double(scope.hashValue % 7)).adding(Double(indexedFingerprint))) {
-            switch scope {
-            case .city: return StatsEngine.completionByCity(parks: parks, indexes: indexes)
-            case .county: return StatsEngine.completionByCounty(parks: parks, indexes: indexes)
-            case .state: return StatsEngine.completionByState(parks: parks, indexes: indexes)
-            }
-        }
-    }
+    private var completions: [RegionCompletion] { cache.completions(for: scope) }
 
     /// Changes whenever an index finishes or its count moves, so cached completions are
     /// recomputed against the new denominator.

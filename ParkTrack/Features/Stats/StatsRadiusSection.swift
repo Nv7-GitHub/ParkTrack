@@ -14,12 +14,13 @@ struct StatsRadiusSection: View {
 
     @State private var exploreMiles: Double = 15
     @State private var detail: RadiusCompletion?
-    @State private var completionsCache = DerivedCache<[RadiusCompletion]>()
+    let cache: StatsCache
     @State private var exploreCache = DerivedCache<RadiusCompletion?>()
 
     init(
         parks: [Park],
         signature: StatsSignature,
+        cache: StatsCache,
         anchor: StatsAnchor,
         anchorCoordinate: CLLocationCoordinate2D?,
         radiiMiles: [Double],
@@ -28,6 +29,7 @@ struct StatsRadiusSection: View {
     ) {
         self.parks = parks
         self.signature = signature
+        self.cache = cache
         self.anchor = anchor
         self.anchorCoordinate = anchorCoordinate
         self.radiiMiles = radiiMiles
@@ -41,9 +43,7 @@ struct StatsRadiusSection: View {
 
     private var completions: [RadiusCompletion] {
         guard let anchorCoordinate else { return [] }
-        return completionsCache.value(for: signature) {
-            StatsEngine.radiusCompletions(parks: parks, center: anchorCoordinate, radiiMiles: radiiMiles)
-        }
+        return cache.radiusCompletions
     }
 
     private var exploration: RadiusCompletion? {

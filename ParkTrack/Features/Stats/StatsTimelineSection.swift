@@ -10,6 +10,7 @@ import Charts
 struct StatsTimelineSection: View {
     let parks: [Park]
     let signature: StatsSignature
+    let cache: StatsCache
     @State private var pointsCache = DerivedCache<[TimelinePoint]>()
     @State private var visitPointsCache = DerivedCache<[TimelinePoint]>()
 
@@ -37,9 +38,10 @@ struct StatsTimelineSection: View {
 
     @State private var range: Range = .year
 
-    init(parks: [Park], signature: StatsSignature) {
+    init(parks: [Park], signature: StatsSignature, cache: StatsCache) {
         self.parks = parks
         self.signature = signature
+        self.cache = cache
     }
 
     /// "All" is bounded by the first visit on record so the axis never stretches over
@@ -56,13 +58,21 @@ struct StatsTimelineSection: View {
     }
 
     private var points: [TimelinePoint] {
-        pointsCache.value(for: signature.adding(Double(monthsBack))) {
+        // The shared answer covers the range the screen warmed; another range is the user
+        // asking for something new, and that one computation is worth doing on the spot.
+        if cache.timelineMonths == monthsBack, !cache.monthlyTimeline.isEmpty {
+            return cache.monthlyTimeline
+        }
+        return pointsCache.value(for: signature.adding(Double(monthsBack))) {
             StatsEngine.monthlyTimeline(parks: parks, monthsBack: monthsBack)
         }
     }
 
     private var visitPoints: [TimelinePoint] {
-        visitPointsCache.value(for: signature.adding(Double(monthsBack))) {
+        if cache.timelineMonths == monthsBack, !cache.visitTimeline.isEmpty {
+            return cache.visitTimeline
+        }
+        return visitPointsCache.value(for: signature.adding(Double(monthsBack))) {
             StatsEngine.visitTimeline(parks: parks, monthsBack: monthsBack)
         }
     }

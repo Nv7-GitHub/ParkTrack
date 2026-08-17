@@ -6,26 +6,19 @@ import Charts
 struct StatsRhythmSection: View {
     let parks: [Park]
     let signature: StatsSignature
-    @State private var weeksCache = DerivedCache<[StatsHeatmapWeek]>()
-    @State private var weekdaysCache = DerivedCache<[StatsBucket]>()
-    @State private var monthsCache = DerivedCache<[StatsBucket]>()
+    let cache: StatsCache
 
     @State private var focusedDay: StatsHeatmapDay?
 
-    init(parks: [Park], signature: StatsSignature) {
+    init(parks: [Park], signature: StatsSignature, cache: StatsCache) {
         self.parks = parks
         self.signature = signature
+        self.cache = cache
     }
 
-    private var weeks: [StatsHeatmapWeek] {
-        weeksCache.value(for: signature) { StatsBreakdown.heatmapWeeks(parks: parks) }
-    }
-    private var weekdays: [StatsBucket] {
-        weekdaysCache.value(for: signature) { StatsBreakdown.byWeekday(parks: parks) }
-    }
-    private var months: [StatsBucket] {
-        monthsCache.value(for: signature) { StatsBreakdown.byMonthOfYear(parks: parks) }
-    }
+    private var weeks: [StatsHeatmapWeek] { cache.heatmapWeeks }
+    private var weekdays: [StatsBucket] { cache.weekdayBuckets }
+    private var months: [StatsBucket] { cache.monthBuckets }
 
     private var hasVisits: Bool { parks.contains(where: \.isVisited) }
 

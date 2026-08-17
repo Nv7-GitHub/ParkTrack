@@ -186,6 +186,9 @@ enum StatsEngine {
             // whichever city happens to be largest at the top whether or not the user had ever
             // set foot in it, and buried the place they were two parks from finishing.
             .sorted { lhs, rhs in
+                // Indexed places lead: their totals are real, so their percentages mean
+                // something, and an unindexed row's number is only a floor.
+                if lhs.isIndexed != rhs.isIndexed { return lhs.isIndexed }
                 if (lhs.visited > 0) != (rhs.visited > 0) { return lhs.visited > 0 }
                 if lhs.fraction != rhs.fraction { return lhs.fraction > rhs.fraction }
                 if lhs.total != rhs.total { return lhs.total > rhs.total }

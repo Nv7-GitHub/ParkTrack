@@ -574,7 +574,10 @@ final class ParkDiscoveryService {
     /// The rings need this to know when a percentage is a fraction of a known total and
     /// when it is still only a floor.
     func hasSwept(around coordinate: CLLocationCoordinate2D, radiusMiles: Double) -> Bool {
-        coverage.covers(center: coordinate, radiusMiles: radiusMiles)
+        // Largely, not exactly. Demanding one recorded square swallow the ring whole meant
+        // walking a hundred metres from where the sweep ran flipped the ring back to
+        // uncovered, which read as the app having forgotten.
+        isLargelySwept(region: ParkDiscoveryService.boundingSquare(around: coordinate, radiusMiles: radiusMiles))
     }
 
     func searchParks(named query: String, near coordinate: CLLocationCoordinate2D?) async -> [ParkCandidate] {

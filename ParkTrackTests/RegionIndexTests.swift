@@ -424,3 +424,54 @@ final class RegionCompletionOrderTests: XCTestCase {
         XCTAssertEqual(ordered.first?.name, "Larger")
     }
 }
+
+/// Indexed places lead the completion list: their totals are real, where an unindexed row's
+/// number is only however many parks have turned up so far.
+@MainActor
+final class IndexedFirstOrderTests: XCTestCase {
+    private var container: ModelContainer!
+    private var context: ModelContext!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+        context = ModelContext(container)
+    }
+
+    func testIndexedPlaceOutranksAMoreCompleteUnindexedOne() throws {
+        // "Unindexed City" is finished; "Indexed City" is barely started but has a real total.
+        for index in 0..<4 {
+            let park = Park(identifier: "u\(index)", name: "U\(index)", latitude: 1, longitude: 1)
+            park.locality = "Unindexed City"
+            park.administrativeArea = "Example State"
+            context.insert(park)
+            context.insert(Visit(park: park))
+        }
+        for index in 0..<6 {
+            let park = Park(identifier: "i\(index)", name: "I\(index)", latitude: 1, longitude: 1)
+            park.locality = "Indexed City"
+            park.administrativeArea = "Example State"
+            context.insert(park)
+            if index == 0 { context.insert(Visit(park: park)) }
+        }
+
+        let index = RegionIndex(
+            identifier: RegionIndex.identity(kind: .city, name: "Indexed City", container: "Example State"),
+            kind: .city,
+            name: "Indexed City",
+            container: "Example State",
+            country: "Example Country",
+            center: CLLocationCoordinate2D(latitude: 1, longitude: 1),
+            radiusMeters: 8_000
+        )
+        index.parkCount = 6
+        index.indexedAt = Date()
+        index.indexerVersion = RegionIndex.currentIndexerVersion
+        context.insert(index)
+
+        let ordered = StatsEngine.completionByCity(
+            parks: try context.fetch(FetchDescriptor<Park>()),
+            indexes: [index]
+        )
+        XCTAssertEqual(ordered.first?.name, "Indexed City")
+    }
+}
