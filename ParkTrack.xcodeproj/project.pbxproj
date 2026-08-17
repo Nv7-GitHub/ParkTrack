@@ -10,6 +10,7 @@
 		06CBCDAD1AEACFF37B550625 /* FriendsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 906113B637ACE062E0A628B1 /* FriendsScreen.swift */; };
 		0B52E8B696D7E24A8464BBEB /* HomeRecentVisits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 951199E3976402CE7E762306 /* HomeRecentVisits.swift */; };
 		0D78AF78C5FCA752CF97F000 /* SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54196F743DDC4AA5DF1E1F43 /* SmokeTests.swift */; };
+		11B848D59D5F9E78DC343B4A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D1AC6F85ADB93D5BA266D6D6 /* Assets.xcassets */; };
 		160081CB3569EF49AFDF1329 /* StatsRegionSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 745C1692332393A859502171 /* StatsRegionSection.swift */; };
 		16030B0B3C22F71DD428417F /* DiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */; };
 		174C6B95EEDCDE9317C80BE8 /* ParksListScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECBBE391192EA924945BF0F9 /* ParksListScreen.swift */; };
@@ -145,6 +146,7 @@
 		C3274780BF0159D9BD6A725B /* AddFriendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFriendSheet.swift; sourceTree = "<group>"; };
 		C5B45D0DECD757974113ECD2 /* FriendDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendDetailScreen.swift; sourceTree = "<group>"; };
 		C9091A4498E1E31B8482BD5E /* ParkTrack.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ParkTrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D1AC6F85ADB93D5BA266D6D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D71DBCFC0F44B633C7621FF4 /* Park.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Park.swift; sourceTree = "<group>"; };
 		DC5A31BBD54B032503B025D4 /* MapLayerOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerOptions.swift; sourceTree = "<group>"; };
 		DCD54EE8B166E95C3660D228 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
@@ -169,6 +171,14 @@
 				4F6ED712DA5F75C2864331D2 /* RootView.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		0CEE4496AB047E182794DC90 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				D1AC6F85ADB93D5BA266D6D6 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		0F9CF6029CE8EE4C70885B5A /* Design */ = {
@@ -218,6 +228,7 @@
 				DAFA86DD2096ED997C672DCF /* Features */,
 				62F47B62D9EF3EBEC590FD5F /* Models */,
 				E2D4BCB3C9B87B36D679A2FA /* Persistence */,
+				0CEE4496AB047E182794DC90 /* Resources */,
 				A1F92D6F88E6BA4FF62FC5EB /* Services */,
 			);
 			path = ParkTrack;
@@ -388,6 +399,7 @@
 			buildConfigurationList = AA18DF67A85B55C5264B55D7 /* Build configuration list for PBXNativeTarget "ParkTrack" */;
 			buildPhases = (
 				873FB1FB7DA1D97C827A08D1 /* Sources */,
+				0720B779B741249A75266964 /* Resources */,
 				819CAE126C80EDF34F0998E3 /* Verify signing identity */,
 			);
 			buildRules = (
@@ -481,6 +493,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0720B779B741249A75266964 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				11B848D59D5F9E78DC343B4A /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		819CAE126C80EDF34F0998E3 /* Verify signing identity */ = {
