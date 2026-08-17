@@ -122,9 +122,13 @@ struct MapScreen: View {
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search parks")
             .onSubmit(of: .search, runSearch)
             .onChange(of: searchText) { _, newValue in
-                if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
                     searchTask?.cancel()
                     searchResults = []
+                } else if trimmed.count >= 2 {
+                    // Results as you type, rather than only on return.
+                    searchResults = Self.localMatches(for: trimmed, in: parks)
                 }
             }
             .sheet(item: $sheet) { active in
@@ -319,7 +323,7 @@ struct MapScreen: View {
             }
         }
         .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: 260)
+        .frame(maxHeight: 320)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
@@ -495,8 +499,14 @@ struct MapScreen: View {
 
     private func scheduleScan(for region: MKCoordinateRegion) {
         guard let discovery else { return }
+        // Ask what has actually been searched, not just what this screen remembers looking
+        // at. The two used to keep separate memories, so the map re-searched ground the
+        // startup sweep had already covered, and a small pan re-searched itself.
+        guard !discovery.isLargelySwept(region: region) else { return }
+
         scanner.scheduleScan(of: region) { target in
             _ = await discovery.discoverParks(in: target)
+            discovery.noteScanned(region: target)
         }
     }
 
@@ -606,13 +616,41 @@ struct MapScreen: View {
 
         searchTask?.cancel()
         searchTask = Task {
-            let results = await discovery.searchParks(
+            // Parks already in the catalogue answer instantly and are the ones the user most
+            // likely means, so they lead; the map fills in anything not collected yet.
+            let local = Self.localMatches(for: query, in: parks)
+            searchResults = local
+            let remote = await discovery.searchParks(
                 named: query,
                 near: anchorCoordinate ?? settledRegion?.center
             )
             guard !Task.isCancelled else { return }
-            searchResults = Array(results.prefix(12))
+
+            // Deduplicated by identity. `MKLocalSearch` repeats a place across passes, and two
+            // rows sharing an id makes SwiftUI drop one — which is why a long result list
+            // could arrive on screen as a couple of entries.
+            var seen = Set(local.map(\.id))
+            searchResults = local + remote.filter { seen.insert($0.id).inserted }
         }
+    }
+
+    /// Cached parks whose name or region matches, nearest first.
+    private static func localMatches(for query: String, in parks: [Park]) -> [ParkCandidate] {
+        parks
+            .filter {
+                $0.name.localizedCaseInsensitiveContains(query)
+                    || ($0.regionLabel?.localizedCaseInsensitiveContains(query) ?? false)
+            }
+            .prefix(20)
+            .map {
+                ParkCandidate(
+                    id: $0.identifier,
+                    name: $0.name,
+                    coordinate: $0.coordinate,
+                    category: $0.categoryRaw,
+                    addressLine: $0.regionLabel
+                )
+            }
     }
 
     // MARK: - Bulk logging

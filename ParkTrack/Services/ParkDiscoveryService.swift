@@ -72,6 +72,30 @@ struct SweptCoverage {
 
     private var squares: [Square] = []
 
+    /// The recorded squares as plain bounds, for saving.
+    var bounds: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double)] {
+        squares.map { ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude) }
+    }
+
+    /// Rebuilds coverage from saved bounds.
+    mutating func restore(
+        _ saved: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double)]
+    ) {
+        for entry in saved {
+            let region = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(
+                    latitude: (entry.minLatitude + entry.maxLatitude) / 2,
+                    longitude: (entry.minLongitude + entry.maxLongitude) / 2
+                ),
+                span: MKCoordinateSpan(
+                    latitudeDelta: entry.maxLatitude - entry.minLatitude,
+                    longitudeDelta: entry.maxLongitude - entry.minLongitude
+                )
+            )
+            record(region)
+        }
+    }
+
     mutating func record(_ region: MKCoordinateRegion) {
         let square = Square(region)
         guard square.isUsable else { return }
@@ -83,6 +107,17 @@ struct SweptCoverage {
         if squares.count > Self.limit,
            let smallest = squares.indices.min(by: { squares[$0].area < squares[$1].area }) {
             squares.remove(at: smallest)
+        }
+    }
+
+    /// Whether one point sits on ground already searched.
+    func contains(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        guard CLLocationCoordinate2DIsValid(coordinate) else { return false }
+        return squares.contains { square in
+            coordinate.latitude >= square.minLatitude - SweptCoverage.slack
+                && coordinate.latitude <= square.maxLatitude + SweptCoverage.slack
+                && coordinate.longitude >= square.minLongitude - SweptCoverage.slack
+                && coordinate.longitude <= square.maxLongitude + SweptCoverage.slack
         }
     }
 
@@ -187,6 +222,31 @@ final class ParkDiscoveryService {
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
+        loadCoverage()
+    }
+
+    /// Restores everywhere previous sessions searched, so a relaunch doesn't start blind.
+    private func loadCoverage() {
+        let saved = (try? modelContext.fetch(FetchDescriptor<ScannedArea>())) ?? []
+        coverage.restore(saved.map {
+            ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude)
+        })
+    }
+
+    /// Writes the current coverage back. The list is capped at a couple of dozen squares that
+    /// swallow each other, so replacing it wholesale is cheaper than reconciling it.
+    private func persistCoverage() {
+        let existing = (try? modelContext.fetch(FetchDescriptor<ScannedArea>())) ?? []
+        for area in existing { modelContext.delete(area) }
+        for entry in coverage.bounds {
+            modelContext.insert(ScannedArea(
+                minLatitude: entry.minLatitude,
+                maxLatitude: entry.maxLatitude,
+                minLongitude: entry.minLongitude,
+                maxLongitude: entry.maxLongitude
+            ))
+        }
+        try? modelContext.save()
     }
 
     // MARK: - Discovery
@@ -261,6 +321,7 @@ final class ParkDiscoveryService {
             }
             failedLevels = 0
             coverage.record(level.square)
+            persistCoverage()
         }
 
         return order.compactMap { found[$0] }
@@ -417,6 +478,7 @@ final class ParkDiscoveryService {
 
         if completed && !truncated {
             coverage.record(square)
+            persistCoverage()
         }
         lastSweepCompleted = completed
         return DenseSweepResult(
@@ -449,6 +511,36 @@ final class ParkDiscoveryService {
             if Task.isCancelled { return }
             try? await Task.sleep(for: .milliseconds(150))
         }
+    }
+
+    /// Whether this exact region has already been searched.
+    func hasSwept(region: MKCoordinateRegion) -> Bool {
+        coverage.covers(region)
+    }
+
+    /// Whether enough of `region` has been searched that scanning it again would mostly
+    /// repeat requests. Checks the corners and centre rather than demanding one recorded
+    /// square swallow the whole thing, so ground covered by two adjacent passes counts.
+    func isLargelySwept(region: MKCoordinateRegion) -> Bool {
+        if coverage.covers(region) { return true }
+        let halfLat = region.span.latitudeDelta / 2
+        let halfLon = region.span.longitudeDelta / 2
+        let probes = [
+            region.center,
+            CLLocationCoordinate2D(latitude: region.center.latitude - halfLat, longitude: region.center.longitude - halfLon),
+            CLLocationCoordinate2D(latitude: region.center.latitude - halfLat, longitude: region.center.longitude + halfLon),
+            CLLocationCoordinate2D(latitude: region.center.latitude + halfLat, longitude: region.center.longitude - halfLon),
+            CLLocationCoordinate2D(latitude: region.center.latitude + halfLat, longitude: region.center.longitude + halfLon)
+        ]
+        return probes.allSatisfy { coverage.contains($0) }
+    }
+
+    /// Records ground a viewport scan covered, so panning back over it is free. Without this
+    /// the map's scans and the indexer's sweeps kept separate memories and re-searched each
+    /// other's ground.
+    func noteScanned(region: MKCoordinateRegion) {
+        coverage.record(region)
+        persistCoverage()
     }
 
     /// Whether every part of a completion ring has actually been searched.

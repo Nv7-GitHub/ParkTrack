@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 import CoreLocation
 import MapKit
 @testable import ParkTrack
@@ -347,5 +348,62 @@ final class SearchRegionBoundsTests: XCTestCase {
                 XCTAssertTrue(SweptCoverage.region(level.square, contains: tile.center))
             }
         }
+    }
+}
+
+/// Searched ground is cached like the parks in it, and survives a relaunch. Before this the
+/// map forgot everywhere it had looked each time the app started.
+@MainActor
+final class ScannedAreaPersistenceTests: XCTestCase {
+    private var container: ModelContainer!
+
+    override func setUp() async throws {
+        container = PersistenceController.makeInMemoryContainer()
+    }
+
+    private func region(lat: Double, lon: Double, span: Double) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            span: MKCoordinateSpan(latitudeDelta: span, longitudeDelta: span)
+        )
+    }
+
+    func testCoverageSurvivesANewService() {
+        let context = ModelContext(container)
+        let first = ParkDiscoveryService(modelContext: context)
+        let area = region(lat: 47.6, lon: -122.2, span: 0.1)
+        XCTAssertFalse(first.hasSwept(region: area))
+
+        first.noteScanned(region: area)
+        XCTAssertTrue(first.hasSwept(region: area))
+
+        // A new service is what a relaunch produces.
+        let second = ParkDiscoveryService(modelContext: ModelContext(container))
+        XCTAssertTrue(second.hasSwept(region: area), "A relaunch must not forget where it has searched")
+    }
+
+    func testASmallPanOverScannedGroundIsNotRescanned() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        service.noteScanned(region: region(lat: 47.6, lon: -122.2, span: 0.2))
+
+        // Nudged a little, well inside the ground already covered.
+        let nudged = region(lat: 47.605, lon: -122.205, span: 0.05)
+        XCTAssertTrue(service.isLargelySwept(region: nudged))
+    }
+
+    func testGroundStraddlingTwoScansCounts() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        service.noteScanned(region: region(lat: 47.60, lon: -122.20, span: 0.2))
+        service.noteScanned(region: region(lat: 47.60, lon: -122.05, span: 0.2))
+
+        // Sits across the seam between the two, inside neither alone.
+        let straddling = region(lat: 47.60, lon: -122.125, span: 0.04)
+        XCTAssertTrue(service.isLargelySwept(region: straddling), "Adjacent passes should cover the seam between them")
+    }
+
+    func testUnsearchedGroundStillNeedsAScan() {
+        let service = ParkDiscoveryService(modelContext: ModelContext(container))
+        service.noteScanned(region: region(lat: 47.6, lon: -122.2, span: 0.1))
+        XCTAssertFalse(service.isLargelySwept(region: region(lat: 45.5, lon: -122.6, span: 0.1)))
     }
 }

@@ -15,6 +15,7 @@ enum PersistenceController {
         Friend.self,
         FriendVisit.self,
         RegionIndex.self,
+        ScannedArea.self,
         FriendRegionProgress.self
     ])
 
