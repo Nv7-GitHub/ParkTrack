@@ -1,0 +1,168 @@
+import Foundation
+import CoreLocation
+#if canImport(UIKit)
+import UIKit
+#endif
+
+/// Stand-in backend used wherever CloudKit isn't configured — the simulator, unsigned
+/// builds, anyone not signed into iCloud.
+///
+/// It exists so the Friends tab is never an empty shell during development or review:
+/// three fictional friends with full visit histories, a couple carrying generated
+/// images so the feed's media path gets exercised too. Everything is invented — the
+/// park names are made up, and every coordinate is a small offset from an anchor
+/// (the user's home when it's set), so the sample data lands wherever the user is
+/// rather than pointing at any real place.
+struct MockSocialBackend: SocialBackend {
+    private let profiles: [String: FriendProfilePayload]
+    private let visitsByCode: [String: [FriendVisitPayload]]
+
+    /// Codes that resolve in this backend, so the UI can offer them as a demo hint.
+    let sampleCodes: [String]
+
+    init(anchor: CLLocationCoordinate2D? = nil) {
+        let origin = anchor ?? CLLocationCoordinate2D(latitude: 0, longitude: 0)
+        let today = Calendar.current.startOfDay(for: Date())
+
+        var profiles: [String: FriendProfilePayload] = [:]
+        var visits: [String: [FriendVisitPayload]] = [:]
+
+        for (index, sample) in Self.samples.enumerated() {
+            let generated = Self.makeVisits(for: sample, index: index, origin: origin, today: today)
+            visits[sample.code] = generated
+            profiles[sample.code] = FriendProfilePayload(
+                code: sample.code,
+                displayName: sample.name,
+                totalParks: generated.count,
+                totalVisits: generated.count + index + 2,
+                citiesCount: 2 + index,
+                currentStreakWeeks: 3 + index * 2,
+                parksThisMonth: 2 + index
+            )
+        }
+
+        self.profiles = profiles
+        self.visitsByCode = visits
+        self.sampleCodes = Self.samples.map(\.code)
+    }
+
+    // MARK: - SocialBackend
+
+    func fetchProfile(code: String) async throws -> FriendProfilePayload {
+        await Self.simulateLatency()
+        guard let profile = profiles[code.uppercased()] else { throw SocialError.notFound }
+        return profile
+    }
+
+    func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload] {
+        await Self.simulateLatency()
+        guard let all = visitsByCode[code.uppercased()] else { throw SocialError.notFound }
+        let filtered = since.map { cutoff in all.filter { $0.date > cutoff } } ?? all
+        return filtered.sorted { $0.date > $1.date }
+    }
+
+    /// Nothing to publish to — sample friends can't see the user. Succeeding quietly
+    /// keeps the share flow testable without pretending data left the device.
+    func publish(profile: FriendProfilePayload, visits: [FriendVisitPayload]) async throws {
+        await Self.simulateLatency()
+    }
+
+    // MARK: - Sample data
+
+    private struct Sample {
+        let code: String
+        let name: String
+        let visitCount: Int
+        let daySpacing: Int
+    }
+
+    private static let samples: [Sample] = [
+        Sample(code: "CEDAR3", name: "Avery", visitCount: 9, daySpacing: 4),
+        Sample(code: "MAPLE7", name: "Jordan", visitCount: 6, daySpacing: 7),
+        Sample(code: "SUMMT5", name: "Rowan", visitCount: 12, daySpacing: 3)
+    ]
+
+    private static let parkNames = [
+        "Cedar Ridge Park",
+        "Lakeview Commons",
+        "Willow Creek Greenway",
+        "Harbor Point Preserve",
+        "Maple Hollow Park",
+        "Sunset Meadows",
+        "Stonebridge Trailhead",
+        "Birch Grove Park",
+        "Quarry Lake Reserve",
+        "Elmwood Square",
+        "Fox Run Nature Area",
+        "Old Mill Riverfront"
+    ]
+
+    private static let notes = [
+        "",
+        "Long loop around the pond, worth the detour.",
+        "Quiet on a weekday morning.",
+        "",
+        "Great picnic spot near the north entrance.",
+        "Muddy after the rain but the trail held up."
+    ]
+
+    private static func makeVisits(
+        for sample: Sample,
+        index: Int,
+        origin: CLLocationCoordinate2D,
+        today: Date
+    ) -> [FriendVisitPayload] {
+        (0..<sample.visitCount).map { position in
+            let seed = index * 7 + position
+            let name = parkNames[seed % parkNames.count]
+
+            // Roughly a 1-2 km lattice around the anchor: close enough to feel local
+            // anywhere on earth, spread out enough to draw as distinct map pins.
+            let latitude = origin.latitude + Double((seed % 5) - 2) * 0.012 + Double(index) * 0.004
+            let longitude = origin.longitude + Double((seed % 7) - 3) * 0.014 - Double(index) * 0.005
+
+            let daysAgo = position * sample.daySpacing + index
+            let date = today.addingTimeInterval(-Double(daysAgo) * 86_400 + Double(9 + seed % 8) * 3_600)
+
+            let media: Data? = position < 2 && index != 1 ? sampleImageData(seed: seed) : nil
+
+            return FriendVisitPayload(
+                identifier: "mock-\(sample.code)-\(position)",
+                parkName: name,
+                latitude: latitude,
+                longitude: longitude,
+                regionLabel: nil,
+                date: date,
+                note: notes[seed % notes.count],
+                rating: 3 + (seed % 3),
+                mediaData: media,
+                mediaIsVideo: false
+            )
+        }
+    }
+
+    /// A flat two-tone gradient stands in for a photo. Generated rather than bundled
+    /// so no image asset ships in the app for data that only exists in demo mode.
+    private static func sampleImageData(seed: Int) -> Data? {
+        #if canImport(UIKit)
+        let size = CGSize(width: 320, height: 320)
+        let hue = Double((seed * 37) % 100) / 100.0
+        let top = UIColor(hue: hue, saturation: 0.45, brightness: 0.72, alpha: 1)
+        let bottom = UIColor(hue: (hue + 0.12).truncatingRemainder(dividingBy: 1),
+                             saturation: 0.55, brightness: 0.45, alpha: 1)
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            top.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            bottom.setFill()
+            context.fill(CGRect(x: 0, y: size.height * 0.55, width: size.width, height: size.height * 0.45))
+        }
+        return image.jpegData(compressionQuality: 0.7)
+        #else
+        return nil
+        #endif
+    }
+
+    private static func simulateLatency() async {
+        try? await Task.sleep(for: .milliseconds(250))
+    }
+}
