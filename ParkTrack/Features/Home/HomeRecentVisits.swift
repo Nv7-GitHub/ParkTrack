@@ -72,15 +72,29 @@ struct HomeRecentVisits: View {
 }
 
 /// Square thumbnail for a visit: its first photo, a video poster frame, or a leaf glyph.
+///
+/// Decoding goes through `ThumbnailCache`, so the photo is read and downsampled once off
+/// the main thread rather than being decoded at full size inside `body` on every pass.
 struct HomeMediaThumbnail: View {
     let visit: Visit
     var size: CGFloat = 50
 
+    @Environment(\.displayScale) private var displayScale
+    @State private var decoded: UIImage?
+
+    /// The earliest attachment, found in one pass — sorting the whole set to take its
+    /// first element was pure waste on a row that only ever shows one.
+    private var media: MediaItem? {
+        (visit.media ?? []).min { $0.createdAt < $1.createdAt }
+    }
+
     private var image: UIImage? {
-        guard let media = visit.sortedMedia.first else { return nil }
-        if let thumbnail = media.thumbnailData, let image = UIImage(data: thumbnail) { return image }
-        guard !media.isVideo, let data = media.data else { return nil }
-        return UIImage(data: data)
+        guard let media else { return nil }
+        return decoded ?? ThumbnailCache.cached(
+            identifier: media.identifier.uuidString,
+            size: size,
+            scale: displayScale
+        )
     }
 
     var body: some View {
@@ -95,7 +109,7 @@ struct HomeMediaThumbnail: View {
                     .font(.system(size: size * 0.34, weight: .semibold))
                     .foregroundStyle(Theme.moss)
             }
-            if visit.sortedMedia.first?.isVideo == true {
+            if media?.isVideo == true {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: size * 0.34))
                     .foregroundStyle(.white)
@@ -104,6 +118,19 @@ struct HomeMediaThumbnail: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .task(id: visit.identifier) { await load() }
         .accessibilityHidden(true)
+    }
+
+    private func load() async {
+        guard image == nil, let media else { return }
+        let source = media.thumbnailData ?? (media.isVideo ? nil : media.data)
+        guard let source, !source.isEmpty else { return }
+        decoded = await ThumbnailCache.shared.thumbnail(
+            identifier: media.identifier.uuidString,
+            data: source,
+            size: size,
+            scale: displayScale
+        )
     }
 }

@@ -700,9 +700,18 @@ final class ParkDiscoveryService {
 
     /// Insert everything new in one pass, keyed against a single fetch so re-scanning an
     /// area never produces a second copy of a park.
+    ///
+    /// The fetch asks only about the identifiers in this batch — at most a couple of dozen —
+    /// rather than materialising the entire catalogue. A sweep calls this once per level,
+    /// and this is the main actor, so pulling every park into memory each time was a stall
+    /// the user felt as the map freezing while it scanned.
     private func persist(_ candidates: [ParkCandidate]) -> [Park] {
+        let wanted = Set(candidates.map(\.id))
+        let descriptor = FetchDescriptor<Park>(
+            predicate: #Predicate<Park> { wanted.contains($0.identifier) }
+        )
         var byIdentifier = Dictionary(
-            allParks().map { ($0.identifier, $0) },
+            ((try? modelContext.fetch(descriptor)) ?? []).map { ($0.identifier, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 

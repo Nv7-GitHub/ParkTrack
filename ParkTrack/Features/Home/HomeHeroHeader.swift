@@ -28,12 +28,30 @@ struct HomeHeroHeader: View {
             let stretch = max(0, minY)
             let departure = min(max(0, -minY), 200)
 
-            content(stretch: stretch)
+            // The figures are a separate view whose inputs do not change while scrolling, so
+            // SwiftUI skips rebuilding them and the pull-to-stretch is pure transform. Built
+            // inline against `stretch`, the whole text hierarchy — every numeric-text
+            // transition included — was reconstructed on each frame of a scroll.
+            HeroFigures(
+                greeting: greeting,
+                subtitle: subtitle,
+                totalParks: totalParks,
+                totalVisits: totalVisits,
+                cities: cities,
+                streakWeeks: streakWeeks,
+                ink: ink
+            )
+                .scaleEffect(1 + stretch / 900, anchor: .bottomLeading)
                 .padding(24)
                 .frame(width: proxy.size.width, height: baseHeight + stretch, alignment: .bottomLeading)
-                .background(Theme.heroGradient)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
-                .shadow(color: .black.opacity(0.18), radius: 16, x: 0, y: 8)
+                // Behind the clipped content, so the shadow is thrown by a plain shape
+                // instead of forcing the whole card to be rasterised every frame.
+                .background {
+                    RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                        .fill(Theme.heroGradient)
+                        .shadow(color: .black.opacity(0.18), radius: 16, x: 0, y: 8)
+                }
                 .offset(y: -stretch)
                 .opacity(1 - Double(departure) / 260)
                 .scaleEffect(1 - Double(departure) / 2000, anchor: .top)
@@ -43,7 +61,19 @@ struct HomeHeroHeader: View {
         .accessibilityLabel("\(greeting). \(totalParks) parks visited, \(totalVisits) visits, \(cities) cities, \(streakWeeks) week streak.")
     }
 
-    private func content(stretch: CGFloat) -> some View {
+}
+
+/// The hero's text and figures, independent of the scroll position.
+private struct HeroFigures: View {
+    let greeting: String
+    let subtitle: String
+    let totalParks: Int
+    let totalVisits: Int
+    let cities: Int
+    let streakWeeks: Int
+    let ink: Color
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(greeting)
@@ -77,7 +107,6 @@ struct HomeHeroHeader: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .scaleEffect(1 + stretch / 900, anchor: .bottomLeading)
     }
 
     private var divider: some View {

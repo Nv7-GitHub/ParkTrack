@@ -32,21 +32,24 @@ enum Theme {
 
     // MARK: Gradients
 
-    /// Hero gradient used behind headline stats.
-    static var heroGradient: LinearGradient {
-        LinearGradient(
-            colors: [canopy, moss, sky.opacity(0.75)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
+    // Built once rather than per access: these are read inside `ForEach` bodies, so a
+    // computed property rebuilt the gradient or the array for every row on every frame.
 
-    static var progressGradient: LinearGradient {
-        LinearGradient(colors: [fern, sky], startPoint: .leading, endPoint: .trailing)
-    }
+    /// Hero gradient used behind headline stats.
+    static let heroGradient = LinearGradient(
+        colors: [canopy, moss, sky.opacity(0.75)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    static let progressGradient = LinearGradient(
+        colors: [fern, sky],
+        startPoint: .leading,
+        endPoint: .trailing
+    )
 
     /// Distinct hues for charts and multi-series data, ordered for adjacent-pair contrast.
-    static var chartColors: [Color] { [fern, sky, sunset, bark, moss, canopy] }
+    static let chartColors: [Color] = [fern, sky, sunset, bark, moss, canopy]
 
     // MARK: Metrics
 

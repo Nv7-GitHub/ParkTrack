@@ -140,16 +140,23 @@ private extension CGImagePropertyOrientation {
     }
 }
 
-/// Square-ish preview for a single `MediaItem`, shared by the visit list, the visit
-/// detail sheet and the friend feed so attachments read identically everywhere.
+/// Square preview of a stored photo or video.
+///
+/// The bytes are decoded once, at the size actually drawn, off the main thread, and then
+/// held by `ThumbnailCache`. Reading `item.data` is itself a file read for
+/// externally-stored blobs, so it happens inside the task rather than in `body`.
 struct MediaThumbnail: View {
     let item: MediaItem
     var size: CGFloat = 84
     var cornerRadius: CGFloat = Theme.tightCornerRadius
 
+    @Environment(\.displayScale) private var displayScale
+    @State private var decoded: UIImage?
+
+    /// Already-decoded thumbnails draw on the first frame; only a genuinely new image
+    /// shows the placeholder.
     private var previewImage: UIImage? {
-        let source = item.isVideo ? (item.thumbnailData ?? item.data) : item.data
-        return source.flatMap(UIImage.init(data:))
+        decoded ?? ThumbnailCache.cached(identifier: item.identifier.uuidString, size: size, scale: displayScale)
     }
 
     var body: some View {
@@ -180,7 +187,20 @@ struct MediaThumbnail: View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .strokeBorder(Theme.separator, lineWidth: 0.5)
         )
+        .task(id: item.identifier) { await load() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(item.isVideo ? "Video attachment" : "Photo attachment")
+    }
+
+    private func load() async {
+        guard previewImage == nil else { return }
+        let source = item.isVideo ? (item.thumbnailData ?? item.data) : item.data
+        guard let source, !source.isEmpty else { return }
+        decoded = await ThumbnailCache.shared.thumbnail(
+            identifier: item.identifier.uuidString,
+            data: source,
+            size: size,
+            scale: displayScale
+        )
     }
 }

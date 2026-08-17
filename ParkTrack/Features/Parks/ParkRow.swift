@@ -17,11 +17,19 @@ struct ParkRow: View {
     }
 
     /// The most recent attachment, which is the one worth previewing.
+    ///
+    /// Found in a single pass. Sorting every visit and then every visit's media — which is
+    /// what `sortedVisits`/`sortedMedia` do — to pick one item was the row's largest cost
+    /// after image decoding, and it ran again on every body evaluation while scrolling.
     private var thumbnail: MediaItem? {
-        for visit in park.sortedVisits {
-            if let first = visit.sortedMedia.first { return first }
+        var best: (date: Date, item: MediaItem)?
+        for visit in park.visits ?? [] {
+            guard let earliest = (visit.media ?? []).min(by: { $0.createdAt < $1.createdAt }) else { continue }
+            if best == nil || visit.date > best!.date {
+                best = (visit.date, earliest)
+            }
         }
-        return nil
+        return best?.item
     }
 
     var body: some View {

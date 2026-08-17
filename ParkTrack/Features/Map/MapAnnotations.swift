@@ -1,5 +1,7 @@
 import SwiftUI
 import CoreLocation
+import MapKit
+import Observation
 
 /// The pin for one cached park.
 ///
@@ -163,5 +165,59 @@ struct FogOfWarOverlay: View {
             width: hole.radius * 2,
             height: hole.radius * 2
         )
+    }
+}
+
+/// The camera region as it moves, held apart from the map screen's own state.
+///
+/// Fog has to be re-projected on every frame of a pan, but nothing else on the map does.
+/// Keeping the live region in an observable object means only the view that actually reads
+/// it is invalidated, instead of the whole screen.
+@Observable
+@MainActor
+final class LiveCameraRegion {
+    var region: MKCoordinateRegion?
+}
+
+/// Projects the explored bubbles into screen space and draws the fog over them.
+///
+/// Every bubble is the same size in metres, and at any given moment the map's scale is
+/// uniform, so the radius in points is worked out once per frame rather than with a second
+/// projection per park — which halves the conversions and removes a per-park coordinate
+/// allocation from the hot path.
+struct FogOfWarLayer: View {
+    let proxy: MapProxy
+    let parks: [Park]
+    let radiusMeters: CLLocationDistance
+    let camera: LiveCameraRegion
+
+    var body: some View {
+        // Reading the live region here, and only here, is what ties this view to the
+        // camera without dragging the rest of the map along with it.
+        FogOfWarOverlay(holes: holes(around: camera.region))
+    }
+
+    private func holes(around region: MKCoordinateRegion?) -> [FogOfWarOverlay.FogHole] {
+        guard !parks.isEmpty else { return [] }
+
+        let reference = region?.center ?? parks[0].coordinate
+        let degreesNorth = radiusMeters / 111_320
+        guard let referencePoint = proxy.convert(reference, to: .local),
+              let referenceEdge = proxy.convert(
+                  CLLocationCoordinate2D(latitude: reference.latitude + degreesNorth, longitude: reference.longitude),
+                  to: .local
+              )
+        else { return [] }
+
+        let radius = abs(referenceEdge.y - referencePoint.y)
+        guard radius > 1 else { return [] }
+
+        var holes: [FogOfWarOverlay.FogHole] = []
+        holes.reserveCapacity(parks.count)
+        for park in parks {
+            guard let center = proxy.convert(park.coordinate, to: .local) else { continue }
+            holes.append(FogOfWarOverlay.FogHole(center: center, radius: radius))
+        }
+        return holes
     }
 }

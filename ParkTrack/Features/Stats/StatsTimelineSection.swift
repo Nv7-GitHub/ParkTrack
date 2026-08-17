@@ -13,6 +13,7 @@ struct StatsTimelineSection: View {
     let cache: StatsCache
     @State private var pointsCache = DerivedCache<[TimelinePoint]>()
     @State private var visitPointsCache = DerivedCache<[TimelinePoint]>()
+    @State private var monthsCache = DerivedCache<Int>()
 
     enum Range: String, CaseIterable, Identifiable {
         case sixMonths, year, all
@@ -51,9 +52,14 @@ struct StatsTimelineSection: View {
         case .sixMonths: return 6
         case .year: return 12
         case .all:
-            guard let first = parks.compactMap(\.firstVisitDate).min() else { return 12 }
-            let months = Calendar.current.dateComponents([.month], from: first, to: Date()).month ?? 12
-            return min(max(months + 1, 6), 120)
+            // Finding the earliest first visit faults every park's relationship, and both
+            // series ask for the range, so the answer is kept rather than re-derived twice
+            // on every body evaluation.
+            return monthsCache.value(for: signature) {
+                guard let first = parks.compactMap(\.firstVisitDate).min() else { return 12 }
+                let months = Calendar.current.dateComponents([.month], from: first, to: Date()).month ?? 12
+                return min(max(months + 1, 6), 120)
+            }
         }
     }
 

@@ -99,6 +99,91 @@ final class PerformanceProbeTests: XCTestCase {
         }
     }
 
+    /// A list row formats a distance on every body evaluation, so this is paid once per
+    /// visible row per frame. The comparison is against building a formatter per call, which
+    /// is what `Format` used to do.
+    func testDistanceFormattingCost() {
+        let origin = CLLocation(latitude: 47.6, longitude: -122.2)
+        let distances = parks.map { $0.distance(from: origin) }
+        measure {
+            for meters in distances {
+                _ = Format.distance(meters)
+            }
+        }
+    }
+
+    func testDistanceFormattingCostWithAFreshFormatterEachTime() {
+        let origin = CLLocation(latitude: 47.6, longitude: -122.2)
+        let distances = parks.map { $0.distance(from: origin) }
+        measure {
+            for meters in distances {
+                let formatter = MeasurementFormatter()
+                formatter.unitOptions = .naturalScale
+                formatter.unitStyle = .medium
+                formatter.numberFormatter.maximumFractionDigits = 1
+                _ = formatter.string(from: Measurement(value: meters, unit: UnitLength.meters))
+            }
+        }
+    }
+
+    func testDistanceFormattingCostRepeated() {
+        let origin = CLLocation(latitude: 47.6, longitude: -122.2)
+        let distances = parks.map { $0.distance(from: origin) }
+        _ = distances.map(Format.distance)
+        measure {
+            for meters in distances {
+                _ = Format.distance(meters)
+            }
+        }
+    }
+
+    func testDistanceFormattingViaFormatStyle() {
+        let origin = CLLocation(latitude: 47.6, longitude: -122.2)
+        let distances = parks.map { $0.distance(from: origin) }
+        measure {
+            for meters in distances {
+                _ = Measurement(value: meters, unit: UnitLength.meters)
+                    .formatted(.measurement(width: .abbreviated, usage: .road))
+            }
+        }
+    }
+
+    /// Sorting the catalogue by distance. The comparator used to measure inside itself,
+    /// which is O(n log n) `CLLocation` allocations for a sort that needs n.
+    func testDistanceSortCost() {
+        let origin = CLLocation(latitude: 47.6, longitude: -122.2)
+        measure {
+            for _ in 0..<20 {
+                _ = ParkSortOption.distance.apply(to: parks, origin: origin)
+            }
+        }
+    }
+
+    func testDistanceSortCostMeasuringInsideTheComparator() {
+        let origin = CLLocation(latitude: 47.6, longitude: -122.2)
+        measure {
+            for _ in 0..<20 {
+                _ = parks.sorted { $0.distance(from: origin) < $1.distance(from: origin) }
+            }
+        }
+    }
+
+    /// The heatmap's colour scale. Derived once for the grid rather than once per cell.
+    func testHeatmapPeakCostPerCellVersusPerGrid() {
+        let weeks = StatsBreakdown.heatmapWeeks(parks: parks)
+        let cells = weeks.reduce(0) { $0 + $1.days.count }
+        XCTAssertGreaterThan(cells, 300)
+
+        measure {
+            // Once per grid, which is what the view now does.
+            var highest = 1
+            for week in weeks {
+                for day in week.days where day.count > highest { highest = day.count }
+            }
+            _ = highest
+        }
+    }
+
     func testRecommendationsCost() {
         let origin = CLLocation(latitude: 47.6, longitude: -122.2)
         measure {

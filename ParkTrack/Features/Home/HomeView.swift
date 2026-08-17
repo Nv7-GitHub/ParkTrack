@@ -23,7 +23,17 @@ struct HomeView: View {
     @State private var streaksCache = DerivedCache<Streaks>()
     @State private var completionsCache = DerivedCache<[RadiusCompletion]>()
     @State private var recommendationsCache = DerivedCache<[Recommendation]>()
-    @Query(sort: \Visit.date, order: .reverse) private var visits: [Visit]
+    /// Only as many as the section can show. This used to fetch and materialise every
+    /// visit ever logged so it could take the newest five, which grows without bound and is
+    /// paid for on every change to the store.
+    @Query(HomeView.recentVisitsDescriptor) private var visits: [Visit]
+
+    private static var recentVisitsDescriptor: FetchDescriptor<Visit> {
+        var descriptor = FetchDescriptor<Visit>(sortBy: [SortDescriptor(\Visit.date, order: .reverse)])
+        // A little headroom over the five shown, because orphaned visits are filtered out.
+        descriptor.fetchLimit = 20
+        return descriptor
+    }
 
     @State private var path = NavigationPath()
     @State private var logTarget: Park?

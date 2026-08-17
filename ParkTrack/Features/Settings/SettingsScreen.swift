@@ -19,7 +19,22 @@ struct SettingsScreen: View {
 
     @Query private var parks: [Park]
     @State private var isReviewingSuspects = false
+    /// Fetched in full because deleting them and reacting to their arrival both need the
+    /// objects, not just a count.
     @Query private var visits: [Visit]
+
+    // The data card's three figures each walked the whole catalogue on every body
+    // evaluation — and the suspect check runs a category match per park — so scrolling this
+    // sheet re-audited the store on every frame.
+    @State private var auditCache = DerivedCache<AuditCounts>()
+    /// Bumped by anything that changes what the audit would find without changing how many
+    /// parks or visits there are — resolving regions fills in cities, which is exactly that.
+    @State private var auditRevision = 0
+
+    struct AuditCounts {
+        let suspicious: Int
+        let unresolved: Int
+    }
 
     @State private var homePlaceName: String?
     @State private var isResolvingHomeName = false
@@ -40,8 +55,30 @@ struct SettingsScreen: View {
     init() {}
 
     /// Entries that were filed as parks from a non-park search result, back when tapping any
-    /// result added one.
-    private var suspiciousCount: Int { ParkAudit.suspicious(parks).count }
+    /// result added one — counted alongside the unplaced ones, in one pass.
+    private var auditCounts: AuditCounts {
+        auditCache.value(
+            for: StatsSignature(
+                parkCount: parks.count,
+                visitCount: visitCount,
+                extra: [Double(auditRevision)]
+            )
+        ) {
+            var suspicious = 0
+            var unresolved = 0
+            for park in parks {
+                if ParkAudit.isSuspicious(park) { suspicious += 1 }
+                if park.regionResolvedAt == nil { unresolved += 1 }
+            }
+            return AuditCounts(suspicious: suspicious, unresolved: unresolved)
+        }
+    }
+
+    private var suspiciousCount: Int { auditCounts.suspicious }
+
+    /// Counted by the store rather than by fetching and materialising every visit, which is
+    /// all the old `@Query` was for.
+    private var visitCount: Int { modelContext.visitCount() }
 
     var body: some View {
         @Bindable var settings = settings
@@ -61,6 +98,10 @@ struct SettingsScreen: View {
             }
             .background(Theme.background)
             .scrollDismissesKeyboard(.interactively)
+            .onChange(of: isReviewingSuspects) { _, isOpen in
+                // Coming back from the review, some of those entries may be gone.
+                if !isOpen { auditRevision += 1 }
+            }
             .sheet(isPresented: $isReviewingSuspects) {
             SuspiciousParksSheet()
         }
@@ -343,7 +384,7 @@ struct SettingsScreen: View {
 
                 HStack(spacing: 10) {
                     StatTile(value: "\(parks.count)", label: "Parks tracked", systemImage: "tree.fill")
-                    StatTile(value: "\(visits.count)", label: "Visits logged", systemImage: "figure.walk", tint: Theme.sky)
+                    StatTile(value: "\(visitCount)", label: "Visits logged", systemImage: "figure.walk", tint: Theme.sky)
                     StatTile(
                         value: DataExport.formatBytes(mediaBytes),
                         label: "Photos & video",
@@ -432,9 +473,7 @@ struct SettingsScreen: View {
         }
     }
 
-    private var unresolvedCount: Int {
-        parks.filter { $0.regionResolvedAt == nil }.count
-    }
+    private var unresolvedCount: Int { auditCounts.unresolved }
 
     /// `@Query` hands back a snapshot that only refreshes when the body re-runs, so
     /// before/after comparisons across an `await` have to ask the store directly.
@@ -472,6 +511,7 @@ struct SettingsScreen: View {
             return
         }
         let added = max(0, storedParkCount() - before)
+        auditRevision += 1
         show(status: added == 0 ? "No new parks found nearby." : "Found \(Format.parkCount(added)).")
     }
 
@@ -483,6 +523,7 @@ struct SettingsScreen: View {
         let before = storedUnresolvedCount()
         await RegionResolver.shared.resolveMissingRegions(context: modelContext, limit: 60)
         let resolved = max(0, before - storedUnresolvedCount())
+        auditRevision += 1
         show(status: resolved == 0
              ? "Nothing new could be resolved right now."
              : "Resolved \(Format.parkCount(resolved)).")

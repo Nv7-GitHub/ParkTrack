@@ -220,18 +220,31 @@ struct YearInReviewCard: View {
                 .accessibilityHint("Shares the year in review card as an image")
             }
         }
-        .onAppear { render() }
-        .onChange(of: summary) { render() }
-        .onChange(of: displayScale) { render() }
+        .task(id: RenderKey(summary: summary, scale: displayScale)) { await renderWhenIdle() }
     }
 
-    /// Rasterised eagerly rather than on tap so the share sheet opens instantly.
-    @MainActor
-    private func render() {
+    /// What a rasterisation depends on, so the card re-renders when the figures or the
+    /// screen's scale actually change and not merely when the view is rebuilt.
+    private struct RenderKey: Equatable {
+        let summary: YearInReviewSummary
+        let scale: CGFloat
+    }
+
+    /// Rasterised ahead of time so the share sheet opens instantly — but not during the
+    /// frame that brings the card on screen.
+    ///
+    /// `ImageRenderer` walks and draws the whole poster at screen scale, which is tens of
+    /// milliseconds of main-thread work. Doing that from `onAppear` meant scrolling to the
+    /// bottom of the Stats tab dropped frames every single time. Waiting until the scroll
+    /// has settled costs nothing: the image is only needed once the user reaches for Share.
+    private func renderWhenIdle() async {
         guard !summary.isEmpty else {
             rendered = nil
             return
         }
+        try? await Task.sleep(for: .milliseconds(400))
+        guard !Task.isCancelled else { return }
+
         let renderer = ImageRenderer(content: YearInReviewPoster(summary: summary).frame(width: 360))
         renderer.scale = displayScale
         guard let image = renderer.uiImage else { return }

@@ -23,7 +23,12 @@ struct MapScreen: View {
     /// Updated only when the camera stops, so the annotation set doesn't churn mid-pan.
     @State private var settledRegion: MKCoordinateRegion?
     /// Updated on every camera frame, but only while fog needs to be re-projected.
-    @State private var liveRegion: MKCoordinateRegion?
+    ///
+    /// Deliberately a reference type that nothing in this body reads. When it was `@State`
+    /// on the screen, a pan invalidated `MapScreen` sixty times a second — rebuilding every
+    /// annotation, every ring and the whole control overlay to move a shadow. Only
+    /// `FogOfWarLayer` observes it, so only the fog redraws per frame.
+    @State private var liveCamera = LiveCameraRegion()
 
     @State private var layers = MapLayerOptions()
     @State private var completionsCache = DerivedCache<[RadiusCompletion]>()
@@ -102,7 +107,12 @@ struct MapScreen: View {
                     )
                     .overlay {
                         if layers.fogOfWar {
-                            FogOfWarOverlay(holes: fogHoles(proxy: proxy))
+                            FogOfWarLayer(
+                                proxy: proxy,
+                                parks: revealedParks,
+                                radiusMeters: layers.revealRadiusMeters,
+                                camera: liveCamera
+                            )
                         }
                     }
                     .overlay { controlOverlay }
@@ -164,11 +174,11 @@ struct MapScreen: View {
         }
         .onMapCameraChange(frequency: .continuous) { context in
             guard layers.fogOfWar else { return }
-            liveRegion = context.region
+            liveCamera.region = context.region
         }
         .onMapCameraChange(frequency: .onEnd) { context in
             settledRegion = context.region
-            liveRegion = context.region
+            liveCamera.region = context.region
             scheduleScan(for: context.region)
         }
     }
@@ -431,23 +441,6 @@ struct MapScreen: View {
             latitude: anchor.latitude + metersNorth / 111_320,
             longitude: anchor.longitude
         )
-    }
-
-    /// Projects the explored bubbles into screen space for the fog layer to subtract.
-    private func fogHoles(proxy: MapProxy) -> [FogOfWarOverlay.FogHole] {
-        _ = liveRegion
-        let radiusMeters = layers.revealRadiusMeters
-        return revealedParks.compactMap { park in
-            guard let center = proxy.convert(park.coordinate, to: .local) else { return nil }
-            let edgeCoordinate = CLLocationCoordinate2D(
-                latitude: park.coordinate.latitude + radiusMeters / 111_320,
-                longitude: park.coordinate.longitude
-            )
-            guard let edge = proxy.convert(edgeCoordinate, to: .local) else { return nil }
-            let radius = abs(edge.y - center.y)
-            guard radius > 1 else { return nil }
-            return FogOfWarOverlay.FogHole(center: center, radius: radius)
-        }
     }
 
     private static func region(

@@ -166,17 +166,31 @@ struct StatsHeatmapGrid: View {
         self._focusedDay = focusedDay
     }
 
+    /// The busiest day in the window, which sets the colour scale.
+    ///
+    /// Computed once for the whole grid. As a computed property it was re-derived inside
+    /// every one of the year's 364 cells — two array allocations and a full pass over the
+    /// grid each time — so drawing the heatmap, or tapping any day in it, walked a hundred
+    /// thousand elements before a single rectangle was filled.
     private var peak: Int {
-        max(weeks.flatMap { $0.days }.map(\.count).max() ?? 0, 1)
+        var highest = 1
+        for week in weeks {
+            for day in week.days where day.count > highest { highest = day.count }
+        }
+        return highest
     }
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: spacing) {
+        let peak = self.peak
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            // Lazy: a year is fifty-odd columns of seven cells, and only a handful are on
+            // screen at once.
+            LazyHStack(alignment: .top, spacing: spacing) {
                 ForEach(weeks) { week in
                     VStack(spacing: spacing) {
                         ForEach(week.days) { day in
-                            cellView(for: day)
+                            cellView(for: day, peak: peak)
                         }
                     }
                     .accessibilityElement(children: .ignore)
@@ -191,7 +205,7 @@ struct StatsHeatmapGrid: View {
     }
 
     @ViewBuilder
-    private func cellView(for day: StatsHeatmapDay) -> some View {
+    private func cellView(for day: StatsHeatmapDay, peak: Int) -> some View {
         let level = day.isInWindow ? StatsHeatmapGrid.level(count: day.count, peak: peak) : -1
         RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(level < 0 ? Color.clear : StatsHeatmapGrid.color(level: level))

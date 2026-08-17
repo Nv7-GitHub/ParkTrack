@@ -24,12 +24,34 @@ struct ParksListScreen: View {
     @State private var loggingTarget: Park?
     @State private var isBulkAdding = false
 
+    // Filtering and sorting the whole catalogue is the most expensive thing this screen
+    // does, and `body` used to do it three times over — once for the empty check, once for
+    // the rows, once for the header count — plus three more full scans for the segment
+    // counts. All of it ran again on every location tick and every scroll-driven
+    // re-evaluation. Now each answer is computed once per genuine change of input.
+    @State private var visibleCache = DerivedCache<[Park]>()
+    @State private var countsCache = DerivedCache<[ParkSegment: Int]>()
+    @State private var originCache = DerivedCache<CLLocation?>()
+
+    /// Rebuilding a `CLLocation` for the home pin on every access meant one allocation per
+    /// row, since every row is handed the origin.
     private var origin: CLLocation? {
-        if let current = location.currentLocation { return current }
-        if let home = settings.homeCoordinate {
-            return CLLocation(latitude: home.latitude, longitude: home.longitude)
+        originCache.value(for: anchorSignature) {
+            if let current = location.currentLocation { return current }
+            if let home = settings.homeCoordinate {
+                return CLLocation(latitude: home.latitude, longitude: home.longitude)
+            }
+            return nil
         }
-        return nil
+    }
+
+    private var anchorSignature: StatsSignature {
+        StatsSignature(
+            parkCount: 0,
+            visitCount: 0,
+            anchor: location.currentLocation?.coordinate ?? settings.homeCoordinate,
+            extra: [location.currentLocation == nil ? 0 : 1]
+        )
     }
 
     private var hasActiveFilters: Bool {
@@ -37,16 +59,21 @@ struct ParksListScreen: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // Read once and passed down. Every reference to `visible` is a potential full pass
+        // over the catalogue, and the header, the empty check and the rows all need it.
+        let rows = visible
+        let origin = self.origin
+
+        return NavigationStack {
             List {
                 Section {
-                    if visible.isEmpty {
+                    if rows.isEmpty {
                         emptyState
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
                     } else {
-                        ForEach(visible, id: \.identifier) { park in
+                        ForEach(rows, id: \.identifier) { park in
                             NavigationLink {
                                 ParkDetailView(park: park)
                             } label: {
@@ -75,7 +102,7 @@ struct ParksListScreen: View {
                         }
                     }
                 } header: {
-                    listHeader
+                    listHeader(shownCount: rows.count)
                 }
             }
             .listStyle(.plain)
@@ -124,9 +151,9 @@ struct ParksListScreen: View {
         .background(.bar)
     }
 
-    private var listHeader: some View {
+    private func listHeader(shownCount: Int) -> some View {
         HStack(spacing: 6) {
-            Text(Format.parkCount(visible.count))
+            Text(Format.parkCount(shownCount))
             if hasActiveFilters || !searchText.isEmpty {
                 Text("of \(count(for: segment))")
                     .foregroundStyle(Theme.textSecondary)
@@ -230,8 +257,43 @@ struct ParksListScreen: View {
         }
     }
 
+    /// All three segment counts in one pass, cached: the segmented control asks for every
+    /// one of them each time it is drawn.
+    private var segmentCounts: [ParkSegment: Int] {
+        countsCache.value(for: catalogueSignature) {
+            var counts: [ParkSegment: Int] = [.visited: 0, .notVisited: 0, .wishlist: 0]
+            for park in parks {
+                if park.isVisited {
+                    counts[.visited, default: 0] += 1
+                } else {
+                    counts[.notVisited, default: 0] += 1
+                }
+                if park.isWishlisted { counts[.wishlist, default: 0] += 1 }
+            }
+            return counts
+        }
+    }
+
     private func count(for segment: ParkSegment) -> Int {
-        parks.filter(segment.matches).count
+        segmentCounts[segment] ?? 0
+    }
+
+    /// What the catalogue itself looks like, independent of the controls on screen.
+    /// `wishlistCount` is in here because toggling a bookmark changes neither the number of
+    /// parks nor the number of visits, and the wishlist segment has to notice.
+    private var catalogueSignature: StatsSignature {
+        StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: nil,
+            extra: [Double(wishlistCount)]
+        )
+    }
+
+    private var wishlistCount: Int {
+        var count = 0
+        for park in parks where park.isWishlisted { count += 1 }
+        return count
     }
 
     private var cities: [String] {
@@ -244,19 +306,31 @@ struct ParksListScreen: View {
 
     private var visible: [Park] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filtered = parks.filter { park in
-            guard segment.matches(park) else { return false }
-            if let cityFilter, park.locality != cityFilter { return false }
-            if let stateFilter, park.administrativeArea != stateFilter { return false }
-            if requirePhotos, !park.sortedVisits.contains(where: \.hasMedia) { return false }
-            if !query.isEmpty {
-                let matchesName = park.name.localizedCaseInsensitiveContains(query)
-                let matchesRegion = (park.regionLabel ?? "").localizedCaseInsensitiveContains(query)
-                if !matchesName && !matchesRegion { return false }
+        let origin = self.origin
+        let signature = StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: origin?.coordinate,
+            extra: [Double(wishlistCount), requirePhotos ? 1 : 0],
+            tokens: [segment.rawValue, sort.rawValue, query, cityFilter ?? "", stateFilter ?? ""]
+        )
+
+        return visibleCache.value(for: signature) {
+            let filtered = parks.filter { park in
+                guard segment.matches(park) else { return false }
+                if let cityFilter, park.locality != cityFilter { return false }
+                if let stateFilter, park.administrativeArea != stateFilter { return false }
+                // `contains` over the unsorted set: ordering is irrelevant to "is there one".
+                if requirePhotos, !(park.visits ?? []).contains(where: \.hasMedia) { return false }
+                if !query.isEmpty {
+                    let matchesName = park.name.localizedCaseInsensitiveContains(query)
+                    let matchesRegion = (park.regionLabel ?? "").localizedCaseInsensitiveContains(query)
+                    if !matchesName && !matchesRegion { return false }
+                }
+                return true
             }
-            return true
+            return sort.apply(to: filtered, origin: origin)
         }
-        return sort.apply(to: filtered, origin: origin)
     }
 
     // MARK: Mutations
@@ -323,7 +397,14 @@ enum ParkSortOption: String, CaseIterable, Identifiable {
             return parks.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         case .distance:
             guard let origin else { return ParkSortOption.name.apply(to: parks, origin: nil) }
-            return parks.sorted { $0.distance(from: origin) < $1.distance(from: origin) }
+            // Measured once per park rather than once per comparison. `Park.distance` builds
+            // a fresh `CLLocation` every time it is called, so doing it inside the
+            // comparator meant O(n log n) allocations and great-circle solves for a sort
+            // that only needs n of each.
+            return parks
+                .map { (park: $0, meters: $0.distance(from: origin)) }
+                .sorted { $0.meters < $1.meters }
+                .map(\.park)
         case .recentVisit:
             return parks.sorted { lhs, rhs in
                 switch (lhs.lastVisitDate, rhs.lastVisitDate) {

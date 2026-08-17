@@ -26,6 +26,14 @@ struct StatsScreen: View {
     @State private var cache = StatsCache()
     @Query private var indexes: [RegionIndex]
 
+    // Used only while the shared cache is still warming, or before its first pass has run.
+    // Without them a cold screen recomputed records, streaks and the year-in-review figures
+    // on every body evaluation — and the year card was never in the shared cache at all, so
+    // it walked every visit on every pass for the life of the screen.
+    @State private var recordsFallback = DerivedCache<Records>()
+    @State private var streaksFallback = DerivedCache<Streaks>()
+    @State private var yearCache = DerivedCache<YearInReviewSummary>()
+
     @State private var anchor: StatsAnchor = .currentLocation
     @State private var droppedPin: CLLocationCoordinate2D?
     @State private var isPickingPin = false
@@ -43,20 +51,34 @@ struct StatsScreen: View {
     }
 
     private var records: Records {
-        cache.records ?? StatsEngine.records(parks: parks, origin: anchorLocation)
+        cache.records ?? recordsFallback.value(for: statsSignature) {
+            StatsEngine.records(parks: parks, origin: anchorLocation)
+        }
     }
 
     private var streaks: Streaks {
-        cache.streaks ?? StatsEngine.streaks(parks: parks)
+        cache.streaks ?? streaksFallback.value(for: statsSignature) {
+            StatsEngine.streaks(parks: parks)
+        }
     }
 
     private var yearSummary: YearInReviewSummary {
-        YearInReviewSummary.make(
-            parks: parks,
-            year: Calendar.current.component(.year, from: Date()),
-            streakWeeks: streaks.currentWeeks,
-            displayName: settings.displayName
+        let streakWeeks = streaks.currentWeeks
+        let signature = StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: nil,
+            extra: [Double(streakWeeks)],
+            tokens: [settings.displayName]
         )
+        return yearCache.value(for: signature) {
+            YearInReviewSummary.make(
+                parks: parks,
+                year: Calendar.current.component(.year, from: Date()),
+                streakWeeks: streakWeeks,
+                displayName: settings.displayName
+            )
+        }
     }
 
     /// Computes the screen's figures once, off the tab transition. Without this the sections

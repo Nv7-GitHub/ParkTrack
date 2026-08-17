@@ -29,6 +29,8 @@ struct ParkDetailView: View {
         return Format.distance(park.distance(from: origin))
     }
 
+    /// Sorted once per body evaluation rather than three times: the empty check, the rows
+    /// and the section header each asked for it.
     private var visits: [Visit] { park.sortedVisits }
 
     private var placeCard: some View {
@@ -38,7 +40,9 @@ struct ParkDetailView: View {
     }
 
     var body: some View {
-        List {
+        let visits = self.visits
+
+        return List {
             Section {
                 hero
                     .listRowInsets(EdgeInsets())

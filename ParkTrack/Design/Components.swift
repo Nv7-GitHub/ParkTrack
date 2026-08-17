@@ -9,12 +9,19 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
+            // The shadow is cast by the background shape rather than by the card as a whole.
+            // Shadowing the whole view makes the compositor rasterise every subview inside
+            // it first, on every redraw; shadowing an opaque rounded rectangle is one cheap
+            // blur of a simple shape, and looks identical.
+            .background {
+                RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
+                    .fill(Theme.surfaceRaised)
+                    .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 4)
+            }
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous)
                     .strokeBorder(Theme.separator, lineWidth: 0.5)
             )
-            .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 4)
     }
 }
 

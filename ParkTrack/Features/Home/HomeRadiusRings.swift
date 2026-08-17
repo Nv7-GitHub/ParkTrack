@@ -143,11 +143,24 @@ struct HomeRadiusDetailView: View {
     let route: HomeRadiusRoute
 
     @Environment(ServiceHub.self) private var services
+    @Environment(\.modelContext) private var modelContext
     @Query private var parks: [Park]
     @State private var showsVisited = false
+    @State private var completionCache = DerivedCache<RadiusCompletion>()
 
+    /// Built once per genuine change. Measuring every cached park against the ring is a
+    /// full pass with a great-circle solve per park, and it was running on every body
+    /// evaluation — including the ones a location tick or a disclosure toggle caused.
     private var completion: RadiusCompletion {
-        StatsEngine.radiusCompletion(parks: parks, center: route.center, radiusMiles: route.radiusMiles)
+        let signature = StatsSignature(
+            parkCount: parks.count,
+            visitCount: modelContext.visitCount(),
+            anchor: route.center,
+            extra: [route.radiusMiles]
+        )
+        return completionCache.value(for: signature) {
+            StatsEngine.radiusCompletion(parks: parks, center: route.center, radiusMiles: route.radiusMiles)
+        }
     }
 
     /// Whether discovery has actually searched this ring, or is still working outwards
@@ -243,7 +256,9 @@ struct HomeRadiusDetailView: View {
                     .foregroundStyle(Theme.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            VStack(spacing: 0) {
+            // Lazy, because a wide ring can hold hundreds of parks and an eager stack builds
+            // and measures every one of them before the screen can appear.
+            LazyVStack(spacing: 0) {
                 ForEach(parks) { park in
                     NavigationLink(value: park) {
                         row(park)
