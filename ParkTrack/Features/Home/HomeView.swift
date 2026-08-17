@@ -35,10 +35,6 @@ struct HomeView: View {
 
     private var discovery: ParkDiscoveryService? { services.discovery }
 
-    /// Widest area a single automatic pass will sweep. Beyond this the tiled search starts
-    /// returning a thin sample of a large area rather than good coverage of a walkable one.
-    private let discoveryRadiusCapMiles: Double = 15
-
     var body: some View {
         let records = self.records
 
@@ -61,12 +57,12 @@ struct HomeView: View {
                     recentSection
                 }
                 .padding(.top, 8)
-                .padding(.bottom, 36)
             }
             .coordinateSpace(.named(Self.scrollSpace))
             .scrollIndicators(.hidden)
+            .tabBarBottomInset()
             .background(Theme.background)
-            .refreshable { await runDiscovery(force: true) }
+            .refreshable { await runDiscovery(force: false) }
             .overlay(alignment: .top) { activityBanner }
             .overlay(alignment: .topTrailing) { settingsButton }
             .animation(.smooth(duration: 0.3), value: isSearching)
@@ -98,7 +94,7 @@ struct HomeView: View {
                         onPickPark: { pendingLogTarget = $0 },
                         onPickCoordinate: { coordinate in
                             settings.homeCoordinate = coordinate
-                            Task { await runDiscovery(force: true) }
+                            Task { await runDiscovery(force: false) }
                         }
                     )
                 }
@@ -142,7 +138,7 @@ struct HomeView: View {
                     onEnableLocation: {
                         location.requestAuthorization()
                         location.start()
-                        Task { await runDiscovery(force: true) }
+                        Task { await runDiscovery(force: false) }
                     },
                     onSetHome: { mapPurpose = .setHome }
                 )
@@ -358,21 +354,18 @@ struct HomeView: View {
 
     /// Sweeps the map around the user, then fills in the region fields the new parks lack.
     ///
-    /// Without `force` this backs off when the area already has a workable set of parks, so
-    /// returning to the tab doesn't re-query the map on every appearance.
+    /// The sweep covers the widest ring the user actually asks about, because a ring can
+    /// only quote a percentage of ground that has been searched. Discovery tracks what it
+    /// has already covered, so an unforced pass — a return to the tab, a pull to refresh —
+    /// costs nothing over ground already swept and only widens when the rings do.
     private func runDiscovery(force: Bool) async {
         guard let discovery else { return }
 
         let center = await location.resolveLocation() ?? originLocation
         guard let coordinate = center?.coordinate ?? settings.homeCoordinate else { return }
 
-        let radius = min(settings.radiiMiles.max() ?? 10, discoveryRadiusCapMiles)
-        if !force {
-            let nearby = StatsEngine.radiusCompletion(parks: parks, center: coordinate, radiusMiles: radius)
-            if nearby.total >= 5 { return }
-        }
-
-        await discovery.discoverParks(around: coordinate, radiusMiles: radius)
+        let radius = settings.radiiMiles.max() ?? AppSettings.defaultRadiiMiles.max() ?? 10
+        await discovery.sweep(around: coordinate, radiusMiles: radius, force: force)
         await RegionResolver.shared.resolveMissingRegions(context: modelContext, limit: 30)
     }
 

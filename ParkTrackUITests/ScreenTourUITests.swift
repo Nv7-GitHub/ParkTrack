@@ -68,6 +68,38 @@ final class ScreenTourUITests: XCTestCase {
         }
     }
 
+    /// Captures every tab scrolled to its end.
+    ///
+    /// The floating tab bar sits over the content rather than shortening it, so a screen that
+    /// forgot to reserve room for it looks fine until you reach the bottom — which is the one
+    /// place the plain tour never visits.
+    func testTourEveryTabAtTheEndOfItsScroll() throws {
+        Thread.sleep(forTimeInterval: 12)
+        scrollToBottom()
+        capture("11-home-bottom")
+
+        for (index, tab) in ["Parks", "Stats", "Friends"].enumerated() {
+            let button = app.tabBars.buttons[tab]
+            XCTAssertTrue(button.waitForExistence(timeout: 10), "Missing \(tab) tab")
+            button.tap()
+            Thread.sleep(forTimeInterval: 4)
+            // Parks opens on "Visited", which is empty on a fresh install and so scrolls
+            // nowhere. The discovered list is the one that can run under the tab bar.
+            if tab == "Parks" {
+                let toGo = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'To go'")).firstMatch
+                if toGo.waitForExistence(timeout: 5) { toGo.tap() }
+                Thread.sleep(forTimeInterval: 2)
+            }
+            scrollToBottom()
+            capture(String(format: "%02d-%@-bottom", index + 12, tab.lowercased()))
+        }
+    }
+
+    private func scrollToBottom() {
+        for _ in 0..<20 { app.swipeUp(velocity: .fast) }
+        Thread.sleep(forTimeInterval: 2)
+    }
+
     /// Scrolls the stats screen so the charts further down are captured too.
     func testStatsScrolled() throws {
         Thread.sleep(forTimeInterval: 8)

@@ -54,11 +54,28 @@ enum Theme {
     static let tightCornerRadius: CGFloat = 14
     static let cardPadding: CGFloat = 16
     static let sectionSpacing: CGFloat = 20
+    /// Room the floating tab bar takes out of every tab's content. The bar floats over the
+    /// content instead of shortening it, so a screen scrolled to its end leaves its last
+    /// element half-hidden unless it reserves this much space.
+    static let tabBarClearance: CGFloat = 76
 
     private static func adaptive(light: Color, dark: Color) -> Color {
         Color(uiColor: UIColor { traits in
             traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
         })
+    }
+}
+
+extension View {
+    /// Reserves `Theme.tabBarClearance` below the content so it clears the floating tab bar.
+    ///
+    /// Padding goes into the safe area rather than around the view so backgrounds still run
+    /// to the screen edge, scroll indicators stop in the right place, and anything centred
+    /// in the remaining space centres in what the user can actually see. One modifier,
+    /// applied the same way in every tab, is what keeps the five of them agreeing on where
+    /// the bottom of the app is.
+    func tabBarBottomInset() -> some View {
+        safeAreaPadding(.bottom, Theme.tabBarClearance)
     }
 }
 

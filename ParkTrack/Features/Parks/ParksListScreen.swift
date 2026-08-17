@@ -82,8 +82,10 @@ struct ParksListScreen: View {
             .scrollContentBackground(.hidden)
             .background(Theme.background)
             .navigationTitle("Parks")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search parks and places")
             .safeAreaInset(edge: .top, spacing: 0) { segmentBar }
+            .tabBarBottomInset()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {

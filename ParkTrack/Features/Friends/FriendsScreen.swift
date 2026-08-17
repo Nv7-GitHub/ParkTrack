@@ -79,9 +79,9 @@ struct FriendsScreen: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
-                .padding(.bottom, 28)
                 .animation(.smooth(duration: 0.3), value: pane)
             }
+            .tabBarBottomInset()
             .background(Theme.background)
             .refreshable { await syncEverything() }
             .navigationTitle("Friends")

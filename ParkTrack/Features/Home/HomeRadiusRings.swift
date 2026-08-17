@@ -23,9 +23,15 @@ struct HomeRadiusRoute: Hashable {
 }
 
 /// Completion rings for each radius the user cares about, centred on wherever they are.
+///
+/// A percentage implies a known denominator, and until discovery has actually searched the
+/// ground a ring covers it has no such thing — so each ring says which of the two it is
+/// rather than quietly presenting a floor as a total.
 struct HomeRadiusRings: View {
     let completions: [RadiusCompletion]
     let center: CLLocationCoordinate2D
+
+    @Environment(ServiceHub.self) private var services
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -43,19 +49,28 @@ struct HomeRadiusRings: View {
     }
 
     private func ring(_ completion: RadiusCompletion, tint: Color) -> some View {
-        VStack(spacing: 10) {
+        let swept = isSwept(completion.radiusMiles)
+
+        return VStack(spacing: 8) {
             ProgressRing(
                 fraction: completion.fraction,
                 lineWidth: 9,
-                tint: tint,
+                tint: swept ? tint : tint.opacity(0.55),
                 label: Format.percent(completion.fraction),
                 caption: Format.miles(completion.radiusMiles)
             )
             .frame(width: 96, height: 96)
 
-            Text("\(completion.visited)/\(completion.total)")
+            // The trailing "+" is the honest part: we know of at least this many parks here.
+            Text(swept ? "\(completion.visited)/\(completion.total)" : "\(completion.visited)/\(completion.total)+")
                 .font(.caption.weight(.semibold).monospacedDigit())
                 .foregroundStyle(Theme.textSecondary)
+
+            Pill(
+                text: swept ? "Swept" : "Scanning",
+                systemImage: swept ? "checkmark" : "binoculars",
+                tint: swept ? Theme.moss : Theme.sky
+            )
         }
         .padding(.vertical, 14)
         .frame(width: 128)
@@ -66,8 +81,14 @@ struct HomeRadiusRings: View {
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Within \(Format.miles(completion.radiusMiles))")
-        .accessibilityValue("\(completion.visited) of \(completion.total) parks visited")
+        .accessibilityValue(swept
+            ? "\(completion.visited) of \(completion.total) parks visited"
+            : "\(completion.visited) of at least \(completion.total) parks visited. Still searching this area.")
         .accessibilityHint("Shows the parks you have left in this ring")
+    }
+
+    private func isSwept(_ radiusMiles: Double) -> Bool {
+        services.discovery?.hasSwept(around: center, radiusMiles: radiusMiles) ?? false
     }
 }
 
@@ -111,10 +132,17 @@ struct HomeLocationPrompt: View {
 struct HomeRadiusDetailView: View {
     let route: HomeRadiusRoute
 
+    @Environment(ServiceHub.self) private var services
     @Query private var parks: [Park]
 
     private var completion: RadiusCompletion {
         StatsEngine.radiusCompletion(parks: parks, center: route.center, radiusMiles: route.radiusMiles)
+    }
+
+    /// Whether discovery has actually searched this ring, or is still working outwards
+    /// towards it. Everything the screen claims about totals hangs off this.
+    private var isSwept: Bool {
+        services.discovery?.hasSwept(around: route.center, radiusMiles: route.radiusMiles) ?? false
     }
 
     private var origin: CLLocation {
@@ -138,29 +166,27 @@ struct HomeRadiusDetailView: View {
                         .frame(width: 84, height: 84)
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("\(completion.visited) of \(completion.total) visited")
+                            Text(isSwept
+                                 ? "\(completion.visited) of \(completion.total) visited"
+                                 : "\(completion.visited) of \(completion.total)+ visited")
                                 .font(.headline)
                                 .foregroundStyle(Theme.textPrimary)
-                            // No parks known here is not the same as having visited them all.
-                            Text(completion.total == 0
-                                 ? "No parks found within \(Format.miles(route.radiusMiles)) yet."
-                                 : completion.remaining.isEmpty
-                                 ? "This ring is complete. Widen your radius for a new challenge."
-                                 : "\(Format.parkCount(completion.remaining.count)) still to go within \(Format.miles(route.radiusMiles)).")
+                            Text(summary(for: completion))
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                            if !isSwept {
+                                Pill(text: "Still scanning", systemImage: "binoculars", tint: Theme.sky)
+                            }
                         }
                     }
                 }
 
                 if completion.remaining.isEmpty {
                     EmptyStateView(
-                        systemImage: "checkmark.seal",
-                        title: completion.total == 0 ? "Nothing found here yet" : "Ring complete",
-                        message: completion.total == 0
-                            ? "Pull to refresh on Home to search this area for parks."
-                            : "You've visited every park we know about inside this ring."
+                        systemImage: isSwept ? "checkmark.seal" : "binoculars",
+                        title: emptyStateTitle(for: completion),
+                        message: emptyStateMessage(for: completion)
                     )
                 } else {
                     VStack(spacing: 0) {
@@ -186,6 +212,36 @@ struct HomeRadiusDetailView: View {
         .background(Theme.background)
         .navigationTitle("Within \(Format.miles(route.radiusMiles))")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// A percentage over ground we haven't searched is a guess, so say so before saying
+    /// anything else about the total.
+    private func summary(for completion: RadiusCompletion) -> String {
+        guard isSwept else {
+            return "We're still searching within \(Format.miles(route.radiusMiles)), so this total will grow and the percentage is provisional."
+        }
+        // No parks known here is not the same as having visited them all.
+        if completion.total == 0 {
+            return "No parks found within \(Format.miles(route.radiusMiles))."
+        }
+        if completion.remaining.isEmpty {
+            return "This ring is complete. Widen your radius for a new challenge."
+        }
+        return "\(Format.parkCount(completion.remaining.count)) still to go within \(Format.miles(route.radiusMiles))."
+    }
+
+    private func emptyStateTitle(for completion: RadiusCompletion) -> String {
+        if completion.total == 0 { return "Nothing found here yet" }
+        return isSwept ? "Ring complete" : "Nothing left so far"
+    }
+
+    private func emptyStateMessage(for completion: RadiusCompletion) -> String {
+        guard isSwept else {
+            return "We're still sweeping this area. Anything new that turns up lands here."
+        }
+        return completion.total == 0
+            ? "Pull to refresh on Home to search this area for parks."
+            : "You've visited every park we know about inside this ring."
     }
 
     private func row(_ park: Park) -> some View {

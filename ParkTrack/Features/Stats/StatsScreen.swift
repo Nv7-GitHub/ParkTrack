@@ -49,42 +49,44 @@ struct StatsScreen: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
+            Group {
                 if parks.isEmpty {
                     EmptyStateView(
                         systemImage: "chart.bar.xaxis",
                         title: "Nothing to measure yet",
                         message: "Find parks near you on the Map tab. As soon as there are parks to visit, this tab fills with rings, curves and records."
                     )
-                    .padding(.top, 60)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    LazyVStack(alignment: .leading, spacing: Theme.sectionSpacing) {
-                        headline
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: Theme.sectionSpacing) {
+                            headline
 
-                        StatsRadiusSection(
-                            parks: parks,
-                            anchor: anchor,
-                            anchorCoordinate: anchorCoordinate,
-                            radiiMiles: settings.radiiMiles,
-                            selectedAnchor: $anchor,
-                            onDropPin: { isPickingPin = true }
-                        )
+                            StatsRadiusSection(
+                                parks: parks,
+                                anchor: anchor,
+                                anchorCoordinate: anchorCoordinate,
+                                radiiMiles: settings.radiiMiles,
+                                selectedAnchor: $anchor,
+                                onDropPin: { isPickingPin = true }
+                            )
 
-                        StatsRegionSection(parks: parks)
+                            StatsRegionSection(parks: parks)
 
-                        StatsTimelineSection(parks: parks)
+                            StatsTimelineSection(parks: parks)
 
-                        StatsRhythmSection(parks: parks)
+                            StatsRhythmSection(parks: parks)
 
-                        StatsRecordsSection(records: records, streaks: streaks)
+                            StatsRecordsSection(records: records, streaks: streaks)
 
-                        YearInReviewCard(summary: yearSummary)
+                            YearInReviewCard(summary: yearSummary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-                    .padding(.bottom, 36)
                 }
             }
+            .tabBarBottomInset()
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Stats")
             .navigationBarTitleDisplayMode(.large)
