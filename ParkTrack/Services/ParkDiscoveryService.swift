@@ -730,6 +730,13 @@ final class ParkDiscoveryService {
                     continue
                 }
 
+                // A cell that answered at the result cap is hiding parks behind it. The
+                // lattice has no finer step to fall back on — replacing the old splitting
+                // quadtree with a flat grid dropped the response to saturation altogether —
+                // so the honest thing is to stop calling the total exhaustive. It becomes an
+                // "at least this many", which is what `isApproximate` already means.
+                if outcome.rawCount >= Self.saturatedResultCount { truncated = true }
+
                 coverage.record(cell, resolution: cell.span.latitudeDelta, generation: Self.searchGeneration)
                 cellsSinceSave += 1
 
