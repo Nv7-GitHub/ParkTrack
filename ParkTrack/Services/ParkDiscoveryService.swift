@@ -2,7 +2,13 @@ import Foundation
 import CoreLocation
 import MapKit
 import Observation
+import OSLog
 import SwiftData
+
+/// Everything a sweep does, so a run that goes wrong can be read back afterwards rather
+/// than guessed at. Visible in Console.app, and in Xcode's debug console, under the
+/// subsystem below.
+let sweepLog = Logger(subsystem: "com.nv7.parktrack", category: "sweep")
 
 /// A park the map returned that has not (necessarily) been saved yet.
 ///
@@ -517,8 +523,30 @@ final class ParkDiscoveryService {
     /// exactly the same cell — on a later run, and for a neighbouring place whose own sweep
     /// overlaps this one. Coverage is matched by containment, so cells that line up are what
     /// make swept ground reusable at all.
+    /// The size of one index cell, about 6 km.
+    ///
+    /// Measured, not chosen. `MKLocalSearch` returns about twenty-five results for *any*
+    /// region — over one patch of Bellevue, sixteen 1.5 km cells returned 800 items and two
+    /// 6 km searches returned 50 — because it treats the region as a bias rather than a
+    /// bound. The sweep then keeps only what fell inside the cell it asked about, so a small
+    /// cell pays full price for a wide answer and discards nearly all of it: 0.81 parks per
+    /// request at 1.5 km against 9.00 at 6 km, an eleven-fold difference.
+    ///
+    /// This is why scrolling the map finds a city faster than indexing it did. Browsing asks
+    /// about whole screens; the index was asking about squares small enough that the service
+    /// effectively ignored them.
+    ///
+    /// It is left at 1.5 km all the same, because efficiency is not the only axis. Measured
+    /// over Bellevue end to end: 6 km cells finish in 11 seconds and find 35 parks, 3 km in
+    /// 2 minutes for 57, and 1.5 km in 4½ minutes for 69. Coarse cells are cheap per request
+    /// and hit a lower ceiling; fine cells are wasteful per request and see more. Neither
+    /// reaches the 82 that browsing turns up, and no single size will — the answer is to
+    /// sweep the same ground more than once at descending sizes, so the cheap pass does the
+    /// covering and the expensive ones only add what they alone can see.
+    nonisolated static let indexCellSpanDegrees = 0.014
+
     nonisolated static func latticeCell(containing coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
-        let step = minimumTileSpanDegrees
+        let step = indexCellSpanDegrees
         let latitudeIndex = (coordinate.latitude / step).rounded(.down)
         let longitudeIndex = (coordinate.longitude / step).rounded(.down)
         return MKCoordinateRegion(
@@ -532,7 +560,7 @@ final class ParkDiscoveryService {
 
     /// The eight cells around one, so a sweep can grow outward in any direction.
     nonisolated static func latticeNeighbours(of cell: MKCoordinateRegion) -> [MKCoordinateRegion] {
-        let step = minimumTileSpanDegrees
+        let step = indexCellSpanDegrees
         var neighbours: [MKCoordinateRegion] = []
         for latitudeOffset in -1...1 {
             for longitudeOffset in -1...1 where !(latitudeOffset == 0 && longitudeOffset == 0) {
@@ -549,7 +577,7 @@ final class ParkDiscoveryService {
 
     /// Stable key for a lattice cell, for the visited set.
     nonisolated static func latticeKey(_ cell: MKCoordinateRegion) -> Int64 {
-        let step = minimumTileSpanDegrees
+        let step = indexCellSpanDegrees
         let latitudeIndex = Int64((cell.center.latitude / step).rounded(.down))
         let longitudeIndex = Int64((cell.center.longitude / step).rounded(.down))
         return latitudeIndex &* 1_000_003 &+ longitudeIndex
@@ -655,6 +683,11 @@ final class ParkDiscoveryService {
             ))
         }
         report()
+        sweepLog.notice("""
+            sweep starting at \(coordinate.latitude, privacy: .public),\(coordinate.longitude, privacy: .public) \
+            radius=\(radiusMiles, privacy: .public)mi cell=\(Self.indexCellSpanDegrees * 111, privacy: .public)km \
+            budget=\(Self.maxIndexSearches, privacy: .public)
+            """)
 
         /// Grows into the cells around one that turned out to be part of the place.
         func expand(from cell: MKCoordinateRegion, probe: Int) {
@@ -703,6 +736,12 @@ final class ParkDiscoveryService {
             }
             searches += batch.count * 2
             if Task.isCancelled { completed = false; break }
+            sweepLog.debug("""
+                batch of \(batch.count, privacy: .public) cells: \
+                results \(outcomes.map(\.candidates.count).description, privacy: .public), \
+                raw \(outcomes.map(\.rawCount).description, privacy: .public), \
+                failures \(outcomes.compactMap(\.failure).count, privacy: .public)
+                """)
 
             var batchFailures = 0
             for (entry, outcome) in zip(batch, outcomes) {
@@ -750,6 +789,13 @@ final class ParkDiscoveryService {
                 // is still allowed its internal water, because `regionProbeDepth` carries
                 // the sweep a couple of cells past nothing before it gives up.
                 let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
+                sweepLog.debug("""
+                    cell \(Self.latticeKey(cell), privacy: .public) \
+                    at \(cell.center.latitude, privacy: .public),\(cell.center.longitude, privacy: .public) \
+                    kept \(saved.count, privacy: .public) of \(outcome.candidates.count, privacy: .public), \
+                    belongs=\(belongs, privacy: .public) probe=\(probe, privacy: .public) \
+                    queue=\(queue.count, privacy: .public)
+                    """)
                 expand(from: cell, probe: belongs ? 0 : probe + 1)
             }
 
@@ -795,6 +841,11 @@ final class ParkDiscoveryService {
         // Whatever was finished is written down either way. A sweep that stopped early still
         // searched real ground, and losing that is what made a retry repeat everything.
         persistCoverage()
+        sweepLog.notice("""
+            sweep finished: searches=\(searches, privacy: .public) reused=\(reused, privacy: .public) \
+            parks=\(order.count, privacy: .public) completed=\(completed, privacy: .public) \
+            truncated=\(truncated, privacy: .public) error=\(self.lastError ?? "none", privacy: .public)
+            """)
         lastSweepCompleted = completed
         return DenseSweepResult(
             found: order.compactMap { found[$0] },

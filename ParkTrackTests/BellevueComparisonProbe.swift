@@ -130,7 +130,7 @@ final class BellevueComparisonProbe: XCTestCase {
                      centre.latitude, centre.longitude, radius, ParkDiscoveryService.maxIndexSearches))
 
         var runs: [Run] = []
-        runs.append(await sweep(label: "both queries", centre: centre, radiusMeters: radius,
+        runs.append(await sweep(label: "index      ", centre: centre, radiusMeters: radius,
                                 identifier: identifier, followShape: true))
 
         for run in runs {

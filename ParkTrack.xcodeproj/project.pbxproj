@@ -96,6 +96,7 @@
 		E01825C94C68D995A2E1F682 /* StatsCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = D891B5279709EEB3FC5E43AD /* StatsCache.swift */; };
 		E190003F8F758D72C4906FF4 /* SavedPlaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 908F06FE00BA0831BEE6CAC2 /* SavedPlaceTests.swift */; };
 		E2A05C4567B69F56F3E7ABDF /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2CDBA56F885A5A6F5AF2D82 /* LocationProvider.swift */; };
+		E5A28A9D082216247A742E5B /* CellSizeProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA460BC7C4368E1E9498871 /* CellSizeProbe.swift */; };
 		E70992CD6F9F973A740C53B0 /* ParkTrackApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF64A33B7AE66CA42FDB62A /* ParkTrackApp.swift */; };
 		E7E3781BC6746A5F60ECD930 /* AddFriendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3274780BF0159D9BD6A725B /* AddFriendSheet.swift */; };
 		EB031E2ED857BF419A7CC74B /* SavedPlace.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12A05B6F8608CCA262FA480 /* SavedPlace.swift */; };
@@ -220,6 +221,7 @@
 		F732AC5B6708FFC99F6B1975 /* RecommendationEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationEngineTests.swift; sourceTree = "<group>"; };
 		FCE74713534F16A48A4109C5 /* StatsSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsSupport.swift; sourceTree = "<group>"; };
 		FD366091D24AA657E694A1B3 /* ParkDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkDetailView.swift; sourceTree = "<group>"; };
+		FDA460BC7C4368E1E9498871 /* CellSizeProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CellSizeProbe.swift; sourceTree = "<group>"; };
 		FE51FD3F87373D312DA43DEB /* HomeSectionLists.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeSectionLists.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -265,6 +267,7 @@
 			children = (
 				86BB962DD310F38635295DEB /* BellevueComparisonProbe.swift */,
 				9FF9FB2F874BFC551EBC8939 /* CacheInvalidationTests.swift */,
+				FDA460BC7C4368E1E9498871 /* CellSizeProbe.swift */,
 				2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */,
 				B9603E558AF361ACC9F4D3AB /* IndexResumeTests.swift */,
 				49F7E4894A3B5F68E6FA55F7 /* LiveMapKitProbeTests.swift */,
@@ -708,6 +711,7 @@
 			files = (
 				89ACF347ECB5781063923ED0 /* BellevueComparisonProbe.swift in Sources */,
 				8DF7125B92A7063F0C390DEC /* CacheInvalidationTests.swift in Sources */,
+				E5A28A9D082216247A742E5B /* CellSizeProbe.swift in Sources */,
 				16030B0B3C22F71DD428417F /* DiscoveryTests.swift in Sources */,
 				08BD2793F3FABA11EE4E8E0D /* IndexResumeTests.swift in Sources */,
 				5C7F0E898C5A2C74BC9C104A /* LiveMapKitProbeTests.swift in Sources */,
