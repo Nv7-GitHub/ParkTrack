@@ -515,7 +515,13 @@ final class ParkDiscoveryService {
     /// the size of two cells, an island reached by a bridge. Giving up at the first cell
     /// that comes back as somewhere else would cut those off, so a sweep keeps going a
     /// little way and resumes properly if the region turns up again.
-    nonisolated static let regionProbeDepth = 2
+    ///
+    /// One cell, not two. The probe wraps a skirt right round a city's perimeter, and every
+    /// extra cell of depth adds another ring of it — at two, somewhere the size of Sammamish
+    /// spent more searches on the ground around it than on itself. One still crosses a
+    /// gap of a cell and a half, which is most rivers and every road; anything wider now
+    /// needs its own index rather than being reached from next door.
+    nonisolated static let regionProbeDepth = 1
 
     /// One cell of a fixed worldwide lattice, at the finest size worth searching.
     ///
@@ -558,12 +564,23 @@ final class ParkDiscoveryService {
         )
     }
 
-    /// The eight cells around one, so a sweep can grow outward in any direction.
-    nonisolated static func latticeNeighbours(of cell: MKCoordinateRegion) -> [MKCoordinateRegion] {
+    /// The cells around one, so a sweep can grow outward.
+    ///
+    /// All eight from ground that belongs to the place, since that is the shape being
+    /// filled. Only the four square neighbours when probing past a wall: a probe is a guess
+    /// that the place continues on the far side of something, and the diagonals of a guess
+    /// are mostly the same ground reached the long way. Probing two deep in eight directions
+    /// wraps a two-cell skirt right round a city's perimeter, which for somewhere the size
+    /// of Sammamish is more cells than the city itself.
+    nonisolated static func latticeNeighbours(
+        of cell: MKCoordinateRegion,
+        includingDiagonals: Bool = true
+    ) -> [MKCoordinateRegion] {
         let step = indexCellSpanDegrees
         var neighbours: [MKCoordinateRegion] = []
         for latitudeOffset in -1...1 {
             for longitudeOffset in -1...1 where !(latitudeOffset == 0 && longitudeOffset == 0) {
+                if !includingDiagonals, latitudeOffset != 0, longitudeOffset != 0 { continue }
                 let coordinate = CLLocationCoordinate2D(
                     latitude: cell.center.latitude + Double(latitudeOffset) * step,
                     longitude: cell.center.longitude + Double(longitudeOffset) * step
@@ -689,6 +706,17 @@ final class ParkDiscoveryService {
         /// nothing — which is exactly what indexing Boston, whose centre sits by the water,
         /// looked like. So the rule only applies once there is something to have left.
         var hasFoundRegion = false
+        /// Searches the sweep may spend looking for the place before giving up on finding it.
+        ///
+        /// Expanding at full depth until the first match is what lets a city whose centre is
+        /// water still be found. But cells queued during that phase keep the depth they were
+        /// queued at, so once the place *is* found and walls start forming, every one of them
+        /// is still searched — the search for the seed poisons the queue behind it. Sammamish
+        /// has about twenty parks and was spending its entire budget three runs running.
+        ///
+        /// A place should be within a few cells of its own centre. If it is not, something is
+        /// wrong with the lookup and sweeping the whole circle will not fix it.
+        let seedingBudget = 48
 
         /// Consumed from the front by an index rather than by shifting the array. A sweep
         /// queues thousands of cells, and `removeFirst` on an `Array` copies the remainder
@@ -712,7 +740,7 @@ final class ParkDiscoveryService {
         /// Grows into the cells around one that turned out to be part of the place.
         func expand(from cell: MKCoordinateRegion, probe: Int) {
             guard probe <= Self.regionProbeDepth else { return }
-            for neighbour in Self.latticeNeighbours(of: cell) {
+            for neighbour in Self.latticeNeighbours(of: cell, includingDiagonals: probe == 0) {
                 let key = Self.latticeKey(neighbour)
                 // Reaching somewhere with more depth to spare is worth queueing again.
                 if let seen = bestProbe[key], seen <= probe { continue }
@@ -727,6 +755,12 @@ final class ParkDiscoveryService {
         while cursor < queue.count {
             if Task.isCancelled { completed = false; break }
             if searches >= Self.maxIndexSearches { truncated = true; break }
+            if !hasFoundRegion, searches >= seedingBudget {
+                sweepLog.error("gave up looking for the region after \(searches, privacy: .public) searches")
+                lastError = "Couldn't find that place on the map. Try indexing it by a fuller name."
+                completed = false
+                break
+            }
 
             // Ground a previous attempt already searched — including one that was cut short
             // — costs nothing, so it is cleared out of the way before a batch is taken.
@@ -812,7 +846,17 @@ final class ParkDiscoveryService {
                 // is still allowed its internal water, because `regionProbeDepth` carries
                 // the sweep a couple of cells past nothing before it gives up.
                 let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
-                if belongs { hasFoundRegion = true }
+                if belongs, !hasFoundRegion {
+                    hasFoundRegion = true
+                    // Everything queued while hunting for the seed was queued at full depth,
+                    // which is no longer a claim anyone made about it. Only this cell and
+                    // what grows from it is the place; the rest goes back to being unvisited
+                    // so the ordinary rules decide whether it is worth reaching.
+                    queue.removeSubrange(cursor...)
+                    for (key, probe) in bestProbe where probe == 0 {
+                        if key != Self.latticeKey(cell) { bestProbe.removeValue(forKey: key) }
+                    }
+                }
                 sweepLog.debug("""
                     cell \(Self.latticeKey(cell), privacy: .public) \
                     at \(cell.center.latitude, privacy: .public),\(cell.center.longitude, privacy: .public) \

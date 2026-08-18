@@ -548,7 +548,7 @@ final class SweepExpansionTests: XCTestCase {
     /// A cell first reached from a wall, with its probe nearly spent, has to be reachable
     /// again at full depth once a neighbour turns out to belong — otherwise the sweep stops
     /// short of ground it had every reason to search.
-    func testACellReachedFromAWallCanBeReachedAgainAtFullDepth() {
+    func testACellReachedFromAWallCanBeReachedAgainAtFullDepth() throws {
         var bestProbe: [Int64: Int] = [:]
         var queue: [(MKCoordinateRegion, Int)] = []
 
@@ -563,11 +563,12 @@ final class SweepExpansionTests: XCTestCase {
         }
 
         let start = ParkDiscoveryService.latticeCell(containing: centre)
-        // Reached first from a wall, almost out of probe.
-        expand(from: start, probe: 2)
-        let target = queue.first!.0
+        // Reached first from a wall, with its probe all but spent.
+        let spent = ParkDiscoveryService.regionProbeDepth
+        expand(from: start, probe: spent)
+        let target = try XCTUnwrap(queue.first).0
         let key = ParkDiscoveryService.latticeKey(target)
-        XCTAssertEqual(bestProbe[key], 2)
+        XCTAssertEqual(bestProbe[key], spent)
 
         // Then a cell that genuinely belongs reaches the same ground.
         queue.removeAll()
@@ -626,6 +627,64 @@ final class SweepExpansionTests: XCTestCase {
         XCTAssertGreaterThan(reachedThePlace, 10, "The sweep has to cross the water and find the city")
     }
 
+    /// A small city must cost what a small city is worth, even when its geocoded circle is
+    /// enormous and its centre happens to hold no park.
+    ///
+    /// The seed hunt expands at full depth, and everything it queues keeps that depth — so
+    /// without discarding the flood once the place is found, a city with twenty parks spent
+    /// an entire budget three runs running.
+    func testASmallCityInAWideCircleCostsLittle() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        func belongs(_ coordinate: CLLocationCoordinate2D) -> Bool {
+            let metres = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin)
+            // A city about 5 km across, which is roughly Sammamish.
+            return metres <= 4_500
+        }
+
+        var bestProbe: [Int64: Int] = [:]
+        var queue: [(MKCoordinateRegion, Int)] = [(ParkDiscoveryService.latticeCell(containing: centre), 0)]
+        bestProbe[ParkDiscoveryService.latticeKey(queue[0].0)] = 0
+        var hasFound = false
+        var searched = 0
+        var cursor = 0
+
+        while cursor < queue.count, searched < 400 {
+            let (cell, probe) = queue[cursor]
+            cursor += 1
+            searched += 1
+
+            let isCity = belongs(cell.center)
+            if isCity, !hasFound {
+                hasFound = true
+                queue.removeSubrange(cursor...)
+                for (key, depth) in bestProbe where depth == 0 {
+                    if key != ParkDiscoveryService.latticeKey(cell) { bestProbe.removeValue(forKey: key) }
+                }
+            }
+            let next = (isCity || !hasFound) ? 0 : probe + 1
+            guard next <= ParkDiscoveryService.regionProbeDepth else { continue }
+            for neighbour in ParkDiscoveryService.latticeNeighbours(of: cell, includingDiagonals: next == 0) {
+                let key = ParkDiscoveryService.latticeKey(neighbour)
+                if let seen = bestProbe[key], seen <= next { continue }
+                // A generous circle, as a real geocoded city radius is.
+                guard ParkDiscoveryService.tile(
+                    neighbour, intersectsCircleAround: centre, radiusMeters: 25_000
+                ) else { continue }
+                bestProbe[key] = next
+                queue.append((neighbour, next))
+            }
+        }
+
+        XCTAssertTrue(hasFound, "The city has to be found at all")
+        XCTAssertLessThan(
+            searched * 2,
+            ParkDiscoveryService.maxIndexSearches,
+            "A small city must not exhaust the budget just because its circle is wide"
+        )
+        print("PLAN small city in wide circle: \(searched) cells, \(searched * 2) requests")
+    }
+
     /// The same route twice is not worth queueing twice.
     func testAWorseOrEqualRouteIsIgnored() {
         var bestProbe: [Int64: Int] = [:]
@@ -645,7 +704,7 @@ final class SweepExpansionTests: XCTestCase {
         expand(probe: 0)
         let afterFirst = queued
         expand(probe: 0)
-        expand(probe: 2)
+        expand(probe: ParkDiscoveryService.regionProbeDepth)
         XCTAssertEqual(queued, afterFirst, "Nothing was learnt, so nothing is queued")
     }
 }
