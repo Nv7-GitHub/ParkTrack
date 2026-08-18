@@ -56,9 +56,12 @@ struct SweptCoverage {
         /// parks a place has — so the resolution travels with the record, and indexing reuses
         /// only ground already searched at least as finely as it would search it itself.
         var resolution: Double = ScannedArea.coarsest
+        /// See `ScannedArea.searchGeneration`.
+        var generation: Int = 0
 
-        init(_ region: MKCoordinateRegion, resolution: Double = ScannedArea.coarsest) {
+        init(_ region: MKCoordinateRegion, resolution: Double = ScannedArea.coarsest, generation: Int = 0) {
             self.resolution = resolution
+            self.generation = generation
             minLatitude = region.center.latitude - region.span.latitudeDelta / 2
             maxLatitude = region.center.latitude + region.span.latitudeDelta / 2
             minLongitude = region.center.longitude - region.span.longitudeDelta / 2
@@ -99,13 +102,13 @@ struct SweptCoverage {
     private var squares: [Square] = []
 
     /// The recorded squares as plain bounds, for saving.
-    var bounds: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double, resolution: Double)] {
-        squares.map { ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude, $0.resolution) }
+    var bounds: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double, resolution: Double, generation: Int)] {
+        squares.map { ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude, $0.resolution, $0.generation) }
     }
 
     /// Rebuilds coverage from saved bounds.
     mutating func restore(
-        _ saved: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double, resolution: Double)]
+        _ saved: [(minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double, resolution: Double, generation: Int)]
     ) {
         for entry in saved {
             let region = MKCoordinateRegion(
@@ -118,16 +121,16 @@ struct SweptCoverage {
                     longitudeDelta: entry.maxLongitude - entry.minLongitude
                 )
             )
-            record(region, resolution: entry.resolution)
+            record(region, resolution: entry.resolution, generation: entry.generation)
         }
     }
 
-    mutating func record(_ region: MKCoordinateRegion, resolution: Double? = nil) {
-        let square = Square(region, resolution: resolution ?? region.span.latitudeDelta)
+    mutating func record(_ region: MKCoordinateRegion, resolution: Double? = nil, generation: Int = 0) {
+        let square = Square(region, resolution: resolution ?? region.span.latitudeDelta, generation: generation)
         guard square.isUsable else { return }
         // Only swallow ground that was not searched more finely than this. A wide, thin pass
         // must not erase the memory of a careful one underneath it.
-        squares.removeAll { square.contains($0) && $0.resolution >= square.resolution }
+        squares.removeAll { square.contains($0) && $0.resolution >= square.resolution && $0.generation <= square.generation }
         squares.append(square)
         // Over the cap the smallest square goes.
         //
@@ -164,10 +167,12 @@ struct SweptCoverage {
 
     /// Whether this ground has been searched at least as finely as `resolution` — the test an
     /// exhaustive index applies before deciding it can skip a tile.
-    func coversFinely(_ region: MKCoordinateRegion, resolution: Double) -> Bool {
+    func coversFinely(_ region: MKCoordinateRegion, resolution: Double, generation: Int = 0) -> Bool {
         let square = Square(region)
         guard square.isUsable else { return false }
-        return squares.contains { $0.contains(square) && $0.resolution <= resolution * 1.05 }
+        return squares.contains {
+            $0.contains(square) && $0.resolution <= resolution * 1.05 && $0.generation >= generation
+        }
     }
 
     /// Whether the ring of `radiusMiles` around `center` sits entirely on swept ground.
@@ -272,7 +277,7 @@ final class ParkDiscoveryService {
     private func loadCoverage() {
         let saved = (try? modelContext.fetch(FetchDescriptor<ScannedArea>())) ?? []
         coverage.restore(saved.map {
-            ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude, $0.resolution)
+            ($0.minLatitude, $0.maxLatitude, $0.minLongitude, $0.maxLongitude, $0.resolution, $0.searchGeneration)
         })
     }
 
@@ -299,7 +304,8 @@ final class ParkDiscoveryService {
                 maxLatitude: area.maxLatitude,
                 minLongitude: area.minLongitude,
                 maxLongitude: area.maxLongitude,
-                resolution: area.resolution
+                resolution: area.resolution,
+                generation: area.searchGeneration
             )
             // A duplicate can only be leftover from an interrupted write; keep one.
             if stored.updateValue(area, forKey: key) != nil {
@@ -314,7 +320,8 @@ final class ParkDiscoveryService {
                 maxLatitude: entry.maxLatitude,
                 minLongitude: entry.minLongitude,
                 maxLongitude: entry.maxLongitude,
-                resolution: entry.resolution
+                resolution: entry.resolution,
+                generation: entry.generation
             )
             wanted.insert(key)
             guard stored[key] == nil else { continue }
@@ -323,7 +330,8 @@ final class ParkDiscoveryService {
                 maxLatitude: entry.maxLatitude,
                 minLongitude: entry.minLongitude,
                 maxLongitude: entry.maxLongitude,
-                resolution: entry.resolution
+                resolution: entry.resolution,
+                searchGeneration: entry.generation
             ))
         }
 
@@ -341,10 +349,11 @@ final class ParkDiscoveryService {
         maxLatitude: Double,
         minLongitude: Double,
         maxLongitude: Double,
-        resolution: Double
+        resolution: Double,
+        generation: Int
     ) -> String {
         func rounded(_ value: Double) -> Int64 { Int64((value * 1e7).rounded()) }
-        return "\(rounded(minLatitude)),\(rounded(maxLatitude)),\(rounded(minLongitude)),\(rounded(maxLongitude)),\(rounded(resolution))"
+        return "\(rounded(minLatitude)),\(rounded(maxLatitude)),\(rounded(minLongitude)),\(rounded(maxLongitude)),\(rounded(resolution)),\(generation)"
     }
 
     // MARK: - Discovery
@@ -461,8 +470,30 @@ final class ParkDiscoveryService {
     /// A sweep that hits it reports itself as approximate and resumes where it stopped.
     nonisolated static let maxIndexSearches = 320
 
-    /// How many cells in a row may fail before a sweep gives up.
-    nonisolated static let maxConsecutiveTileFailures = 12
+    /// How many batches in a row may fail outright before a sweep gives up.
+    nonisolated static let maxConsecutiveBatchFailures = 6
+
+    /// Which generation of search an index sweep performs today.
+    ///
+    /// Bump when a change makes previously swept ground no longer equivalent to what a
+    /// sweep would find now. Generation 1 is the first that asks both ways — the category
+    /// filter and a plain text search — rather than the filter alone.
+    nonisolated static let searchGeneration = 1
+
+    /// How many cells a sweep keeps in flight.
+    ///
+    /// The throttle spaces the *starts* of searches, so it caps the request rate however
+    /// many callers there are — running cells one at a time did not make the app politer,
+    /// it just left the connection idle through every round trip. Measured on Bellevue, a
+    /// sweep spent about 1.5 seconds per search against a 320 ms spacing, which is to say
+    /// four fifths of it waiting. Overlapping them fills that gap without asking the map
+    /// service for anything faster than it was already getting.
+    /// Three, not more. Six was measured too: the map service throttled hard, the sweep
+    /// gave up a fifth of the way in, and Bellevue came back with 29 parks instead of 69.
+    /// Sequential was managing about two thirds of a request a second, so three in flight
+    /// against a 320 ms spacing is already several times the traffic — past that the service
+    /// simply refuses, and a refusal costs a retry and a backoff rather than a result.
+    nonisolated static let concurrentCellSearches = 3
 
     // MARK: - The index lattice
 
@@ -637,67 +668,91 @@ final class ParkDiscoveryService {
             if Task.isCancelled { completed = false; break }
             if searches >= Self.maxIndexSearches { truncated = true; break }
 
-            let (cell, probe) = queue.removeFirst()
-
-            // Ground a previous attempt already searched — including one that was cut short.
+            // Ground a previous attempt already searched — including one that was cut short
+            // — costs nothing, so it is cleared out of the way before a batch is taken.
             // Whether to keep growing through it is answered from the store rather than by
             // searching it again: the parks it found are already saved, and they know which
             // city they are in.
-            if coverage.coversFinely(cell, resolution: cell.span.latitudeDelta) {
-                reused += 1
-                let known = belongsToRegion.map { test in storedParks(in: cell).contains(where: test) } ?? true
-                expand(from: cell, probe: known ? 0 : probe + 1)
-                report()
-                continue
+            var batch: [(cell: MKCoordinateRegion, probe: Int)] = []
+            while !queue.isEmpty, batch.count < Self.concurrentCellSearches {
+                let entry = queue.removeFirst()
+                if coverage.coversFinely(entry.cell, resolution: entry.cell.span.latitudeDelta, generation: Self.searchGeneration) {
+                    reused += 1
+                    let known = belongsToRegion.map { test in storedParks(in: entry.cell).contains(where: test) } ?? true
+                    expand(from: entry.cell, probe: known ? 0 : entry.probe + 1)
+                    report()
+                    continue
+                }
+                batch.append(entry)
             }
+            guard !batch.isEmpty else { continue }
 
-            let outcome = await Self.candidates(in: cell)
-            searches += 1
+            let outcomes: [TileOutcome] = await withTaskGroup(of: (Int, TileOutcome).self) { group in
+                for (index, entry) in batch.enumerated() {
+                    group.addTask { (index, await Self.indexCandidates(in: entry.cell)) }
+                }
+                var collected = [TileOutcome?](repeating: nil, count: batch.count)
+                for await (index, outcome) in group { collected[index] = outcome }
+                return collected.map { $0 ?? TileOutcome() }
+            }
+            searches += batch.count * 2
             if Task.isCancelled { completed = false; break }
 
-            let saved = persist(Self.confined(outcome.candidates, to: cell))
-            for park in saved where found[park.identifier] == nil {
-                found[park.identifier] = park
-                order.append(park.identifier)
-            }
-
-            if outcome.failure != nil {
-                lastError = outcome.failure
-                failures += 1
-                if failures >= Self.maxConsecutiveTileFailures { completed = false; break }
-                // Being refused is not the same as having searched. The cell goes back on the
-                // queue so its ground is not quietly dropped from a count that claims to be
-                // exhaustive, and the throttle widens the gap on its own.
-                let key = Self.latticeKey(cell)
-                if retries[key, default: 0] < Self.maxTileRetries {
-                    retries[key, default: 0] += 1
-                    queue.append((cell, probe))
+            var batchFailures = 0
+            for (entry, outcome) in zip(batch, outcomes) {
+                let (cell, probe) = entry
+                let saved = persist(Self.confined(outcome.candidates, to: cell))
+                for park in saved where found[park.identifier] == nil {
+                    found[park.identifier] = park
+                    order.append(park.identifier)
                 }
-                try? await Task.sleep(for: .milliseconds(900 * failures))
-                report()
-                continue
+
+                if outcome.failure != nil {
+                    lastError = outcome.failure
+                    batchFailures += 1
+                    // Being refused is not the same as having searched. The cell goes back on
+                    // the queue so its ground is not quietly dropped from a count that claims
+                    // to be exhaustive, and the throttle widens the gap on its own.
+                    let key = Self.latticeKey(cell)
+                    if retries[key, default: 0] < Self.maxTileRetries {
+                        retries[key, default: 0] += 1
+                        queue.append((cell, probe))
+                    }
+                    continue
+                }
+
+                coverage.record(cell, resolution: cell.span.latitudeDelta, generation: Self.searchGeneration)
+                cellsSinceSave += 1
+
+                // Only a cell that actually turned up a park in this place resets the probe.
+                //
+                // Treating an empty cell as neutral instead — on the grounds that a city is
+                // allowed to have water in the middle of it — meant expansion never
+                // terminated through empty ground at all, and ran to the circle backstop.
+                // San Francisco is surrounded by water on three sides and Bellevue sits
+                // between two lakes: both spent their whole budget sweeping the sea. A place
+                // is still allowed its internal water, because `regionProbeDepth` carries
+                // the sweep a couple of cells past nothing before it gives up.
+                let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
+                expand(from: cell, probe: belongs ? 0 : probe + 1)
             }
 
-            failures = 0
-            coverage.record(cell, resolution: cell.span.latitudeDelta)
-            cellsSinceSave += 1
+            // Only a batch that failed outright counts against giving up. A single refusal
+            // among several answers is the throttle doing its job — it has already retried
+            // and widened its own spacing — and treating each one as a step towards
+            // abandoning the sweep is what made a throttled run quit a fifth of the way in.
+            if batchFailures == batch.count {
+                failures += 1
+                if failures >= Self.maxConsecutiveBatchFailures { completed = false; break }
+                try? await Task.sleep(for: .milliseconds(900 * failures))
+            } else {
+                failures = 0
+            }
+
             if cellsSinceSave >= Self.coverageSaveInterval {
                 cellsSinceSave = 0
                 persistCoverage()
             }
-
-            // Only a cell that actually turned up a park in this place resets the probe.
-            //
-            // Treating an empty cell as neutral instead — on the grounds that a city is
-            // allowed to have water in the middle of it — meant expansion never terminated
-            // through empty ground at all, and ran to the circle backstop. San Francisco is
-            // surrounded by water on three sides and Bellevue sits between two lakes: both
-            // spent their whole budget sweeping the sea. A place is still allowed its
-            // internal water, because `regionProbeDepth` carries the sweep across a couple
-            // of cells of nothing before it gives up.
-            let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
-            expand(from: cell, probe: belongs ? 0 : probe + 1)
-
             report()
         }
 
@@ -1061,6 +1116,60 @@ final class ParkDiscoveryService {
                 query: "park",
                 region: region,
                 poiFiltered: true,
+                requireParkLike: true
+            )
+            outcome.candidates = found
+            outcome.rawCount = raw
+        } catch {
+            outcome.failure = message(for: error)
+        }
+        return outcome
+    }
+
+    /// Both ways of asking, merged — for a sweep that has to be able to defend its total.
+    ///
+    /// Neither query contains the other. Measured over thirty-five cells of Bellevue, the
+    /// category filter found 37 parks and a plain text search found 38, but between them
+    /// they found 41: four the filter missed, three the text missed. A city indexed with one
+    /// query alone therefore publishes a total that is quietly about a tenth short, which is
+    /// exactly the gap between what an index claimed and what browsing the map had already
+    /// turned up.
+    ///
+    /// It costs two requests per cell instead of one. For a count that calls itself
+    /// exhaustive that is the right trade; the map's own browsing scan still runs the cheap
+    /// pass and keeps its single wide text query per batch.
+    private nonisolated static func indexCandidates(in region: MKCoordinateRegion) async -> TileOutcome {
+        // Both at once. They are independent questions and the throttle spaces their starts
+        // anyway, so waiting for the first to come back before asking the second only adds a
+        // round trip of doing nothing.
+        async let filtered = searchOutcome(in: region, poiFiltered: true)
+        async let text = searchOutcome(in: region, poiFiltered: false)
+        let (a, b) = await (filtered, text)
+
+        var outcome = TileOutcome()
+        var seen: Set<String> = []
+        for candidate in a.candidates + b.candidates where seen.insert(candidate.id).inserted {
+            outcome.candidates.append(candidate)
+        }
+        // Either query hitting the cap means the cell is still hiding results.
+        outcome.rawCount = max(a.rawCount, b.rawCount)
+        // Only a genuine failure: one pass refusing while the other answered is not one.
+        if outcome.candidates.isEmpty {
+            outcome.failure = a.failure ?? b.failure
+        }
+        return outcome
+    }
+
+    private nonisolated static func searchOutcome(
+        in region: MKCoordinateRegion,
+        poiFiltered: Bool
+    ) async -> TileOutcome {
+        var outcome = TileOutcome()
+        do {
+            let (found, raw) = try await searchCounting(
+                query: "park",
+                region: region,
+                poiFiltered: poiFiltered,
                 requireParkLike: true
             )
             outcome.candidates = found

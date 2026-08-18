@@ -70,6 +70,52 @@ final class BellevueComparisonProbe: XCTestCase {
         )
     }
 
+    /// Does the category filter miss parks that a plain text search finds?
+    ///
+    /// Every cell of a dense sweep runs one query: "park", filtered to Apple's park
+    /// categories. Anything Apple never categorised is left to a single wide text pass over
+    /// the whole region, which comes back capped at 25 results for an entire city.
+    func testCategoryFilterVersusTextSearch() async throws {
+        guard let placemark = try? await CLGeocoder().geocodeAddressString("Bellevue, WA").first,
+              let centre = placemark.location?.coordinate else { return XCTFail("geocode") }
+        let identifier = RegionIndex.identity(kind: .city, name: "Bellevue", container: placemark.administrativeArea)
+
+        var byCategory: Set<String> = []
+        var byText: Set<String> = []
+
+        // A line of cells straight through the city.
+        for step in -3...3 {
+            for lonStep in -2...2 {
+                let cell = ParkDiscoveryService.latticeCell(containing: CLLocationCoordinate2D(
+                    latitude: centre.latitude + Double(step) * ParkDiscoveryService.minimumTileSpanDegrees,
+                    longitude: centre.longitude + Double(lonStep) * ParkDiscoveryService.minimumTileSpanDegrees
+                ))
+                for filtered in [true, false] {
+                    let request = MKLocalSearch.Request()
+                    request.naturalLanguageQuery = "park"
+                    request.region = cell
+                    request.resultTypes = .pointOfInterest
+                    if filtered {
+                        request.pointOfInterestFilter = MKPointOfInterestFilter(including: [.park, .nationalPark])
+                    }
+                    guard let response = try? await SearchThrottle.shared.run(request) else { continue }
+                    for item in response.mapItems {
+                        guard let name = item.name,
+                              ParkDiscoveryService.isParkLike(name: name, category: item.pointOfInterestCategory),
+                              item.placemark.locality == "Bellevue"
+                        else { continue }
+                        let key = Park.identity(name: name, coordinate: item.placemark.coordinate)
+                        if filtered { byCategory.insert(key) } else { byText.insert(key) }
+                    }
+                }
+            }
+        }
+        _ = identifier
+        print("PROBE byCategory=\(byCategory.count) byText=\(byText.count) union=\(byCategory.union(byText).count)")
+        print("PROBE text-only finds \(byText.subtracting(byCategory).count) the category filter missed")
+        print("PROBE category-only finds \(byCategory.subtracting(byText).count) the text search missed")
+    }
+
     func testBellevueBothWays() async throws {
         guard let placemark = try? await CLGeocoder().geocodeAddressString("Bellevue, WA").first,
               let centre = placemark.location?.coordinate else {
@@ -84,9 +130,8 @@ final class BellevueComparisonProbe: XCTestCase {
                      centre.latitude, centre.longitude, radius, ParkDiscoveryService.maxIndexSearches))
 
         var runs: [Run] = []
-        runs.append(await sweep(label: "follow shape", centre: centre, radiusMeters: radius,
+        runs.append(await sweep(label: "both queries", centre: centre, radiusMeters: radius,
                                 identifier: identifier, followShape: true))
-        // Baseline already measured at 178 searches / 66 Bellevue parks; not re-spent.
 
         for run in runs {
             print(String(
@@ -96,7 +141,7 @@ final class BellevueComparisonProbe: XCTestCase {
             ))
         }
 
-        if let shaped = runs.first, let filled = Optional(Run(
+        if false, let shaped = runs.first, let filled = Optional(Run(
             label: "fill circle ", searches: 178, parksSaved: 136, parksInCity: 66,
             seconds: 218.6, completed: true, truncated: false
         )) {

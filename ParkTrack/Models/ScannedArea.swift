@@ -29,18 +29,31 @@ final class ScannedArea {
     /// safe reading: they are reused for map browsing but never to shortcut an index.
     var resolution: Double = 999
 
+    /// Which generation of search covered this ground.
+    ///
+    /// Resolution says how *finely* a cell was searched; this says how *thoroughly*. A cell
+    /// swept when the index asked only for map-categorised parks is real coverage, but it is
+    /// not the coverage today's sweep would produce — it misses about a tenth of what asking
+    /// both ways finds. Rather than silently keeping a total that can no longer be defended,
+    /// such ground is re-searched, while anything already done at the current generation is
+    /// still skipped. Records written before this existed decode as 0, which is the honest
+    /// reading: they came from the single-query sweep.
+    var searchGeneration: Int = 0
+
     init(
         minLatitude: Double,
         maxLatitude: Double,
         minLongitude: Double,
         maxLongitude: Double,
-        resolution: Double = ScannedArea.coarsest
+        resolution: Double = ScannedArea.coarsest,
+        searchGeneration: Int = 0
     ) {
         self.minLatitude = minLatitude
         self.maxLatitude = maxLatitude
         self.minLongitude = minLongitude
         self.maxLongitude = maxLongitude
         self.resolution = resolution
+        self.searchGeneration = searchGeneration
         self.scannedAt = Date()
     }
 }
