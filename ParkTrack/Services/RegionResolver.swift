@@ -242,6 +242,9 @@ final class RegionResolver {
         park.country = placemark.country
         park.postalAddress = Self.addressLine(from: placemark) ?? park.postalAddress
         park.regionResolvedAt = Date()
+        // Straight from the geocoder, so there is nothing left for a recheck to confirm.
+        park.regionVerifiedAt = Date()
+        park.regionInferredAt = nil
 
         if let context = park.modelContext, context.hasChanges {
             try? context.save()

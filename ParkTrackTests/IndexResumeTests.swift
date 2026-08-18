@@ -516,3 +516,68 @@ final class IndexLatticeTests: XCTestCase {
     }
 }
 
+
+/// Guards on how a sweep decides where to go next, and on which parks still need checking.
+@MainActor
+final class SweepExpansionTests: XCTestCase {
+
+    private let centre = CLLocationCoordinate2D(latitude: 47.6139, longitude: -122.2017)
+
+    /// A cell first reached from a wall, with its probe nearly spent, has to be reachable
+    /// again at full depth once a neighbour turns out to belong — otherwise the sweep stops
+    /// short of ground it had every reason to search.
+    func testACellReachedFromAWallCanBeReachedAgainAtFullDepth() {
+        var bestProbe: [Int64: Int] = [:]
+        var queue: [(MKCoordinateRegion, Int)] = []
+
+        func expand(from cell: MKCoordinateRegion, probe: Int) {
+            guard probe <= ParkDiscoveryService.regionProbeDepth else { return }
+            for neighbour in ParkDiscoveryService.latticeNeighbours(of: cell) {
+                let key = ParkDiscoveryService.latticeKey(neighbour)
+                if let seen = bestProbe[key], seen <= probe { continue }
+                bestProbe[key] = probe
+                queue.append((neighbour, probe))
+            }
+        }
+
+        let start = ParkDiscoveryService.latticeCell(containing: centre)
+        // Reached first from a wall, almost out of probe.
+        expand(from: start, probe: 2)
+        let target = queue.first!.0
+        let key = ParkDiscoveryService.latticeKey(target)
+        XCTAssertEqual(bestProbe[key], 2)
+
+        // Then a cell that genuinely belongs reaches the same ground.
+        queue.removeAll()
+        expand(from: start, probe: 0)
+
+        XCTAssertEqual(bestProbe[key], 0, "The better route has to win")
+        XCTAssertTrue(
+            queue.contains { ParkDiscoveryService.latticeKey($0.0) == key },
+            "…and the cell has to be queued again to use it"
+        )
+    }
+
+    /// The same route twice is not worth queueing twice.
+    func testAWorseOrEqualRouteIsIgnored() {
+        var bestProbe: [Int64: Int] = [:]
+        var queued = 0
+
+        func expand(probe: Int) {
+            for neighbour in ParkDiscoveryService.latticeNeighbours(
+                of: ParkDiscoveryService.latticeCell(containing: centre)
+            ) {
+                let key = ParkDiscoveryService.latticeKey(neighbour)
+                if let seen = bestProbe[key], seen <= probe { continue }
+                bestProbe[key] = probe
+                queued += 1
+            }
+        }
+
+        expand(probe: 0)
+        let afterFirst = queued
+        expand(probe: 0)
+        expand(probe: 2)
+        XCTAssertEqual(queued, afterFirst, "Nothing was learnt, so nothing is queued")
+    }
+}

@@ -114,6 +114,10 @@ extension Park {
         if country == nil { country = candidate.country }
         if locality != nil, administrativeArea != nil, regionResolvedAt == nil {
             regionResolvedAt = Date()
+            // The map's own placemark for this result, which is the same answer the geocoder
+            // would give — so it needs no checking later, unlike a region guessed from the
+            // parks nearby.
+            regionVerifiedAt = Date()
         }
     }
 

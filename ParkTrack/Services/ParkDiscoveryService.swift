@@ -664,7 +664,13 @@ final class ParkDiscoveryService {
         let radiusMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * Format.metersPerMile
 
         var queue: [(cell: MKCoordinateRegion, probe: Int)] = [(Self.latticeCell(containing: coordinate), 0)]
-        var visited: Set<Int64> = [Self.latticeKey(queue[0].cell)]
+        // The best probe depth each cell has been reached at, not merely whether it has.
+        //
+        // A plain visited set marks a cell the moment it is queued, so one first reached
+        // from a wall — two cells from anything belonging, and about to give up — could
+        // never be re-reached at full depth when a neighbour later turned out to be part of
+        // the place. The sweep stopped short of ground it had every reason to search.
+        var bestProbe: [Int64: Int] = [Self.latticeKey(queue[0].cell): 0]
         var found: [String: Park] = [:]
         var order: [String] = []
         var searches = 0
@@ -694,11 +700,12 @@ final class ParkDiscoveryService {
             guard probe <= Self.regionProbeDepth else { return }
             for neighbour in Self.latticeNeighbours(of: cell) {
                 let key = Self.latticeKey(neighbour)
-                guard !visited.contains(key) else { continue }
+                // Reaching somewhere with more depth to spare is worth queueing again.
+                if let seen = bestProbe[key], seen <= probe { continue }
                 // The circle is the backstop: whatever the results say, a sweep never
                 // wanders beyond the extent the place was given.
                 guard Self.tile(neighbour, intersectsCircleAround: coordinate, radiusMeters: radiusMeters) else { continue }
-                visited.insert(key)
+                bestProbe[key] = probe
                 queue.append((neighbour, probe))
             }
         }
