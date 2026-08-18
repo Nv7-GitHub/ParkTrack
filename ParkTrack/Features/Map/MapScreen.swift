@@ -502,8 +502,12 @@ struct MapScreen: View {
         guard !discovery.isLargelySwept(region: region) else { return }
 
         scanner.scheduleScan(of: region) { target in
-            _ = await discovery.discoverParks(in: target)
-            discovery.noteScanned(region: target)
+            let outcome = await discovery.discoverParks(in: target)
+            // Only ground the map actually answered about. A scan that came back with
+            // somewhere else's parks has searched nothing here, and recording it meant
+            // panning away and back never tried again.
+            guard outcome.coveredGround else { return }
+            discovery.noteScanned(region: outcome.region)
         }
     }
 

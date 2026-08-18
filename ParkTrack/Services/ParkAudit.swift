@@ -39,6 +39,14 @@ enum ParkAudit {
     /// trusted. A name that reads like a park's but carries no map category is the common
     /// case — the flats named after the park across the road.
     static func reason(for park: Park) -> String {
+        // The playground category covers both a corner of a park and an indoor activity
+        // business, so "the map calls this a playground" explains nothing about why a
+        // robotics academy is on the list.
+        if let raw = park.categoryRaw,
+           MKPointOfInterestCategory(rawValue: raw) == ParkDiscoveryService.playgroundCategory,
+           ParkDiscoveryService.namesABusiness(park.name) {
+            return "Listed as a playground, but reads as a business"
+        }
         if let label = categoryLabel(for: park) { return "The map calls this a \(label.lowercased())" }
         if hasParkLikeName(park.name) { return "Named like a park, but the map doesn't list it as one" }
         return "The map doesn't list this as a park"

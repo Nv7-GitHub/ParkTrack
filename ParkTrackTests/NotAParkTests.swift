@@ -125,6 +125,31 @@ final class NotAParkTests: XCTestCase {
         )))
     }
 
+    /// Indoor activity centres the map files under "playground" were indexed as parks
+    /// before the filter learnt to tell them apart, so the ones already saved have to be
+    /// offered for removal rather than left sitting in the catalogue.
+    func testCommercialPlaygroundsAlreadyIndexedAreOfferedForRemoval() {
+        for name in ["Blaze Robotics Academy", "Pop Smart Academy"] {
+            let saved = park(
+                name: name,
+                category: ParkDiscoveryService.playgroundCategory.rawValue,
+                address: "Sammamish, WA, United States"
+            )
+            XCTAssertTrue(ParkAudit.isSuspicious(saved), name)
+            XCTAssertEqual(ParkAudit.reason(for: saved), "Listed as a playground, but reads as a business")
+        }
+    }
+
+    /// A real playground inside a park stays put.
+    func testARealPlaygroundIsNotFlagged() {
+        let saved = park(
+            name: "Inspiration Playground",
+            category: ParkDiscoveryService.playgroundCategory.rawValue,
+            address: "Bellevue, WA, United States"
+        )
+        XCTAssertFalse(ParkAudit.isSuspicious(saved))
+    }
+
     func testCafesAreStillFlagged() {
         let cafe = park(
             name: "Park Avenue Coffee",

@@ -48,9 +48,26 @@ final class DiscoveryTests: XCTestCase {
     /// A playground is a category the SDK does not declare but the service returns, and a
     /// filter built from its raw value really does surface them.
     func testPlaygroundsCount() {
-        let playground = MKPointOfInterestCategory(rawValue: "MKPOICategoryPlayground")
+        let playground = ParkDiscoveryService.playgroundCategory
         XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Inspiration Playground", category: playground))
         XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Kids' Cove", category: playground))
+        XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Meydenbauer Park", category: playground))
+    }
+
+    /// Apple files indoor children's activity centres under the playground category too, and
+    /// indexing Sammamish collected both of these as parks.
+    func testPlaygroundsThatAreReallyBusinessesDoNot() {
+        let playground = ParkDiscoveryService.playgroundCategory
+        XCTAssertFalse(ParkDiscoveryService.isParkLike(name: "Blaze Robotics Academy", category: playground))
+        XCTAssertFalse(ParkDiscoveryService.isParkLike(name: "Pop Smart Academy", category: playground))
+        XCTAssertFalse(ParkDiscoveryService.isParkLike(name: "Little Gym of Bellevue", category: playground))
+    }
+
+    /// A plain park is never second-guessed by its name — that road leads back to rejecting
+    /// real parks for the words in them.
+    func testAParkCategoryIsTrustedWhateverItIsCalled() {
+        XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Sammamish Rowing Club", category: .park))
+        XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Old School Park", category: .park))
     }
 
     // MARK: - Asking about a cell

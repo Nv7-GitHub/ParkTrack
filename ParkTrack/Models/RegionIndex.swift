@@ -116,7 +116,13 @@ extension RegionIndex {
     /// Generation 4 also counts playgrounds, and the parks the map left uncategorised whose
     /// names are not the sort that get put on apartment buildings — South Mercer Playfields,
     /// Bellevue Botanical Garden. Earlier totals were short by those.
-    static let currentIndexerVersion = 4
+    ///
+    /// Generation 5 tiles the text pass that finds those uncategorised parks, instead of
+    /// running it once over the whole place and getting a sample. Note that this is a
+    /// version bump without a `searchGeneration` bump, which is the distinction those two
+    /// numbers exist for: the swept ground is still good, so re-indexing reuses every cell
+    /// and pays only for the handful of text tiles. It asks for a tap, not for an afternoon.
+    static let currentIndexerVersion = 5
 
     /// True for a record written by an older generation, which still names a place worth
     /// indexing but whose count can no longer be believed.

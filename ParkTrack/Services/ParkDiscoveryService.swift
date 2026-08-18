@@ -301,7 +301,27 @@ final class ParkDiscoveryService {
     private nonisolated static let parkLikeCategories: Set<MKPointOfInterestCategory> = [
         .park,
         .nationalPark,
-        MKPointOfInterestCategory(rawValue: "MKPOICategoryPlayground")
+        playgroundCategory
+    ]
+
+    /// Undeclared by the SDK, but the service returns it and a filter built from the raw
+    /// value works: over one patch of downtown Bellevue, asking for parks alone returned
+    /// three results and asking for parks and playgrounds returned five, the extra two being
+    /// Inspiration Playground and Kids' Cove.
+    nonisolated static let playgroundCategory = MKPointOfInterestCategory(rawValue: "MKPOICategoryPlayground")
+
+    /// Words that mean a playground is somebody's business rather than somewhere to go.
+    ///
+    /// The playground category is not only used for playgrounds. Apple files indoor
+    /// children's activity centres under it too, and indexing Sammamish duly collected Blaze
+    /// Robotics Academy and Pop Smart Academy as parks. Those are worse than ordinary
+    /// mistakes because they pass the filter, so the tidy-up sheet cannot even offer them.
+    ///
+    /// Deliberately small, and read only for that one ambiguous category: `.park` is not
+    /// second-guessed by name, or Central Park Conservancy-style names would start failing.
+    private nonisolated static let businessWords: Set<String> = [
+        "academy", "school", "preschool", "daycare", "gym", "gymnastics", "studio",
+        "institute", "tutoring", "learning", "indoor", "club"
     ]
 
     /// Words that make an uncategorised map result plausibly a park.
@@ -412,16 +432,50 @@ final class ParkDiscoveryService {
 
     // MARK: - Discovery
 
+    /// What a scan of one region did.
+    struct ScanOutcome {
+        let parks: [Park]
+        /// The ground actually asked about, which is wider than the caller's region when the
+        /// caller's was too small for the map to answer about. Whoever records coverage has
+        /// to record this rather than what they asked for.
+        let region: MKCoordinateRegion
+        /// Whether this ground may be written down as searched. False when the map answered
+        /// about somewhere else, which is not the same as answering that there is nothing here.
+        let coveredGround: Bool
+    }
+
+    /// Widens a region to the smallest one a text search will actually answer about.
+    ///
+    /// Below roughly 0.05° the map discards the region and answers from the device's own
+    /// surroundings, and the results are then dropped for being outside the region — so a
+    /// scan of a zoomed-in view away from home found nothing, every time, and then recorded
+    /// the ground as searched so it would never try again. Asking about a little more ground
+    /// than the screen is showing is the difference between an answer and no answer.
+    nonisolated static func scannableRegion(_ region: MKCoordinateRegion) -> MKCoordinateRegion {
+        guard region.span.latitudeDelta.isFinite, region.span.longitudeDelta.isFinite else { return region }
+        return MKCoordinateRegion(
+            center: region.center,
+            span: MKCoordinateSpan(
+                latitudeDelta: max(region.span.latitudeDelta, wideTileSpanDegrees),
+                longitudeDelta: max(region.span.longitudeDelta, wideTileSpanDegrees)
+            )
+        )
+    }
+
     @discardableResult
-    func discoverParks(in region: MKCoordinateRegion) async -> [Park] {
+    func discoverParks(in region: MKCoordinateRegion) async -> ScanOutcome {
         isSearching = true
         lastError = nil
         defer { isSearching = false }
 
-        let outcome = await Self.candidates(coveringTilesOf: region)
+        let asked = Self.scannableRegion(region)
+        let outcome = await Self.candidates(coveringTilesOf: asked)
         if let failure = outcome.failure { lastError = failure }
-        guard !outcome.candidates.isEmpty else { return [] }
-        return persist(outcome.candidates)
+        let claimable = !outcome.answeredAboutSomewhereElse && outcome.failure == nil
+        guard !outcome.candidates.isEmpty else {
+            return ScanOutcome(parks: [], region: asked, coveredGround: claimable)
+        }
+        return ScanOutcome(parks: persist(outcome.candidates), region: asked, coveredGround: claimable)
     }
 
     /// An explicit "search here now" pass: the same sweep, but it re-asks about ground it
@@ -665,6 +719,35 @@ final class ParkDiscoveryService {
     /// because the ground they cover is ground that was genuinely asked about.
     nonisolated static let indexCellSpanDegrees = 0.010
 
+    /// The smallest region a natural-language search will actually answer about.
+    ///
+    /// Measured over one spot in Sammamish, varying nothing but the span: at 0.010°, 0.014°
+    /// and 0.03° not one of twenty-five results was inside the region, and at 0.06° eight
+    /// were. Somewhere near 0.05° the map stops honouring the region and starts answering
+    /// from wherever the device is. Anything asking a text query about less ground than this
+    /// is not asking about that ground at all.
+    nonisolated static let wideTileSpanDegrees = 0.06
+
+    /// A ceiling on the text pass, so indexing a county does not turn it into a second sweep.
+    nonisolated static let maxWideTiles = 16
+
+    /// Cuts `region` into tiles no smaller than the map will answer about.
+    ///
+    /// Never finer than `wideTileSpanDegrees`, and never more than `maxWideTiles` of them —
+    /// so a small region is one tile and a county is a coarse grid over itself rather than
+    /// hundreds of requests.
+    nonisolated static func wideTiles(covering region: MKCoordinateRegion) -> [MKCoordinateRegion] {
+        guard region.span.latitudeDelta.isFinite, region.span.longitudeDelta.isFinite,
+              region.span.latitudeDelta > 0 || region.span.longitudeDelta > 0 else { return [] }
+        // A place smaller than one tile still has to be asked about in a whole tile, or the
+        // pass meant to cover it asks a question the map will not answer.
+        let region = scannableRegion(region)
+        let widest = max(region.span.latitudeDelta, region.span.longitudeDelta)
+        let cap = max(1, Int(Double(maxWideTiles).squareRoot().rounded(.down)))
+        let side = min(max(Int((widest / wideTileSpanDegrees).rounded(.down)), 1), cap)
+        return tiles(for: region, side: side)
+    }
+
     nonisolated static func latticeCell(containing coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
         let step = indexCellSpanDegrees
         let latitudeIndex = (coordinate.latitude / step).rounded(.down)
@@ -813,6 +896,29 @@ final class ParkDiscoveryService {
         var failures = 0
         var retries: [Int64: Int] = [:]
         var cellsSinceSave = 0
+        /// The ground the sweep actually walked, which is what the text pass covers.
+        ///
+        /// Not the square around the circle: the sweep follows the shape of the place, and
+        /// tiling the whole box would spend requests on corners it deliberately never went
+        /// near. Grown by every cell taken off the queue, searched or reused, so a resumed
+        /// sweep that reused everything still knows where the place is.
+        var walked: (minLatitude: Double, maxLatitude: Double, minLongitude: Double, maxLongitude: Double)?
+        func note(walkedOver cell: MKCoordinateRegion) {
+            let minLatitude = cell.center.latitude - cell.span.latitudeDelta / 2
+            let maxLatitude = cell.center.latitude + cell.span.latitudeDelta / 2
+            let minLongitude = cell.center.longitude - cell.span.longitudeDelta / 2
+            let maxLongitude = cell.center.longitude + cell.span.longitudeDelta / 2
+            guard let current = walked else {
+                walked = (minLatitude, maxLatitude, minLongitude, maxLongitude)
+                return
+            }
+            walked = (
+                min(current.minLatitude, minLatitude),
+                max(current.maxLatitude, maxLatitude),
+                min(current.minLongitude, minLongitude),
+                max(current.maxLongitude, maxLongitude)
+            )
+        }
         var completed = true
         var truncated = false
         /// Whether the sweep has found the place it is looking for yet.
@@ -889,6 +995,7 @@ final class ParkDiscoveryService {
                 cursor += 1
                 if coverage.coversFinely(entry.cell, resolution: entry.cell.span.latitudeDelta, generation: Self.searchGeneration) {
                     reused += 1
+                    note(walkedOver: entry.cell)
                     let stored = storedParks(in: entry.cell)
                     let known = belongsToRegion.map { test in stored.contains(where: test) } ?? true
                     if known { hasFoundRegion = true }
@@ -972,6 +1079,7 @@ final class ParkDiscoveryService {
                 if outcome.rawCount >= Self.saturatedResultCount { truncated = true }
 
                 coverage.record(cell, resolution: cell.span.latitudeDelta, generation: Self.searchGeneration)
+                note(walkedOver: cell)
                 cellsSinceSave += 1
 
                 // Only a cell that actually turned up a park in this place resets the probe.
@@ -1030,25 +1138,49 @@ final class ParkDiscoveryService {
             report()
         }
 
-        // One text pass over the whole area, for parks the map never categorised. Done once
-        // rather than per cell: it used to run alongside every tile, which doubled the cost
-        // of a sweep to no benefit, since an uncategorised park is found just as well by a
-        // wide query as a narrow one.
-        // Only if this run actually searched something. A resumed sweep that found every
-        // cell already covered has nothing new to sweep up, and paying a request to confirm
-        // that on every attempt is exactly the re-searching the coverage record exists to
-        // prevent.
+        // A text pass for the parks the map never categorised, which the per-cell request
+        // cannot see: it asks for a category, and these have none. South Mercer Playfields
+        // and Bellevue Botanical Garden are both this.
+        //
+        // Tiled, not one search over the whole square. One query answers with about
+        // twenty-five results however much ground it is given, so a single pass over a
+        // fifteen-kilometre city is a sample rather than a sweep — Illahee Trail Park sat in
+        // Sammamish through a full index and was turned up immediately by one 0.06° search.
+        // Tiles are cut no finer than the map will answer about, and there are at most
+        // sixteen, so this is a handful of requests on top of a run that costs hundreds.
+        //
+        // Over the ground the sweep walked rather than the square around the circle, and run
+        // whether or not this attempt searched anything new — a re-index that reuses every
+        // cell still has to do this pass, because the last one may not have.
+        //
         // Skipped when the caller supplied its own map: a test that injects `searchCell` is
         // describing the whole world it wants swept, and a live request sneaking in behind it
         // made the offline suite depend on what the real service happened to return that day.
-        if completed, !Task.isCancelled, searches > 0, searchCell == nil {
-            if let wide = try? await Self.search(query: "park", region: square, poiFiltered: false, requireParkLike: true) {
-                for park in persist(Self.confined(wide, to: square)) where found[park.identifier] == nil {
+        if completed, !Task.isCancelled, searchCell == nil, let walked {
+            let footprint = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(
+                    latitude: (walked.minLatitude + walked.maxLatitude) / 2,
+                    longitude: (walked.minLongitude + walked.maxLongitude) / 2
+                ),
+                span: MKCoordinateSpan(
+                    latitudeDelta: walked.maxLatitude - walked.minLatitude,
+                    longitudeDelta: walked.maxLongitude - walked.minLongitude
+                )
+            )
+            let wideTiles = Self.wideTiles(covering: footprint)
+            sweepLog.notice("text pass over \(wideTiles.count, privacy: .public) tiles of the swept ground")
+            for tile in wideTiles {
+                if Task.isCancelled { break }
+                guard let wide = try? await Self.search(
+                    query: "park", region: tile, poiFiltered: false, requireParkLike: true
+                ) else { continue }
+                searches += 1
+                for park in persist(Self.confined(wide, to: tile)) where found[park.identifier] == nil {
                     found[park.identifier] = park
                     order.append(park.identifier)
                 }
+                report()
             }
-            report()
         }
 
         // Deliberately not recording the whole square as swept, even on a clean finish. The
@@ -1398,6 +1530,13 @@ final class ParkDiscoveryService {
         ///
         /// Counting only what was in the cell makes the test mean what it says.
         var rawCount: Int = 0
+
+        /// True when the map answered with plenty and none of it was on the ground asked
+        /// about — the signature of a region too small to be honoured, where the search
+        /// falls back to the device's own surroundings. Distinct from a genuinely empty
+        /// answer, which is what a stretch of farmland looks like and is worth recording as
+        /// searched. See `ParkDiscoveryService.scannableRegion(_:)`.
+        var answeredAboutSomewhereElse = false
     }
 
     /// Scans `region` tile by tile, for callers that hand us one region rather than a plan.
@@ -1453,9 +1592,13 @@ final class ParkDiscoveryService {
         // not search is ground we cannot claim, so results off the square are dropped rather
         // than saved — otherwise a swept ten-mile ring sits in a catalogue full of parks
         // hundreds of miles away.
+        let offered = deduped(merged.candidates).count
         merged.candidates = deduped(merged.candidates.filter {
             SweptCoverage.region(region, contains: $0.coordinate)
         })
+        // Plenty offered, none of it here. The question was not answered, so the ground it
+        // was about has not been searched and must not be written down as though it had.
+        merged.answeredAboutSomewhereElse = offered > 0 && merged.candidates.isEmpty
         if failed * 2 <= attempted { merged.failure = nil }
         return merged
     }
@@ -1642,8 +1785,18 @@ final class ParkDiscoveryService {
     /// The name is still worth having as a hint for a human — see `hasParkLikeName` — but it
     /// is not enough on its own to file something in the catalogue.
     nonisolated static func isParkLike(name: String, category: MKPointOfInterestCategory?) -> Bool {
-        if let category { return parkLikeCategories.contains(category) }
-        return hasParkLikeName(name)
+        guard let category else { return hasParkLikeName(name) }
+        guard parkLikeCategories.contains(category) else { return false }
+        // One category is shared between places and businesses; see `businessWords`.
+        if category == playgroundCategory, namesABusiness(name) { return false }
+        return true
+    }
+
+    /// Whether a name reads as a company rather than a place.
+    nonisolated static func namesABusiness(_ name: String) -> Bool {
+        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+        let words = folded.split(whereSeparator: { !$0.isLetter }).map(String.init)
+        return words.contains { businessWords.contains($0) }
     }
 
     /// Whether a name reads like a park's, for explaining a judgement rather than making one.
