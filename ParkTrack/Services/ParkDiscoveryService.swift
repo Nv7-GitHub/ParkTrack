@@ -1364,12 +1364,12 @@ final class ParkDiscoveryService {
         ///
         /// This used to be the raw size of the response, on the theory that a full response
         /// is a tile hiding parks it had no room to mention. Against the real service that
-        /// measured nothing at all: a natural-language search answers with about twenty-five
-        /// results for *any* region, drawn from wherever the device is. A cell of Kirkland
-        /// came back with twenty-five parks of which two were in the cell — and, being
-        /// twenty-five, marked the sweep "at least this many" for ever. Every index of every
-        /// populated place was permanently approximate, and no amount of re-indexing could
-        /// clear it, because the number being tested was never about the cell.
+        /// measured nothing at all: a search answers with about twenty-five results whatever
+        /// it is asked, and below about 0.05° those results are not even from the region.
+        /// A cell of Kirkland came back with twenty-five parks of which two were in the cell
+        /// — and, being twenty-five, marked the sweep "at least this many" for ever. Every
+        /// index of every populated place was permanently approximate, and no amount of
+        /// re-indexing could clear it, because the number was never about the cell.
         ///
         /// Counting only what was in the cell makes the test mean what it says.
         var rawCount: Int = 0
@@ -1456,20 +1456,30 @@ final class ParkDiscoveryService {
     /// Asks the map what is actually in one cell.
     ///
     /// Not `MKLocalSearch.Request` with a region, which is what this used to be and which
-    /// does not answer that question. Its `region` is a *bias*, and a weak one. Asked about
-    /// a 1.5 km cell in the middle of Sammamish it returned twenty-five parks, the nearest
-    /// of them seven kilometres away in Bellevue; asking about 6 km and 12 km squares
-    /// centred on the same spot returned those same Bellevue parks. It answers from where
-    /// the device is, not from where it was asked about. The index then threw every result
-    /// away as out-of-cell — a real sweep of Sammamish searched seventy-six cells, saved
-    /// zero parks, and gave up saying the map could not find the place. That is the whole of
-    /// "indexing Sammamish doesn't work".
+    /// cannot answer that question at this size. Its `region` is honoured above roughly
+    /// 0.05° and discarded below it, and what it falls back to is the device's own location.
+    /// Measured over one spot in Sammamish, varying nothing but the span:
     ///
-    /// `MKLocalPointsOfInterestRequest` is bounded rather than biased: the same cell answers
-    /// with the parks that are in it. Measured, its reach is about a kilometre whatever
-    /// radius it is handed — 3 km and 20 km requests over downtown Bellevue both returned
-    /// the same fourteen parks, none further out than 1.0 km — which is why
-    /// `indexCellSpanDegrees` is sized to fit inside that reach.
+    ///     0.010°   0 of 25 results inside the region
+    ///     0.014°   0 of 25
+    ///     0.03°    0 of 25
+    ///     0.06°    8 of 25
+    ///     0.12°   13 of 25
+    ///
+    /// The index asked at 0.014° and threw every answer away as out-of-cell. A real sweep of
+    /// Sammamish searched seventy-six cells, saved zero parks, and gave up saying the map
+    /// could not find the place — while browsing the same ground found plenty, because a
+    /// browsing scan tiles at 0.06° and lands on the working side of the threshold.
+    ///
+    /// It is also why indexing Bellevue looked fine and Sammamish did not. The device is in
+    /// Bellevue: every sub-threshold cell fell back to it and answered with Bellevue parks,
+    /// which for Bellevue happened to be the right answer. Nowhere else got that luck.
+    ///
+    /// `MKLocalPointsOfInterestRequest` has no such threshold: it is bounded at every size,
+    /// so the same cell answers with the parks that are in it. Measured, its reach is about
+    /// a kilometre whatever radius it is handed — 3 km and 20 km requests over downtown
+    /// Bellevue both returned the same fourteen parks, none further out than 1.0 km — which
+    /// is why `indexCellSpanDegrees` is sized to fit inside that reach.
     ///
     /// It is one request per cell rather than two, and there is no text pass paired with it,
     /// because there is nothing left for one to add: the results it used to contribute were
