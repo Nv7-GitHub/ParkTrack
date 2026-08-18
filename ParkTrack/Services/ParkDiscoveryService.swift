@@ -96,14 +96,16 @@ struct SweptCoverage {
     /// Room for a whole index run and then some.
     ///
     /// This used to be 24, which is ample for browsing — a screen is swept in a handful of
-    /// wide squares — and hopeless for indexing, which records one small square per tile and
+    /// wide squares — and hopeless for indexing, which records one small square per cell and
     /// is allowed `maxIndexSearches` of them. Indexing San Francisco and killing the app
     /// part-way therefore kept 24 tiles out of a few hundred, and reopening started again
     /// from almost nothing.
     ///
-    /// The cap is barely approached in practice: a finished index replaces all of its tiles
-    /// with the single square it completed, so only an interrupted one holds many at once.
-    private static let limit = 512
+    /// Tied to the index budget rather than written down separately, because the two have to
+    /// agree: a cap below it silently evicts cells a finished run just recorded — the
+    /// smallest squares are exactly the index's own — and a resumed sweep re-searches ground
+    /// it had already paid for.
+    private static let limit = ParkDiscoveryService.maxIndexSearches + 64
 
     private var squares: [Square] = []
 
@@ -465,16 +467,29 @@ final class ParkDiscoveryService {
     /// small enough that a town is not one saturated tile from the outset.
     nonisolated static let coarseTileMeters: CLLocationDistance = 26_000
 
-    /// Results at or above this count mean the map ran out of room to answer, so the tile is
-    /// split. `MKLocalSearch` tops out around 25.
+    /// This many parks *inside* one cell means the answer may have been cut off rather than
+    /// finished, so the total is a floor. See `TileOutcome.rawCount`, which is what is
+    /// compared against it — results in the cell, not results in the response.
+    ///
+    /// A cell is about a kilometre across. Twenty parks inside one is a botanical garden
+    /// district, not a suburb, so in practice this fires where it should and nowhere else.
     nonisolated static let saturatedResultCount = 20
 
     /// Refinement stops here. Below roughly 1.5 km a tile is smaller than the parks in it.
     nonisolated static let minimumTileSpanDegrees = 0.014
 
-    /// Hard ceiling on one region's searches, so a pathological area cannot run forever.
-    /// A sweep that hits it reports itself as approximate and resumes where it stopped.
-    nonisolated static let maxIndexSearches = 320
+    /// Hard ceiling on one region's searches — one per cell — so a pathological area cannot
+    /// run forever. A sweep that hits it reports itself as approximate and resumes where it
+    /// stopped.
+    ///
+    /// It has to be large enough that half of it, which is all the hunt for the place is
+    /// allowed, still spans a city's own radius: the geocoder's centre is not reliably inside
+    /// the place, and a hunt that cannot cross the circle gives up on a city that is really
+    /// there. At about 0.8 km² a cell, a 5.5-mile city is roughly 300 cells of circle, so
+    /// half of this covers it with room over. Cells are half the size they were and cost one
+    /// request each instead of two, so this is not more traffic than the 320 it replaces —
+    /// it is the same ground, counted honestly.
+    nonisolated static let maxIndexSearches = 700
 
     /// How many batches in a row may fail outright before a sweep gives up.
     nonisolated static let maxConsecutiveBatchFailures = 6
@@ -483,8 +498,11 @@ final class ParkDiscoveryService {
     ///
     /// Bump when a change makes previously swept ground no longer equivalent to what a
     /// sweep would find now. Generation 1 is the first that asks both ways — the category
-    /// filter and a plain text search — rather than the filter alone.
-    nonisolated static let searchGeneration = 1
+    /// filter and a plain text search — rather than the filter alone. Generation 2 asks the
+    /// bounded points-of-interest request instead of either, which is the first generation
+    /// whose answers are actually about the cell it asked about; every earlier record claims
+    /// ground the map never looked at, so none of it may be reused.
+    nonisolated static let searchGeneration = 2
 
     /// How many cells a sweep keeps in flight.
     ///
@@ -509,19 +527,72 @@ final class ParkDiscoveryService {
 
     // MARK: - The index lattice
 
-    /// How far a sweep will keep probing past the last cell that belonged to the region.
+    /// How far a sweep keeps going past the last cell that belonged to the region, in metres.
     ///
-    /// A city is not always one connected piece of land at this resolution — a bay, a park
-    /// the size of two cells, an island reached by a bridge. Giving up at the first cell
-    /// that comes back as somewhere else would cut those off, so a sweep keeps going a
-    /// little way and resumes properly if the region turns up again.
+    /// A city is not one continuous run of parks. A residential plateau can have two
+    /// kilometres of houses between one park and the next, and the sweep has to be able to
+    /// cross that — as well as a bay, a park the size of several cells, an island reached by
+    /// a bridge — or the far side of a city is simply never reached.
     ///
-    /// One cell, not two. The probe wraps a skirt right round a city's perimeter, and every
-    /// extra cell of depth adds another ring of it — at two, somewhere the size of Sammamish
-    /// spent more searches on the ground around it than on itself. One still crosses a
-    /// gap of a cell and a half, which is most rivers and every road; anything wider now
-    /// needs its own index rather than being reached from next door.
-    nonisolated static let regionProbeDepth = 1
+    /// A distance, not a number of cells, because the number of cells is not the thing being
+    /// judged. When the lattice was cut finer to fit inside what the map will answer about,
+    /// a fixed depth of one cell silently became a shorter reach, and Sammamish indexed its
+    /// southern half and walled itself off from its northern one.
+    nonisolated static let regionProbeMeters: CLLocationDistance = 3_000
+
+    /// `regionProbeMeters` in cells, at a given latitude.
+    ///
+    /// Measured against the narrow side of a cell — longitude, away from the equator — so
+    /// the reach holds in the direction it is shortest rather than only on average.
+    nonisolated static func regionProbeDepth(atLatitude latitude: Double) -> Int {
+        let cellWidth = indexCellSpanDegrees * metersPerDegreeLatitude
+            * max(cos(latitude * .pi / 180), 0.05)
+        return max(2, Int((regionProbeMeters / cellWidth).rounded(.up)))
+    }
+
+    /// What a cell of somewhere else costs against that reach, against 1 for a cell that
+    /// answered with nothing.
+    ///
+    /// The two are not the same evidence. Nothing here means only that: a lake, a golf
+    /// course, four streets of housing — a city is allowed all of those in the middle of it.
+    /// Parks that belong to the next town along is a boundary, and one the sweep should stop
+    /// at quickly, or indexing a city pays for a skirt right round it. Half the reach means
+    /// two such cells end the expansion however small the cells have become.
+    nonisolated static func probeCost(forSomewhereElseAtLatitude latitude: Double) -> Int {
+        max(1, regionProbeDepth(atLatitude: latitude) / 2)
+    }
+
+    /// The area of one lattice cell at a given latitude, in square kilometres.
+    ///
+    /// Cells are not square. A degree of longitude is shorter than a degree of latitude
+    /// everywhere but the equator, so treating one as square overstates its area by a third
+    /// at Seattle's latitude — and anything counted in cells is undercounted by as much.
+    nonisolated static func cellAreaSquareKilometres(atLatitude latitude: Double) -> Double {
+        let heightKm = indexCellSpanDegrees * metersPerDegreeLatitude / 1_000
+        let widthKm = heightKm * cos(latitude * .pi / 180)
+        return max(heightKm * widthKm, 0.0001)
+    }
+
+    /// Searches a sweep may spend looking for the place before deciding it cannot find it.
+    ///
+    /// Expanding at full depth until the first match is what lets a city whose centre is
+    /// water still be found. But cells queued during that phase keep the depth they were
+    /// queued at, so once the place *is* found and walls start forming, every one of them is
+    /// still searched — the hunt for the seed poisons the queue behind it.
+    ///
+    /// The hunt spreads outward from the centre, so reaching something *d* away costs a whole
+    /// disc of radius *d*, and the centre is not reliably inside the place: there is a city
+    /// called Sammamish next to a lake called Sammamish, and geocoding the name can land in
+    /// the water kilometres from any park in the city. So the allowance is the area it might
+    /// have to cross rather than a constant — capped at half the run, so a hunt that really
+    /// is going nowhere still leaves something for the sweep it was meant to start.
+    nonisolated static func seedingBudget(radiusMiles: Double, latitude: Double) -> Int {
+        let discKm = radiusMiles * 1.609
+        let discCells = Double.pi * discKm * discKm / cellAreaSquareKilometres(atLatitude: latitude)
+        // Rounded up: the allowance is meant to cover the disc, and flooring it leaves the
+        // hunt a cell short of the edge it was sized to reach.
+        return min(maxIndexSearches / 2, max(48, Int(discCells.rounded(.up))))
+    }
 
     /// One cell of a fixed worldwide lattice, at the finest size worth searching.
     ///
@@ -529,27 +600,24 @@ final class ParkDiscoveryService {
     /// exactly the same cell — on a later run, and for a neighbouring place whose own sweep
     /// overlaps this one. Coverage is matched by containment, so cells that line up are what
     /// make swept ground reusable at all.
-    /// The size of one index cell, about 6 km.
+    /// The size of one index cell, about a kilometre.
     ///
-    /// Measured, not chosen. `MKLocalSearch` returns about twenty-five results for *any*
-    /// region — over one patch of Bellevue, sixteen 1.5 km cells returned 800 items and two
-    /// 6 km searches returned 50 — because it treats the region as a bias rather than a
-    /// bound. The sweep then keeps only what fell inside the cell it asked about, so a small
-    /// cell pays full price for a wide answer and discards nearly all of it: 0.81 parks per
-    /// request at 1.5 km against 9.00 at 6 km, an eleven-fold difference.
+    /// Set by the reach of the request that asks about it. `MKLocalPointsOfInterestRequest`
+    /// answers about a kilometre out however large a radius it is given — measured, a 3 km
+    /// and a 20 km request over downtown Bellevue returned the same fourteen parks, none
+    /// beyond 1.0 km. Ground outside that reach is not searched however confidently the cell
+    /// claims it, so a cell has to fit inside it, corners included.
     ///
-    /// This is why scrolling the map finds a city faster than indexing it did. Browsing asks
-    /// about whole screens; the index was asking about squares small enough that the service
-    /// effectively ignored them.
+    /// A degree of longitude is longest at the equator, and that is the case this has to
+    /// hold for: 0.010° there is 1.11 km square, whose half-diagonal is 0.79 km. At
+    /// Seattle's latitude the same cell is 1.11 km by 0.75 km, a half-diagonal of 0.67 km.
+    /// Both sit inside the reach with room to spare, which is the point — a cell whose
+    /// corners are out of reach is ground the sweep records as searched and never saw.
     ///
-    /// It is left at 1.5 km all the same, because efficiency is not the only axis. Measured
-    /// over Bellevue end to end: 6 km cells finish in 11 seconds and find 35 parks, 3 km in
-    /// 2 minutes for 57, and 1.5 km in 4½ minutes for 69. Coarse cells are cheap per request
-    /// and hit a lower ceiling; fine cells are wasteful per request and see more. Neither
-    /// reaches the 82 that browsing turns up, and no single size will — the answer is to
-    /// sweep the same ground more than once at descending sizes, so the cheap pass does the
-    /// covering and the expensive ones only add what they alone can see.
-    nonisolated static let indexCellSpanDegrees = 0.014
+    /// Cells this size are also cheaper than the 1.5 km ones they replace, despite there
+    /// being about twice as many, because each now costs one request instead of two and
+    /// because the ground they cover is ground that was genuinely asked about.
+    nonisolated static let indexCellSpanDegrees = 0.010
 
     nonisolated static func latticeCell(containing coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
         let step = indexCellSpanDegrees
@@ -659,10 +727,14 @@ final class ParkDiscoveryService {
     ///
     /// - Parameter belongsToRegion: Whether a park is actually in the place being indexed.
     ///   Without it the sweep simply fills the circle, which is what a plain area scan wants.
+    /// - Parameter searchCell: How one cell is asked about. Defaults to the real map
+    ///   service; a test supplies a synthetic city so the traversal can be measured without
+    ///   spending searches against a shared rate limit.
     func sweepDense(
         around coordinate: CLLocationCoordinate2D,
         radiusMiles: Double,
         belongsToRegion: ((Park) -> Bool)? = nil,
+        searchCell: (@Sendable (MKCoordinateRegion) async -> TileOutcome)? = nil,
         onProgress: ((SweepProgress) -> Void)? = nil
     ) async -> DenseSweepResult {
         // Wait for whatever is already searching rather than failing. Bailing out here is how
@@ -706,34 +778,8 @@ final class ParkDiscoveryService {
         /// nothing — which is exactly what indexing Boston, whose centre sits by the water,
         /// looked like. So the rule only applies once there is something to have left.
         var hasFoundRegion = false
-        /// Searches the sweep may spend looking for the place before giving up on finding it.
-        ///
-        /// Expanding at full depth until the first match is what lets a city whose centre is
-        /// water still be found. But cells queued during that phase keep the depth they were
-        /// queued at, so once the place *is* found and walls start forming, every one of them
-        /// is still searched — the search for the seed poisons the queue behind it. Sammamish
-        /// has about twenty parks and was spending its entire budget three runs running.
-        ///
-        /// A place should be within a few cells of its own centre. If it is not, something is
-        /// wrong with the lookup and sweeping the whole circle will not fix it.
-        /// Enough to reach anywhere inside the place's own circle.
-        ///
-        /// The hunt spreads outward from the centre, so reaching something *d* away costs a
-        /// whole disc of radius *d* — and the centre is not reliably inside the place. There
-        /// is a city called Sammamish next to a lake called Sammamish, and geocoding the name
-        /// can land in the water several kilometres from any park in the city. A fixed
-        /// allowance covered about four kilometres and stopped just short, reporting a city
-        /// that plainly exists as one the map could not find.
-        ///
-        /// So the allowance is the area it might have to cross, not a constant. Capped at
-        /// half the run, so a hunt that really is going nowhere still leaves something for
-        /// the sweep it was meant to start.
-        let cellArea = pow(Self.indexCellSpanDegrees * 111.0, 2)
-        let discCells = Double.pi * pow(radiusMiles * 1.609, 2) / max(cellArea, 0.0001)
-        let seedingBudget = min(
-            Self.maxIndexSearches / 2,
-            max(48, Int(discCells * 2))
-        )
+        /// See `seedingBudget(radiusMiles:latitude:)`.
+        let seedingBudget = Self.seedingBudget(radiusMiles: radiusMiles, latitude: coordinate.latitude)
 
         /// Consumed from the front by an index rather than by shifting the array. A sweep
         /// queues thousands of cells, and `removeFirst` on an `Array` copies the remainder
@@ -754,9 +800,16 @@ final class ParkDiscoveryService {
             budget=\(Self.maxIndexSearches, privacy: .public)
             """)
 
+        let probeDepth = Self.regionProbeDepth(atLatitude: coordinate.latitude)
+        let elsewhereCost = Self.probeCost(forSomewhereElseAtLatitude: coordinate.latitude)
+
         /// Grows into the cells around one that turned out to be part of the place.
+        ///
+        /// `probe` is how far the sweep has strayed from the last cell that belonged, counted
+        /// against `probeDepth` — one for a cell that answered with nothing, more for one
+        /// that answered with somewhere else.
         func expand(from cell: MKCoordinateRegion, probe: Int) {
-            guard probe <= Self.regionProbeDepth else { return }
+            guard probe <= probeDepth else { return }
             for neighbour in Self.latticeNeighbours(of: cell, includingDiagonals: probe == 0) {
                 let key = Self.latticeKey(neighbour)
                 // Reaching somewhere with more depth to spare is worth queueing again.
@@ -790,9 +843,13 @@ final class ParkDiscoveryService {
                 cursor += 1
                 if coverage.coversFinely(entry.cell, resolution: entry.cell.span.latitudeDelta, generation: Self.searchGeneration) {
                     reused += 1
-                    let known = belongsToRegion.map { test in storedParks(in: entry.cell).contains(where: test) } ?? true
+                    let stored = storedParks(in: entry.cell)
+                    let known = belongsToRegion.map { test in stored.contains(where: test) } ?? true
                     if known { hasFoundRegion = true }
-                    expand(from: entry.cell, probe: (known || !hasFoundRegion) ? 0 : entry.probe + 1)
+                    // The same weighing as a freshly searched cell, from what that cell's
+                    // last search left behind.
+                    let strayed = stored.isEmpty ? 1 : elsewhereCost
+                    expand(from: entry.cell, probe: (known || !hasFoundRegion) ? 0 : entry.probe + strayed)
                     report()
                     continue
                 }
@@ -802,13 +859,25 @@ final class ParkDiscoveryService {
 
             let outcomes: [TileOutcome] = await withTaskGroup(of: (Int, TileOutcome).self) { group in
                 for (index, entry) in batch.enumerated() {
-                    group.addTask { (index, await Self.indexCandidates(in: entry.cell)) }
+                    group.addTask {
+                        let outcome: TileOutcome
+                        if let searchCell {
+                            outcome = await searchCell(entry.cell)
+                        } else {
+                            outcome = await Self.indexCandidates(in: entry.cell)
+                        }
+                        return (index, outcome)
+                    }
                 }
                 var collected = [TileOutcome?](repeating: nil, count: batch.count)
                 for await (index, outcome) in group { collected[index] = outcome }
                 return collected.map { $0 ?? TileOutcome() }
             }
-            searches += batch.count * 2
+            // One request per cell, which is also what the progress bar counts. It used to
+            // add two — the cell cost two searches — while the remaining queue counted cells,
+            // so "Searched 320 of 320 areas" was really 160 areas, and the budget looked
+            // twice as spent as it was.
+            searches += batch.count
             if Task.isCancelled { completed = false; break }
             sweepLog.debug("""
                 batch of \(batch.count, privacy: .public) cells: \
@@ -839,15 +908,21 @@ final class ParkDiscoveryService {
                     if retries[key, default: 0] < Self.maxTileRetries {
                         retries[key, default: 0] += 1
                         queue.append((cell, probe))
+                    } else {
+                        // Out of retries. The cell is ground nobody has looked at, so the
+                        // total cannot call itself exhaustive — it used to be dropped in
+                        // silence, and a run the map had refused a dozen cells of published
+                        // itself as a complete count of the place.
+                        truncated = true
+                        sweepLog.error("gave up on cell \(key, privacy: .public) after \(Self.maxTileRetries, privacy: .public) refusals")
                     }
                     continue
                 }
 
-                // A cell that answered at the result cap is hiding parks behind it. The
-                // lattice has no finer step to fall back on — replacing the old splitting
-                // quadtree with a flat grid dropped the response to saturation altogether —
-                // so the honest thing is to stop calling the total exhaustive. It becomes an
-                // "at least this many", which is what `isApproximate` already means.
+                // A cell packed to the cap with parks of its own may be hiding more behind
+                // them, and the lattice has no finer step to fall back on, so the honest
+                // thing is to stop calling the total exhaustive: it becomes an "at least
+                // this many", which is what `isApproximate` means.
                 if outcome.rawCount >= Self.saturatedResultCount { truncated = true }
 
                 coverage.record(cell, resolution: cell.span.latitudeDelta, generation: Self.searchGeneration)
@@ -855,14 +930,18 @@ final class ParkDiscoveryService {
 
                 // Only a cell that actually turned up a park in this place resets the probe.
                 //
-                // Treating an empty cell as neutral instead — on the grounds that a city is
-                // allowed to have water in the middle of it — meant expansion never
-                // terminated through empty ground at all, and ran to the circle backstop.
-                // San Francisco is surrounded by water on three sides and Bellevue sits
-                // between two lakes: both spent their whole budget sweeping the sea. A place
-                // is still allowed its internal water, because `regionProbeDepth` carries
-                // the sweep a couple of cells past nothing before it gives up.
+                // Treating an empty cell as costing nothing at all — on the grounds that a
+                // city is allowed water in the middle of it — meant expansion never
+                // terminated through empty ground and ran to the circle backstop. San
+                // Francisco is surrounded by water on three sides and Bellevue sits between
+                // two lakes: both spent their whole budget sweeping the sea. It costs less
+                // than a cell of somewhere else instead, so a place keeps its internal
+                // water and its quiet streets without the sweep wandering out to sea.
                 let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
+                // A cell that answered with nothing has said only that there are no parks
+                // here, which is true of a great deal of any city. A cell that answered with
+                // parks belonging to the next town along has said where the edge is.
+                let strayed = saved.isEmpty ? 1 : elsewhereCost
                 if belongs, !hasFoundRegion {
                     hasFoundRegion = true
                     // Everything queued while hunting for the seed was queued at full depth,
@@ -883,7 +962,7 @@ final class ParkDiscoveryService {
                     """)
                 // Until the place has been found at all, keep going: the give-up rule is
                 // about having left somewhere, and the sweep may not have arrived yet.
-                expand(from: cell, probe: (belongs || !hasFoundRegion) ? 0 : probe + 1)
+                expand(from: cell, probe: (belongs || !hasFoundRegion) ? 0 : probe + strayed)
             }
 
             // Only a batch that failed outright counts against giving up. A single refusal
@@ -1048,6 +1127,12 @@ final class ParkDiscoveryService {
     @discardableResult
     func park(for candidate: ParkCandidate) -> Park {
         if let existing = existingPark(identifier: candidate.id) { return existing }
+        // Adding one by hand is the user changing their mind, and it has to stick: leaving
+        // the exclusion in place would let this park be added now and dropped by the next
+        // sweep that passed over it.
+        for struckOff in excludedPlaces() where struckOff.identifier == candidate.id {
+            modelContext.delete(struckOff)
+        }
         let park = Park(
             identifier: candidate.id,
             name: candidate.name,
@@ -1108,6 +1193,46 @@ final class ParkDiscoveryService {
     /// Asked of the store rather than of the map, so a resumed sweep can tell whether ground
     /// it has already covered was part of the place without spending a request to find out
     /// again. Bounded by the cell, so it never materialises the catalogue.
+    // MARK: - Places the user has rejected
+
+    /// Whether this place has been struck off by hand. See `ExcludedPlace`.
+    func isExcluded(_ identifier: String) -> Bool {
+        !excludedIdentifiers(among: [identifier]).isEmpty
+    }
+
+    /// Which of these have been struck off, in one question.
+    private func excludedIdentifiers(among identifiers: [String]) -> Set<String> {
+        guard !identifiers.isEmpty else { return [] }
+        let wanted = Set(identifiers)
+        let descriptor = FetchDescriptor<ExcludedPlace>(
+            predicate: #Predicate<ExcludedPlace> { wanted.contains($0.identifier) }
+        )
+        return Set(((try? modelContext.fetch(descriptor)) ?? []).map(\.identifier))
+    }
+
+    /// Removes a park from the catalogue and remembers not to file it again.
+    ///
+    /// The two halves belong together: deleting without recording is undone by the next
+    /// sweep, and recording without deleting leaves the thing the user objected to on screen.
+    func exclude(_ park: Park) {
+        if !isExcluded(park.identifier) {
+            modelContext.insert(ExcludedPlace(park: park))
+        }
+        modelContext.delete(park)
+        try? modelContext.save()
+    }
+
+    /// Lets a place back in. The next sweep over that ground will find it again.
+    func readmit(_ excluded: ExcludedPlace) {
+        modelContext.delete(excluded)
+        try? modelContext.save()
+    }
+
+    func excludedPlaces() -> [ExcludedPlace] {
+        let descriptor = FetchDescriptor<ExcludedPlace>(sortBy: [SortDescriptor(\.name)])
+        return (try? modelContext.fetch(descriptor)) ?? []
+    }
+
     private func storedParks(in cell: MKCoordinateRegion) -> [Park] {
         let minLatitude = cell.center.latitude - cell.span.latitudeDelta / 2
         let maxLatitude = cell.center.latitude + cell.span.latitudeDelta / 2
@@ -1141,6 +1266,15 @@ final class ParkDiscoveryService {
     /// Internal so the tests can check what a swept park actually knows about itself.
     @discardableResult
     func persist(_ candidates: [ParkCandidate]) -> [Park] {
+        // Places the user has said are not parks. The map has not changed its mind about
+        // them, so without this every sweep over that ground files them again and removing
+        // one achieves nothing that lasts.
+        //
+        // Asked once for the whole batch, not once per candidate: a sweep calls this for
+        // every cell it searches, and a fetch per result is hundreds of round trips to the
+        // store on the main actor while the user watches a progress bar.
+        let struckOff = excludedIdentifiers(among: candidates.map(\.id))
+        let candidates = candidates.filter { !struckOff.contains($0.id) }
         let wanted = Set(candidates.map(\.id))
         let descriptor = FetchDescriptor<Park>(
             predicate: #Predicate<Park> { wanted.contains($0.identifier) }
@@ -1197,12 +1331,23 @@ final class ParkDiscoveryService {
 
     /// A tile pass never throws: a failed tile just contributes nothing, and the first
     /// human-readable failure rides along so the UI can say something happened.
-    private struct TileOutcome {
+    /// Internal so a test can drive `sweepDense` without touching the map service: the
+    /// traversal is the part worth exercising, and it costs nothing to run offline.
+    struct TileOutcome {
         var candidates: [ParkCandidate] = []
         var failure: String?
-        /// Raw results the map returned, before filtering. A tile that comes back at the
-        /// per-request cap is hiding parks it did not have room to mention, which is the
-        /// signal to look at that tile more closely.
+        /// How many results landed inside the ground that was asked about.
+        ///
+        /// This used to be the raw size of the response, on the theory that a full response
+        /// is a tile hiding parks it had no room to mention. Against the real service that
+        /// measured nothing at all: a natural-language search answers with about twenty-five
+        /// results for *any* region, drawn from wherever the device is. A cell of Kirkland
+        /// came back with twenty-five parks of which two were in the cell — and, being
+        /// twenty-five, marked the sweep "at least this many" for ever. Every index of every
+        /// populated place was permanently approximate, and no amount of re-indexing could
+        /// clear it, because the number being tested was never about the cell.
+        ///
+        /// Counting only what was in the cell makes the test mean what it says.
         var rawCount: Int = 0
     }
 
@@ -1284,59 +1429,83 @@ final class ParkDiscoveryService {
         return outcome
     }
 
-    /// Both ways of asking, merged — for a sweep that has to be able to defend its total.
+    /// Asks the map what is actually in one cell.
     ///
-    /// Neither query contains the other. Measured over thirty-five cells of Bellevue, the
-    /// category filter found 37 parks and a plain text search found 38, but between them
-    /// they found 41: four the filter missed, three the text missed. A city indexed with one
-    /// query alone therefore publishes a total that is quietly about a tenth short, which is
-    /// exactly the gap between what an index claimed and what browsing the map had already
-    /// turned up.
+    /// Not `MKLocalSearch.Request` with a region, which is what this used to be and which
+    /// does not answer that question. Its `region` is a *bias*, and a weak one. Asked about
+    /// a 1.5 km cell in the middle of Sammamish it returned twenty-five parks, the nearest
+    /// of them seven kilometres away in Bellevue; asking about 6 km and 12 km squares
+    /// centred on the same spot returned those same Bellevue parks. It answers from where
+    /// the device is, not from where it was asked about. The index then threw every result
+    /// away as out-of-cell — a real sweep of Sammamish searched seventy-six cells, saved
+    /// zero parks, and gave up saying the map could not find the place. That is the whole of
+    /// "indexing Sammamish doesn't work".
     ///
-    /// It costs two requests per cell instead of one. For a count that calls itself
-    /// exhaustive that is the right trade; the map's own browsing scan still runs the cheap
-    /// pass and keeps its single wide text query per batch.
-    private nonisolated static func indexCandidates(in region: MKCoordinateRegion) async -> TileOutcome {
-        // Both at once. They are independent questions and the throttle spaces their starts
-        // anyway, so waiting for the first to come back before asking the second only adds a
-        // round trip of doing nothing.
-        async let filtered = searchOutcome(in: region, poiFiltered: true)
-        async let text = searchOutcome(in: region, poiFiltered: false)
-        let (a, b) = await (filtered, text)
-
+    /// `MKLocalPointsOfInterestRequest` is bounded rather than biased: the same cell answers
+    /// with the parks that are in it. Measured, its reach is about a kilometre whatever
+    /// radius it is handed — 3 km and 20 km requests over downtown Bellevue both returned
+    /// the same fourteen parks, none further out than 1.0 km — which is why
+    /// `indexCellSpanDegrees` is sized to fit inside that reach.
+    ///
+    /// It is one request per cell rather than two, and there is no text pass paired with it,
+    /// because there is nothing left for one to add: the results it used to contribute were
+    /// the uncategorised ones, and uncategorised results are not parks. See `isParkLike`.
+    nonisolated static func indexCandidates(in region: MKCoordinateRegion) async -> TileOutcome {
         var outcome = TileOutcome()
-        var seen: Set<String> = []
-        for candidate in a.candidates + b.candidates where seen.insert(candidate.id).inserted {
-            outcome.candidates.append(candidate)
-        }
-        // Either query hitting the cap means the cell is still hiding results.
-        outcome.rawCount = max(a.rawCount, b.rawCount)
-        // Only a genuine failure: one pass refusing while the other answered is not one.
-        if outcome.candidates.isEmpty {
-            outcome.failure = a.failure ?? b.failure
-        }
-        return outcome
-    }
+        let request = MKLocalPointsOfInterestRequest(
+            center: region.center,
+            radius: cellRequestRadius(for: region)
+        )
+        request.pointOfInterestFilter = MKPointOfInterestFilter(including: Array(parkLikeCategories))
 
-    private nonisolated static func searchOutcome(
-        in region: MKCoordinateRegion,
-        poiFiltered: Bool
-    ) async -> TileOutcome {
-        var outcome = TileOutcome()
         do {
-            let (found, raw) = try await searchCounting(
-                query: "park",
-                region: region,
-                poiFiltered: poiFiltered,
-                requireParkLike: true
+            let response = try await SearchThrottle.shared.run(request)
+            outcome.candidates = deduped(response.mapItems.compactMap {
+                candidate(from: $0, requireParkLike: true)
+            })
+            outcome.rawCount = resultsInside(
+                region,
+                coordinates: response.mapItems.map(\.placemark.coordinate)
             )
-            outcome.candidates = found
-            outcome.rawCount = raw
         } catch {
+            // An empty answer is not a refusal. This request reports "nothing within a
+            // kilometre of here" as an error, and a good deal of any city is exactly that:
+            // a cell of housing, a cell of water. Reading it as a failure put the cell back
+            // on the queue three times over and counted it towards abandoning the sweep.
+            if let mkError = error as? MKError, mkError.code == .placemarkNotFound {
+                return outcome
+            }
             outcome.failure = message(for: error)
         }
         return outcome
     }
+
+    /// How much of an answer was about the ground that was asked about.
+    ///
+    /// This is the whole of the saturation test, and getting it wrong is what pinned every
+    /// index at "at least this many". A cell of Kirkland, measured, answered with 25 parks
+    /// of which 2 were in the cell: judged on 25 it looked full to bursting, judged on 2 it
+    /// is a suburb with two parks in it, which is what it is.
+    nonisolated static func resultsInside(
+        _ cell: MKCoordinateRegion,
+        coordinates: [CLLocationCoordinate2D]
+    ) -> Int {
+        coordinates.count { SweptCoverage.region(cell, contains: $0) }
+    }
+
+    /// The radius that covers a whole cell: its half-diagonal, so the corners are in it too.
+    ///
+    /// A degree of longitude shrinks towards the poles, so a cell cut from a fixed degree
+    /// lattice is widest at the equator. This measures the cell in front of it rather than
+    /// assuming one shape for the whole world.
+    nonisolated static func cellRequestRadius(for cell: MKCoordinateRegion) -> CLLocationDistance {
+        let halfLatitude = cell.span.latitudeDelta / 2 * metersPerDegreeLatitude
+        let halfLongitude = cell.span.longitudeDelta / 2
+            * metersPerDegreeLatitude * cos(cell.center.latitude * .pi / 180)
+        return (halfLatitude * halfLatitude + halfLongitude * halfLongitude).squareRoot()
+    }
+
+    nonisolated static let metersPerDegreeLatitude: CLLocationDistance = 111_320
 
     /// As `search`, but also reports how many results came back before filtering.
     private nonisolated static func searchCounting(
@@ -1400,13 +1569,26 @@ final class ParkDiscoveryService {
 
     // MARK: - Pure helpers
 
-    /// A categorised result has to be categorised as a park; an uncategorised one has to at
-    /// least be *named* like one, which is what keeps restaurants and parking garages out.
+    /// Whether a map result is a park, which now means: the map says so.
+    ///
+    /// It used to mean "the map says so, *or* it has a park word in its name", so that a park
+    /// the map never got round to categorising would still be found. Measured against the
+    /// real service, that fallback does not do what it was meant to. Over a dense cell of
+    /// Kirkland and Bellevue, every genuine park came back carrying `MKPOICategoryPark`, and
+    /// the only uncategorised results were apartment buildings — "Park Bellevue", "Park 88",
+    /// "Parkside Esterra Park", "Capella at Esterra Park". A block of flats named after the
+    /// park it overlooks is the *typical* uncategorised result, not the exception, so the
+    /// fallback admitted far more homes and offices than it ever rescued parks.
+    ///
+    /// The name is still worth having as a hint for a human — see `hasParkLikeName` — but it
+    /// is not enough on its own to file something in the catalogue.
     nonisolated static func isParkLike(name: String, category: MKPointOfInterestCategory?) -> Bool {
-        if let category { return parkLikeCategories.contains(category) }
-        return hasParkLikeName(name)
+        guard let category else { return false }
+        return parkLikeCategories.contains(category)
     }
 
+    /// Whether a name reads like a park's, for explaining a judgement rather than making one.
+    ///
     /// Whole-word matching on purpose: "Parking Garage" must not read as a park.
     nonisolated static func hasParkLikeName(_ name: String) -> Bool {
         let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)

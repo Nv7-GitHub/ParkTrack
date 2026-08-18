@@ -22,22 +22,43 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertFalse(ParkDiscoveryService.isParkLike(name: "Parkview Elementary", category: .school))
     }
 
-    func testUncategorisedResultsNeedAParkishName() {
-        for name in ["Cedar Park", "The Commons", "Wetland Preserve", "Botanical Gardens",
-                     "Ridge Trail", "North Playfield", "Hillside Arboretum", "Quiet Meadow",
-                     "Old Woods", "Village Green"] {
-            XCTAssertTrue(ParkDiscoveryService.isParkLike(name: name, category: nil), name)
-        }
-    }
-
-    func testUncategorisedNonParkNamesAreDropped() {
-        for name in ["Parking Garage", "Parkside Dental", "Riverside Apartments", "Main Street Deli"] {
+    /// A park word in the name is not enough on its own, and this is the case that proved it:
+    /// both of these are blocks of flats named after the park across the road, and both came
+    /// back from the real map service with no category at all.
+    func testUncategorisedResultsAreNotParksHoweverTheyAreNamed() {
+        for name in ["Parkside Esterra Park", "Capella at Esterra Park", "Park Bellevue", "Park 88",
+                     "Cedar Park", "The Commons", "Village Green"] {
             XCTAssertFalse(ParkDiscoveryService.isParkLike(name: name, category: nil), name)
         }
     }
 
-    func testParkishNameIgnoresCaseAndDiacritics() {
-        XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "parc JARDÍN gardens", category: nil))
+    /// The name test survives as a way of explaining a judgement, not making one.
+    func testAParkishNameIsStillRecognisableAsOne() {
+        XCTAssertTrue(ParkDiscoveryService.hasParkLikeName("parc JARDÍN gardens"))
+        XCTAssertTrue(ParkDiscoveryService.hasParkLikeName("Cedar Park"))
+        XCTAssertFalse(ParkDiscoveryService.hasParkLikeName("Parking Garage"))
+        XCTAssertFalse(ParkDiscoveryService.hasParkLikeName("Main Street Deli"))
+    }
+
+    // MARK: - Asking about a cell
+
+    /// A cell has to fit inside the reach of the request that asks about it — measured at
+    /// about a kilometre — corners included, and the widest cell is one at the equator.
+    func testEveryCellFitsInsideTheRequestReach() {
+        for latitude in stride(from: 0.0, through: 60.0, by: 15.0) {
+            let cell = ParkDiscoveryService.latticeCell(
+                containing: CLLocationCoordinate2D(latitude: latitude, longitude: 0)
+            )
+            let radius = ParkDiscoveryService.cellRequestRadius(for: cell)
+            XCTAssertLessThan(radius, 900, "cell at \(latitude)° needs \(radius)m of reach")
+            // And it must actually cover the cell, or the corners go unsearched.
+            let corner = CLLocation(
+                latitude: cell.center.latitude + cell.span.latitudeDelta / 2,
+                longitude: cell.center.longitude + cell.span.longitudeDelta / 2
+            )
+            let centre = CLLocation(latitude: cell.center.latitude, longitude: cell.center.longitude)
+            XCTAssertGreaterThanOrEqual(radius, corner.distance(from: centre) * 0.99)
+        }
     }
 
     // MARK: - Tiling

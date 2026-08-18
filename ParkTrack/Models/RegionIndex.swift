@@ -107,7 +107,13 @@ extension RegionIndex {
     /// before this is short by roughly that much. Those places show up under "Needs
     /// re-indexing" and read as partial until they have been swept again, because a number
     /// that cannot be defended should not be presented as though it can.
-    static let currentIndexerVersion = 2
+    /// Generation 3 is the first whose per-cell searches were bounded to the cell rather
+    /// than biased towards it. Every count before it was taken from answers about wherever
+    /// the phone happened to be, so a city away from home could be swept end to end and
+    /// come back with nothing; and every count, near or far, was marked "at least this many"
+    /// by a saturation test that measured the size of the response instead of the contents
+    /// of the cell. Neither number can be defended, so both are marked for re-indexing.
+    static let currentIndexerVersion = 3
 
     /// True for a record written by an older generation, which still names a place worth
     /// indexing but whose count can no longer be believed.

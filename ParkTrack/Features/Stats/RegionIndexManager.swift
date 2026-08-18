@@ -161,7 +161,7 @@ struct RegionIndexManager: View {
                                     "Needs re-indexing",
                                     subtitle: "\(stale.count) place\(stale.count == 1 ? "" : "s") counted by an older version"
                                 )
-                                Text("Those totals were counted with a weaker search that missed roughly one park in ten, so they read as partial until swept again. Ground already searched the current way is skipped, so this costs less than the first time. A county can still take a few minutes.")
+                                Text("Those totals came from searches that were only pointed at each area rather than confined to it, so the map often answered about wherever the phone was instead — a place away from home could be swept end to end and come back with almost nothing. They read as partial until swept again. A county can take a few minutes.")
                                     .font(.caption)
                                     .foregroundStyle(Theme.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)

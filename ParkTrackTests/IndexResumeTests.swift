@@ -209,6 +209,7 @@ final class IndexResumeTests: XCTestCase {
 final class IndexLatticeTests: XCTestCase {
 
     private let centre = CLLocationCoordinate2D(latitude: 37.7599, longitude: -122.4370)
+    private var probeDepth: Int { ParkDiscoveryService.regionProbeDepth(atLatitude: centre.latitude) }
 
     private func cell(_ coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
         ParkDiscoveryService.latticeCell(containing: coordinate)
@@ -245,10 +246,12 @@ final class IndexLatticeTests: XCTestCase {
         let shared = cell(centre)
         coverage.record(shared, resolution: shared.span.latitudeDelta)
 
+        // Somewhere else inside the same cell — measured from the cell rather than from an
+        // arbitrary coordinate, which otherwise happens to sit on a grid line.
         let fromElsewhere = ParkDiscoveryService.latticeCell(
             containing: CLLocationCoordinate2D(
-                latitude: centre.latitude + 0.0001,
-                longitude: centre.longitude + 0.0001
+                latitude: shared.center.latitude + shared.span.latitudeDelta / 4,
+                longitude: shared.center.longitude + shared.span.longitudeDelta / 4
             )
         )
         XCTAssertTrue(coverage.coversFinely(fromElsewhere, resolution: fromElsewhere.span.latitudeDelta))
@@ -282,6 +285,18 @@ final class IndexLatticeTests: XCTestCase {
         case empty
     }
 
+    /// How far a cell of each kind carries the sweep from the last one that belonged, as
+    /// `sweepDense` weighs it: nothing here is weaker evidence of a boundary than parks that
+    /// belong to the town next door.
+    private func probeAfter(_ ground: Ground, from probe: Int) -> Int {
+        switch ground {
+        case .belongs: return 0
+        case .empty: return probe + 1
+        case .elsewhere:
+            return probe + ParkDiscoveryService.probeCost(forSomewhereElseAtLatitude: centre.latitude)
+        }
+    }
+
     /// Models the sweep offline: grow from the centre, treat `ground` as what the map would
     /// say, and count the cells that would actually be searched.
     private func cellsSearched(
@@ -295,8 +310,8 @@ final class IndexLatticeTests: XCTestCase {
         while let (current, probe) = queue.first {
             queue.removeFirst()
             searched += 1
-            let nextProbe = ground(current.center) == .belongs ? 0 : probe + 1
-            guard nextProbe <= ParkDiscoveryService.regionProbeDepth else { continue }
+            let nextProbe = probeAfter(ground(current.center), from: probe)
+            guard nextProbe <= probeDepth else { continue }
             for neighbour in ParkDiscoveryService.latticeNeighbours(of: current) {
                 let key = ParkDiscoveryService.latticeKey(neighbour)
                 guard !visited.contains(key) else { continue }
@@ -396,8 +411,8 @@ final class IndexLatticeTests: XCTestCase {
                 coverage.record(current, resolution: current.span.latitudeDelta)
             }
 
-            let nextProbe = ground(current.center) == .belongs ? 0 : probe + 1
-            guard nextProbe <= ParkDiscoveryService.regionProbeDepth else { continue }
+            let nextProbe = probeAfter(ground(current.center), from: probe)
+            guard nextProbe <= probeDepth else { continue }
             for neighbour in ParkDiscoveryService.latticeNeighbours(of: current) {
                 let key = ParkDiscoveryService.latticeKey(neighbour)
                 guard !visited.contains(key) else { continue }
@@ -544,6 +559,7 @@ final class IndexLatticeTests: XCTestCase {
 final class SweepExpansionTests: XCTestCase {
 
     private let centre = CLLocationCoordinate2D(latitude: 47.6139, longitude: -122.2017)
+    private var probeDepth: Int { ParkDiscoveryService.regionProbeDepth(atLatitude: centre.latitude) }
 
     /// A cell first reached from a wall, with its probe nearly spent, has to be reachable
     /// again at full depth once a neighbour turns out to belong — otherwise the sweep stops
@@ -553,7 +569,7 @@ final class SweepExpansionTests: XCTestCase {
         var queue: [(MKCoordinateRegion, Int)] = []
 
         func expand(from cell: MKCoordinateRegion, probe: Int) {
-            guard probe <= ParkDiscoveryService.regionProbeDepth else { return }
+            guard probe <= probeDepth else { return }
             for neighbour in ParkDiscoveryService.latticeNeighbours(of: cell) {
                 let key = ParkDiscoveryService.latticeKey(neighbour)
                 if let seen = bestProbe[key], seen <= probe { continue }
@@ -564,7 +580,7 @@ final class SweepExpansionTests: XCTestCase {
 
         let start = ParkDiscoveryService.latticeCell(containing: centre)
         // Reached first from a wall, with its probe all but spent.
-        let spent = ParkDiscoveryService.regionProbeDepth
+        let spent = probeDepth
         expand(from: start, probe: spent)
         let target = try XCTUnwrap(queue.first).0
         let key = ParkDiscoveryService.latticeKey(target)
@@ -612,7 +628,7 @@ final class SweepExpansionTests: XCTestCase {
             let belongs = ground(cell.center)
             if belongs { hasFound = true; reachedThePlace += 1 }
             let next = (belongs || !hasFound) ? 0 : probe + 1
-            guard next <= ParkDiscoveryService.regionProbeDepth else { continue }
+            guard next <= probeDepth else { continue }
             for neighbour in ParkDiscoveryService.latticeNeighbours(of: cell) {
                 let key = ParkDiscoveryService.latticeKey(neighbour)
                 if let seen = bestProbe[key], seen <= next { continue }
@@ -663,7 +679,7 @@ final class SweepExpansionTests: XCTestCase {
                 }
             }
             let next = (isCity || !hasFound) ? 0 : probe + 1
-            guard next <= ParkDiscoveryService.regionProbeDepth else { continue }
+            guard next <= probeDepth else { continue }
             for neighbour in ParkDiscoveryService.latticeNeighbours(of: cell, includingDiagonals: next == 0) {
                 let key = ParkDiscoveryService.latticeKey(neighbour)
                 if let seen = bestProbe[key], seen <= next { continue }
@@ -704,7 +720,7 @@ final class SweepExpansionTests: XCTestCase {
         expand(probe: 0)
         let afterFirst = queued
         expand(probe: 0)
-        expand(probe: ParkDiscoveryService.regionProbeDepth)
+        expand(probe: probeDepth)
         XCTAssertEqual(queued, afterFirst, "Nothing was learnt, so nothing is queued")
     }
 }
@@ -713,26 +729,32 @@ final class SweepExpansionTests: XCTestCase {
 /// lookup was wrong rather than the ground empty.
 final class SeedingBudgetTests: XCTestCase {
 
+    /// Seattle's latitude, where a lattice cell is a third smaller than its degrees suggest.
+    private let latitude = 47.6
+
     private func budget(radiusMiles: Double) -> Int {
-        let cellArea = pow(ParkDiscoveryService.indexCellSpanDegrees * 111.0, 2)
-        let discCells = Double.pi * pow(radiusMiles * 1.609, 2) / max(cellArea, 0.0001)
-        return min(ParkDiscoveryService.maxIndexSearches / 2, max(48, Int(discCells * 2)))
+        ParkDiscoveryService.seedingBudget(radiusMiles: radiusMiles, latitude: latitude)
     }
 
     /// A city's centre is not reliably inside it — there is a Sammamish next to a lake
     /// called Sammamish — so the allowance has to cross the city's own radius.
     func testACityCanReachAcrossItsOwnRadius() {
-        let cellSideKm = ParkDiscoveryService.indexCellSpanDegrees * 111.0
-        let allowance = budget(radiusMiles: 5.5)
-        // Cells the hunt can afford, and how far out that reaches spreading from a point.
-        let reachKm = (Double(allowance / 2) * cellSideKm * cellSideKm / Double.pi).squareRoot()
+        let cellArea = ParkDiscoveryService.cellAreaSquareKilometres(atLatitude: latitude)
+        // One request per cell, spreading from a point: the reach is the radius of the disc
+        // the allowance buys.
+        let reachKm = (Double(budget(radiusMiles: 5.5)) * cellArea / Double.pi).squareRoot()
         XCTAssertGreaterThanOrEqual(reachKm, 5.5 * 1.609, "It has to be able to reach the edge")
     }
 
     /// A county's can be forty miles of farmland first, and giving up there would report a
     /// real place as one the map could not find.
     func testACountyGetsAMuchLargerAllowance() {
-        XCTAssertGreaterThan(budget(radiusMiles: 37), budget(radiusMiles: 5.5))
+        XCTAssertGreaterThan(budget(radiusMiles: 37), budget(radiusMiles: 1.5))
+    }
+
+    /// A cell is smaller away from the equator, so the same circle takes more of them.
+    func testTheAllowanceFollowsHowBigACellActuallyIs() {
+        XCTAssertGreaterThan(budget(radiusMiles: 3), ParkDiscoveryService.seedingBudget(radiusMiles: 3, latitude: 0))
     }
 
     /// However lost it gets, the hunt must leave something for the sweep it was starting.

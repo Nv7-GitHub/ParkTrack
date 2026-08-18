@@ -211,7 +211,7 @@ struct RegionProgressSheet: View {
                 Text("At least this many")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.textPrimary)
-                Text("Some searches in \(completion.name) came back full — the map returns only about twenty-five results each — so there are probably more parks than this. Carrying on covers any ground the last pass never reached, skipping everything it did, though it cannot get past the cap on a search that was already full.")
+                Text("Some areas of \(completion.name) held more parks than one search can answer with, so there are probably more than this. Carrying on covers any ground the last pass never reached, skipping everything it did.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

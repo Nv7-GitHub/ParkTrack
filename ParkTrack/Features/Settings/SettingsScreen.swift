@@ -20,6 +20,7 @@ struct SettingsScreen: View {
     @Query private var parks: [Park]
     @State private var isReviewingSuspects = false
     @State private var isFixingMarkedVisits = false
+    @State private var isReviewingExclusions = false
     /// Fetched in full because deleting them and reacting to their arrival both need the
     /// objects, not just a count.
     @Query private var visits: [Visit]
@@ -89,6 +90,7 @@ struct SettingsScreen: View {
     }
 
     private var suspiciousCount: Int { auditCounts.suspicious }
+    private var excludedCount: Int { (try? modelContext.fetchCount(FetchDescriptor<ExcludedPlace>())) ?? 0 }
 
     /// Counted by the store rather than by fetching and materialising every visit, which is
     /// all the old `@Query` was for.
@@ -121,6 +123,9 @@ struct SettingsScreen: View {
             }
             .sheet(isPresented: $isReviewingSuspects) {
             SuspiciousParksSheet()
+        }
+        .sheet(isPresented: $isReviewingExclusions) {
+            ExcludedPlacesSheet()
         }
         .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
@@ -497,6 +502,19 @@ struct SettingsScreen: View {
                         )
                     }
                     .disabled(suspiciousCount == 0)
+
+                    Button {
+                        isReviewingExclusions = true
+                    } label: {
+                        settingsRow(
+                            title: "Places you said aren't parks",
+                            detail: excludedCount == 0
+                                ? "Nothing struck off — remove one from its own page or from Tidy up"
+                                : "\(excludedCount) struck off and kept out of searches",
+                            systemImage: "xmark.bin",
+                            tint: Theme.sunset
+                        )
+                    }
 
                     Menu {
                         Button("Indexed areas · \(recheckCount(scoped: true)) left") {

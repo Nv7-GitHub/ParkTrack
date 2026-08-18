@@ -6,9 +6,15 @@ import SwiftData
 /// Nothing is deleted without being chosen. Entries with visits logged against them start
 /// unselected and say so, because deleting one throws away a record of somewhere the user
 /// says they went — which is worse than leaving a café in the list.
+///
+/// Removing one also strikes it off for good. The map has not changed its mind about what a
+/// place is, so a plain delete lasts only until the next sweep passes over that ground and
+/// files it again — which is what made tidying up feel like it had not worked. See
+/// `ExcludedPlace`.
 struct SuspiciousParksSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(ServiceHub.self) private var services
     @Query private var parks: [Park]
 
     @State private var selected: Set<String> = []
@@ -36,7 +42,7 @@ struct SuspiciousParksSheet: View {
                         } header: {
                             Text("\(suspects.count) look wrong")
                         } footer: {
-                            Text("These were added from map search results that weren't parks. Anything with visits logged against it is left unselected — removing it would delete those visits too.")
+                            Text("These came from map results that the map doesn't list as parks. Removing one also stops it being added back the next time this area is searched; you can let it back in from Settings. Anything with visits logged against it is left unselected — removing it would delete those visits too.")
                         }
                     }
                 }
@@ -68,9 +74,7 @@ struct SuspiciousParksSheet: View {
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(Theme.textPrimary)
                     HStack(spacing: 6) {
-                        if let label = ParkAudit.categoryLabel(for: park) {
-                            Text(label)
-                        }
+                        Text(ParkAudit.reason(for: park))
                         if park.visitCount > 0 {
                             Text("· \(park.visitCount) visit\(park.visitCount == 1 ? "" : "s") logged")
                                 .foregroundStyle(Theme.sunset)
@@ -103,7 +107,11 @@ struct SuspiciousParksSheet: View {
 
     private func deleteSelected() {
         for park in suspects where selected.contains(park.identifier) {
-            modelContext.delete(park)
+            if let discovery = services.discovery {
+                discovery.exclude(park)
+            } else {
+                modelContext.delete(park)
+            }
         }
         try? modelContext.save()
         selected = []

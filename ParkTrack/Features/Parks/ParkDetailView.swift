@@ -14,13 +14,16 @@ struct ParkDetailView: View {
     let park: Park
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(LocationProvider.self) private var location
     @Environment(AppRouter.self) private var router
+    @Environment(ServiceHub.self) private var services
 
     @State private var isLogging = false
     @State private var editingVisit: Visit?
     @State private var visitPendingDeletion: Visit?
     @State private var viewer: MediaViewerRequest?
+    @State private var isConfirmingNotAPark = false
 
     private var origin: CLLocation? { location.currentLocation }
 
@@ -121,6 +124,16 @@ struct ParkDetailView: View {
                 }
                 .accessibilityLabel(park.isWishlisted ? "Remove from wishlist" : "Add to wishlist")
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Not a park", systemImage: "xmark.bin", role: .destructive) {
+                        isConfirmingNotAPark = true
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("More")
+            }
         }
         .sheet(isPresented: $isLogging) {
             LogVisitSheet(park: park)
@@ -143,6 +156,21 @@ struct ParkDetailView: View {
             Button("Keep", role: .cancel) { visitPendingDeletion = nil }
         } message: {
             Text("Its notes and photos will be removed too. This can't be undone.")
+        }
+        .confirmationDialog(
+            "Remove \(park.name)?",
+            isPresented: $isConfirmingNotAPark,
+            titleVisibility: .visible
+        ) {
+            Button("Not a park", role: .destructive) { excludeThisPlace() }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            // Worth spelling out, because the alternative — deleting and watching it come
+            // back — is what sent the user here. Some places the map files as parks are not
+            // ones: a city's undeveloped land parcel, a private lawn, a housing development.
+            Text(park.visitCount > 0
+                 ? "The map lists this as a park. Removing it stops it being added back when this area is searched again, and deletes the \(park.visitCount) visit\(park.visitCount == 1 ? "" : "s") logged here. You can let it back in from Settings."
+                 : "The map lists this as a park. Removing it stops it being added back when this area is searched again. You can let it back in from Settings.")
         }
     }
 
@@ -340,6 +368,18 @@ struct ParkDetailView: View {
         let visit = Visit.undated(park: park)
         modelContext.insert(visit)
         try? modelContext.save()
+    }
+
+    /// Strikes a place off for good, rather than deleting it for the next sweep to restore.
+    private func excludeThisPlace() {
+        guard let discovery = services.discovery else {
+            modelContext.delete(park)
+            try? modelContext.save()
+            dismiss()
+            return
+        }
+        discovery.exclude(park)
+        dismiss()
     }
 
     private func toggleWishlist() {

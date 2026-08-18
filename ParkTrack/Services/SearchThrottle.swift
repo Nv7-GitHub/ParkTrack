@@ -30,12 +30,23 @@ actor SearchThrottle {
 
     /// Runs one search, waiting its turn first and backing off if MapKit says it's busy.
     func run(_ request: MKLocalSearch.Request) async throws -> MKLocalSearch.Response {
+        try await run { MKLocalSearch(request: request) }
+    }
+
+    /// The same, for the bounded points-of-interest request an index sweep asks each cell
+    /// with. It is a sibling of `MKLocalSearch.Request` rather than a subclass, but it goes
+    /// to the same service under the same rate limit, so it queues in the same line.
+    func run(_ request: MKLocalPointsOfInterestRequest) async throws -> MKLocalSearch.Response {
+        try await run { MKLocalSearch(request: request) }
+    }
+
+    private func run(_ makeSearch: @escaping () -> MKLocalSearch) async throws -> MKLocalSearch.Response {
         var attempt = 0
         while true {
             attempt += 1
             await waitForTurn()
             do {
-                let response = try await MKLocalSearch(request: request).start()
+                let response = try await makeSearch().start()
                 noteSuccess()
                 return response
             } catch {
