@@ -7,10 +7,9 @@ import SwiftData
 /// unselected and say so, because deleting one throws away a record of somewhere the user
 /// says they went — which is worse than leaving a café in the list.
 ///
-/// Removing one also strikes it off for good. The map has not changed its mind about what a
-/// place is, so a plain delete lasts only until the next sweep passes over that ground and
-/// files it again — which is what made tidying up feel like it had not worked. See
-/// `ExcludedPlace`.
+/// Removing one is a plain delete, and that is enough: everything here already fails the
+/// test a search result has to pass, so nothing will file it again. Only somewhere the map
+/// insists is a park needs striking off by name — see `ExcludedPlace`.
 struct SuspiciousParksSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -42,7 +41,7 @@ struct SuspiciousParksSheet: View {
                         } header: {
                             Text("\(suspects.count) look wrong")
                         } footer: {
-                            Text("These came from map results that the map doesn't list as parks. Removing one also stops it being added back the next time this area is searched; you can let it back in from Settings. Anything with visits logged against it is left unselected — removing it would delete those visits too.")
+                            Text("These came from map results that the map doesn't list as parks, so removing one is the end of it — searching this area again won't bring it back. Anything with visits logged against it is left unselected, because removing it would delete those visits too.")
                         }
                     }
                 }
@@ -105,15 +104,23 @@ struct SuspiciousParksSheet: View {
         selected = Set(suspects.filter { $0.visitCount == 0 }.map(\.identifier))
     }
 
+    /// Deleted, not struck off.
+    ///
+    /// Everything on this list fails the test discovery applies to a search result — that is
+    /// what put it here — so no sweep will ever file it again and there is nothing to
+    /// remember. Recording one anyway filled the "not parks" list with ninety cafés and
+    /// shops nobody had made a judgement about, and buried the handful of real decisions in
+    /// it. Striking a place off is for the other case: somewhere the map insists is a park
+    /// and the user says is not. See `ParkDetailView`.
     private func deleteSelected() {
         for park in suspects where selected.contains(park.identifier) {
-            if let discovery = services.discovery {
-                discovery.exclude(park)
-            } else {
-                modelContext.delete(park)
-            }
+            modelContext.delete(park)
         }
         try? modelContext.save()
+        // Every indexed place that counted one of these is now claiming a total that
+        // includes it. Recounting is free — it reads the store, not the map — so it happens
+        // here rather than waiting for someone to re-index.
+        services.regionIndexer?.recountIndexedRegions()
         selected = []
     }
 }

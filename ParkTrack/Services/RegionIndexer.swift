@@ -367,6 +367,32 @@ final class RegionIndexer {
         return record
     }
 
+    /// Re-totals every indexed place from what is in the store, without searching anything.
+    ///
+    /// A published total is a count of the parks on this device that belong to the place, so
+    /// removing parks makes it wrong — and a change to what counts as a park removes a lot
+    /// of them at once. Sweeping again would not fix it either: a sweep only ever adds, so
+    /// the entries taken out by the tidy-up sheet would stay uncounted until something
+    /// recounted, and the place would sit there claiming a total that included a robotics
+    /// academy.
+    ///
+    /// This is that recount. It touches no network, so it is the right migration for any
+    /// change that only ever *removes*: the swept ground is still swept and the searches
+    /// would find nothing new, so asking the user to re-index would be asking them to spend
+    /// several minutes re-confirming what is already known.
+    @discardableResult
+    func recountIndexedRegions() -> Int {
+        var changed = 0
+        for region in allIndexes() where region.indexedAt != nil {
+            let recounted = parkCount(matching: region.identifier, named: region.name, kind: region.kind)
+            guard recounted != region.parkCount else { continue }
+            region.parkCount = recounted
+            changed += 1
+        }
+        if changed > 0 { try? modelContext.save() }
+        return changed
+    }
+
     /// Parks the sweep found that actually belong to this region. Membership comes from the
     /// park's own placemark, so a sweep circle overlapping the next town over doesn't
     /// inflate the count.

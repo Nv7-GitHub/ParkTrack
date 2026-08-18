@@ -125,29 +125,19 @@ final class NotAParkTests: XCTestCase {
         )))
     }
 
-    /// Indoor activity centres the map files under "playground" were indexed as parks
-    /// before the filter learnt to tell them apart, so the ones already saved have to be
-    /// offered for removal rather than left sitting in the catalogue.
-    func testCommercialPlaygroundsAlreadyIndexedAreOfferedForRemoval() {
-        for name in ["Blaze Robotics Academy", "Pop Smart Academy"] {
+    /// Everything the playground category brought in has to be offered for removal, since a
+    /// sweep only ever adds and would leave them sitting there.
+    func testPlaygroundsAlreadyIndexedAreOfferedForRemoval() {
+        for name in ["Blaze Robotics Academy", "Pop Smart Academy", "Twinkle Land Play Cafe",
+                     "Inspiration Playground"] {
             let saved = park(
                 name: name,
                 category: ParkDiscoveryService.playgroundCategory.rawValue,
-                address: "Sammamish, WA, United States"
+                address: "Bellevue, WA, United States"
             )
             XCTAssertTrue(ParkAudit.isSuspicious(saved), name)
-            XCTAssertEqual(ParkAudit.reason(for: saved), "Listed as a playground, but reads as a business")
+            XCTAssertEqual(ParkAudit.reason(for: saved), "Listed as a playground — that covers play businesses too")
         }
-    }
-
-    /// A real playground inside a park stays put.
-    func testARealPlaygroundIsNotFlagged() {
-        let saved = park(
-            name: "Inspiration Playground",
-            category: ParkDiscoveryService.playgroundCategory.rawValue,
-            address: "Bellevue, WA, United States"
-        )
-        XCTAssertFalse(ParkAudit.isSuspicious(saved))
     }
 
     func testCafesAreStillFlagged() {
@@ -158,5 +148,71 @@ final class NotAParkTests: XCTestCase {
         )
         XCTAssertTrue(ParkAudit.isSuspicious(cafe))
         XCTAssertEqual(ParkAudit.reason(for: cafe), "The map calls this a cafe")
+    }
+}
+
+/// Removing parks makes every published total that counted them wrong, and a sweep only
+/// ever adds — so the fix has to be a recount rather than a re-index.
+@MainActor
+final class RecountAfterRemovalTests: XCTestCase {
+
+    func testRecountingFollowsWhatIsLeftInTheStore() throws {
+        let container = PersistenceController.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let discovery = ParkDiscoveryService(modelContext: context)
+        let indexer = RegionIndexer(modelContext: context, discovery: discovery)
+
+        for name in ["Pine Lake Park", "Dalton Park", "Blaze Robotics Academy"] {
+            let park = Park(identifier: name, name: name, latitude: 47.6, longitude: -122.0)
+            park.locality = "Sammamish"
+            park.administrativeArea = "WA"
+            context.insert(park)
+        }
+        let record = RegionIndex(
+            identifier: RegionIndex.identity(kind: .city, name: "Sammamish", container: "WA"),
+            kind: .city, name: "Sammamish", container: "WA", country: "United States",
+            center: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.0), radiusMeters: 7_662
+        )
+        record.parkCount = 3
+        record.indexedAt = Date()
+        record.indexerVersion = RegionIndex.currentIndexerVersion
+        context.insert(record)
+        try context.save()
+
+        // The tidy-up sheet removes the one that was never a park.
+        let junk = try XCTUnwrap(
+            try context.fetch(FetchDescriptor<Park>()).first { $0.name == "Blaze Robotics Academy" }
+        )
+        context.delete(junk)
+        try context.save()
+
+        XCTAssertEqual(record.parkCount, 3, "the published total still counts it")
+        XCTAssertEqual(indexer.recountIndexedRegions(), 1)
+        XCTAssertEqual(record.parkCount, 2, "recounting has to follow the removal")
+    }
+
+    /// And a recount that changes nothing writes nothing.
+    func testAnUnchangedTotalIsLeftAlone() throws {
+        let container = PersistenceController.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let indexer = RegionIndexer(
+            modelContext: context,
+            discovery: ParkDiscoveryService(modelContext: context)
+        )
+        let park = Park(identifier: "p", name: "Pine Lake Park", latitude: 47.6, longitude: -122.0)
+        park.locality = "Sammamish"
+        park.administrativeArea = "WA"
+        context.insert(park)
+        let record = RegionIndex(
+            identifier: RegionIndex.identity(kind: .city, name: "Sammamish", container: "WA"),
+            kind: .city, name: "Sammamish", container: "WA", country: "United States",
+            center: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.0), radiusMeters: 7_662
+        )
+        record.parkCount = 1
+        record.indexedAt = Date()
+        context.insert(record)
+        try context.save()
+
+        XCTAssertEqual(indexer.recountIndexedRegions(), 0)
     }
 }

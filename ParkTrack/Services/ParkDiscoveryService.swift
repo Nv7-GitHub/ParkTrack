@@ -298,31 +298,25 @@ final class ParkDiscoveryService {
     /// for parks and playgrounds returned five, the extra two being Inspiration Playground
     /// and Kids' Cove. Those are areas *inside* a park rather than parks in their own right,
     /// which is a fair thing to collect separately.
-    private nonisolated static let parkLikeCategories: Set<MKPointOfInterestCategory> = [
-        .park,
-        .nationalPark,
-        playgroundCategory
-    ]
+    /// What the map may call something for it to count as a park.
+    ///
+    /// Just parks. `playground` was tried and taken out again, and the reason is worth
+    /// keeping: the category is not about playgrounds. Apple files public play areas, mall
+    /// play areas and commercial children's businesses under it alike, and indexing
+    /// collected Blaze Robotics Academy, Pop Smart Academy and Twinkle Land Play Cafe as
+    /// parks. Nothing in the data separates them — Inspiration Playground and Twinkle Land
+    /// Play Cafe both carry a street number, a street, a phone number and a URL, and the
+    /// most park-like of the lot, Kids' Cove, is at 250 Bellevue Square, inside a shopping
+    /// centre. A list of business words in the name was tried next and leaked twice.
+    ///
+    /// Little is lost. A playground inside a park is already counted as that park, which is
+    /// separately categorised: Meydenbauer Bay Park is `.park` and stays, while the
+    /// "Meydenbauer Park" playground within it was the duplicate.
+    private nonisolated static let parkLikeCategories: Set<MKPointOfInterestCategory> = [.park, .nationalPark]
 
-    /// Undeclared by the SDK, but the service returns it and a filter built from the raw
-    /// value works: over one patch of downtown Bellevue, asking for parks alone returned
-    /// three results and asking for parks and playgrounds returned five, the extra two being
-    /// Inspiration Playground and Kids' Cove.
+    /// Undeclared by the SDK, but the service returns it — so a saved park may carry it, and
+    /// the tidy-up sheet has to recognise it to offer those for removal.
     nonisolated static let playgroundCategory = MKPointOfInterestCategory(rawValue: "MKPOICategoryPlayground")
-
-    /// Words that mean a playground is somebody's business rather than somewhere to go.
-    ///
-    /// The playground category is not only used for playgrounds. Apple files indoor
-    /// children's activity centres under it too, and indexing Sammamish duly collected Blaze
-    /// Robotics Academy and Pop Smart Academy as parks. Those are worse than ordinary
-    /// mistakes because they pass the filter, so the tidy-up sheet cannot even offer them.
-    ///
-    /// Deliberately small, and read only for that one ambiguous category: `.park` is not
-    /// second-guessed by name, or Central Park Conservancy-style names would start failing.
-    private nonisolated static let businessWords: Set<String> = [
-        "academy", "school", "preschool", "daycare", "gym", "gymnastics", "studio",
-        "institute", "tutoring", "learning", "indoor", "club"
-    ]
 
     /// Words that make an uncategorised map result plausibly a park.
     ///
@@ -1785,18 +1779,8 @@ final class ParkDiscoveryService {
     /// The name is still worth having as a hint for a human — see `hasParkLikeName` — but it
     /// is not enough on its own to file something in the catalogue.
     nonisolated static func isParkLike(name: String, category: MKPointOfInterestCategory?) -> Bool {
-        guard let category else { return hasParkLikeName(name) }
-        guard parkLikeCategories.contains(category) else { return false }
-        // One category is shared between places and businesses; see `businessWords`.
-        if category == playgroundCategory, namesABusiness(name) { return false }
-        return true
-    }
-
-    /// Whether a name reads as a company rather than a place.
-    nonisolated static func namesABusiness(_ name: String) -> Bool {
-        let folded = name.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-        let words = folded.split(whereSeparator: { !$0.isLetter }).map(String.init)
-        return words.contains { businessWords.contains($0) }
+        if let category { return parkLikeCategories.contains(category) }
+        return hasParkLikeName(name)
     }
 
     /// Whether a name reads like a park's, for explaining a judgement rather than making one.
