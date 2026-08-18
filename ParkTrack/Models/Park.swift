@@ -37,6 +37,14 @@ final class Park {
     /// later without re-geocoding the whole catalogue.
     var regionInferredAt: Date?
 
+    /// Last time the geocoder was asked to confirm where this park actually is.
+    ///
+    /// Distinct from `regionResolvedAt`, which only says the fields were filled in — by a
+    /// lookup, by a search result, or by a guess from the neighbours. This says the answer
+    /// has been checked against the map itself, and it is what lets a recheck work through a
+    /// catalogue a batch at a time instead of starting from the same parks every run.
+    var regionVerifiedAt: Date?
+
     @Relationship(deleteRule: .cascade, inverse: \Visit.park)
     var visits: [Visit]? = []
 

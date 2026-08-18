@@ -499,13 +499,14 @@ struct SettingsScreen: View {
                     .disabled(suspiciousCount == 0)
 
                     Menu {
-                        Button("Indexed areas only · \(recheckCount(scoped: true))") {
+                        Button("Indexed areas · \(recheckCount(scoped: true)) left") {
                             Task { await recheckPlacements(scoped: true) }
                         }
-                        .disabled(indexedScopes.isEmpty)
-                        Button("Every park · \(recheckCount(scoped: false)), \(recheckMinutes) min") {
+                        .disabled(indexedScopes.isEmpty || recheckCount(scoped: true) == 0)
+                        Button("Every park · \(recheckCount(scoped: false)) left, \(recheckMinutes) min") {
                             Task { await recheckPlacements(scoped: false) }
                         }
+                        .disabled(recheckCount(scoped: false) == 0)
                     } label: {
                         settingsRow(
                             title: "Recheck park locations",
@@ -645,7 +646,11 @@ struct SettingsScreen: View {
     }
 
     private var recheckDetail: String {
-        "Moves any park filed under the wrong city. Indexed areas are the ones publishing a total"
+        let remaining = recheckCount(scoped: false)
+        guard remaining > 0 else {
+            return "Every park has been checked against the map"
+        }
+        return "Moves any park filed under the wrong city · \(remaining) still to check"
     }
 
     private func recheckPlacements(scoped: Bool) async {
@@ -662,9 +667,11 @@ struct SettingsScreen: View {
         }
 
         auditRevision += 1
-        show(status: corrected == 0
-             ? "Every park checked was already in the right place."
-             : "Moved \(Format.parkCount(corrected)) to the right city. Run it again to check more.")
+        let remaining = recheckCount(scoped: scoped)
+        let moved = corrected == 0
+            ? "Every park in that batch was already in the right place."
+            : "Moved \(Format.parkCount(corrected)) to the right city."
+        show(status: remaining == 0 ? "\(moved) All done." : "\(moved) \(remaining) left — run it again.")
     }
 
     private func resolveRegions() async {

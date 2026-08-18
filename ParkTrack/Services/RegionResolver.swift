@@ -30,7 +30,8 @@ final class RegionResolver {
     func reverifiableParkCount(context: ModelContext, within scopes: Set<String>?) -> Int {
         let all = (try? context.fetch(FetchDescriptor<Park>())) ?? []
         return all.count { park in
-            guard park.locality != nil else { return false }
+            // Only what is still to do, so the figure on screen falls as the work is done.
+            guard park.locality != nil, park.regionVerifiedAt == nil else { return false }
             guard let scopes else { return true }
             return RegionKind.allCases.contains { kind in
                 RegionIndex.identity(kind: kind, park: park).map(scopes.contains) ?? false
@@ -61,7 +62,7 @@ final class RegionResolver {
         guard limit > 0 else { return 0 }
         let all = (try? context.fetch(FetchDescriptor<Park>())) ?? []
         let candidates = all
-            .filter { $0.locality != nil }
+            .filter { $0.locality != nil && $0.regionVerifiedAt == nil }
             .filter { park in
                 guard let scopes else { return true }
                 return RegionKind.allCases.contains { kind in
@@ -85,7 +86,10 @@ final class RegionResolver {
             onProgress?(checked, candidates.count)
 
             await throttle()
-            guard let placemark = try? await geocoder.reverseGeocodeLocation(park.location).first else { continue }
+            guard let placemark = try? await geocoder.reverseGeocodeLocation(park.location).first else {
+                // Left unverified so a later run tries again; it is a refusal, not an answer.
+                continue
+            }
             let locality = placemark.locality?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
             guard let locality, !locality.isEmpty else { continue }
 
@@ -96,9 +100,11 @@ final class RegionResolver {
                 park.country = placemark.country
                 corrected += 1
             }
-            // Checked against the geocoder now, so it is no longer a guess either way.
+            // Checked against the geocoder now, so it is no longer a guess either way — and
+            // marked, so the next batch starts where this one stopped rather than here.
             park.regionInferredAt = nil
             park.regionResolvedAt = Date()
+            park.regionVerifiedAt = Date()
         }
         if context.hasChanges { try? context.save() }
         return corrected
