@@ -106,7 +106,7 @@ final class UndatedVisitTests: XCTestCase {
 
         let records = StatsEngine.records(parks: allParks(), origin: nil, now: now, calendar: calendar)
         XCTAssertEqual(records.totalParks, 1)
-        XCTAssertEqual(records.totalVisits, 1)
+        XCTAssertEqual(records.totalVisits, 0, "A mark puts the park in the collection; it is not a trip")
         XCTAssertEqual(records.distinctCities, 1)
     }
 

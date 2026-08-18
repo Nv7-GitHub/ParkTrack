@@ -66,6 +66,7 @@
 		809E64475E30D94A01FEB4DB /* StatsSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCE74713534F16A48A4109C5 /* StatsSupport.swift */; };
 		81319F37A091FEB664DC1549 /* ParkQuickLookSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FC4C6EBC344E7CE81331F62 /* ParkQuickLookSheet.swift */; };
 		85C2DAEF6B8404B8E49AD548 /* Park.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71DBCFC0F44B633C7621FF4 /* Park.swift */; };
+		89ACF347ECB5781063923ED0 /* BellevueComparisonProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86BB962DD310F38635295DEB /* BellevueComparisonProbe.swift */; };
 		89E16B290B4D6600B4598E20 /* YearInReviewCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 272D2DC7BF500CE72EBAD96D /* YearInReviewCard.swift */; };
 		8A48804891E6B8E08EEE40B3 /* HomeRadiusRings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C015AB6AF097C84936926576 /* HomeRadiusRings.swift */; };
 		8DD7BEA5FF8BA9BDD2A53938 /* FixMarkedVisitsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EE682B8C292FB2A0DBDBA3 /* FixMarkedVisitsSheet.swift */; };
@@ -170,6 +171,7 @@
 		8179CEC55FB21D4093286CB1 /* HomeParkSearchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeParkSearchSheet.swift; sourceTree = "<group>"; };
 		83D3E7E8E9AF5BA01CC31590 /* ThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailCache.swift; sourceTree = "<group>"; };
 		83E5683236CB070B1FC76925 /* SearchThrottle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchThrottle.swift; sourceTree = "<group>"; };
+		86BB962DD310F38635295DEB /* BellevueComparisonProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BellevueComparisonProbe.swift; sourceTree = "<group>"; };
 		8FE11CE5D93DE3E856BDCE2A /* StatBreakdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatBreakdownTests.swift; sourceTree = "<group>"; };
 		906113B637ACE062E0A628B1 /* FriendsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsScreen.swift; sourceTree = "<group>"; };
 		908F06FE00BA0831BEE6CAC2 /* SavedPlaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlaceTests.swift; sourceTree = "<group>"; };
@@ -261,6 +263,7 @@
 		2B0AD788209515ADDF29F99D /* ParkTrackTests */ = {
 			isa = PBXGroup;
 			children = (
+				86BB962DD310F38635295DEB /* BellevueComparisonProbe.swift */,
 				9FF9FB2F874BFC551EBC8939 /* CacheInvalidationTests.swift */,
 				2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */,
 				B9603E558AF361ACC9F4D3AB /* IndexResumeTests.swift */,
@@ -703,6 +706,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				89ACF347ECB5781063923ED0 /* BellevueComparisonProbe.swift in Sources */,
 				8DF7125B92A7063F0C390DEC /* CacheInvalidationTests.swift in Sources */,
 				16030B0B3C22F71DD428417F /* DiscoveryTests.swift in Sources */,
 				08BD2793F3FABA11EE4E8E0D /* IndexResumeTests.swift in Sources */,

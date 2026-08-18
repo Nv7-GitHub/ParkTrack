@@ -42,7 +42,7 @@ struct StatBreakdownSheet: View {
         var emptyMessage: String {
             switch self {
             case .visitedParks: return "Log a visit and the park lands here."
-            case .allVisits: return "Nothing logged yet."
+            case .allVisits: return "Nothing logged yet. Parks you marked visited without a date aren't trips."
             case .newThisMonth: return "No park's first visit has fallen in this month yet."
             case .newThisYear: return "No park's first visit has fallen in this year yet."
             case .cities: return "Cities appear once the map has named where your parks are."
@@ -182,7 +182,8 @@ struct StatBreakdownSheet: View {
             parks.map { ($0.identifier, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        return parks.flatMap { $0.visits ?? [] }
+        // Dated visits only, matching the figure that opens this list.
+        return parks.flatMap(\.datedVisits)
             .orderedByRecency()
             .map { visit in
                 let park = visit.park.flatMap { byIdentifier[$0.identifier] }

@@ -161,13 +161,15 @@ final class StatBreakdownTests: XCTestCase {
         XCTAssertEqual(listed.last?.trailing, "No date")
     }
 
-    func testUndatedVisitsSortToTheEndOfTheVisitList() {
+    /// A mark is not a trip, so it is in neither the figure nor the list.
+    func testMarkedParksAreNotVisits() {
         makePark("Dated", city: "Redmond", state: "WA", visits: [date(2026, 6, 2)])
         makePark("Marked", city: "Redmond", state: "WA", marked: true)
 
-        let listed = rows(.allVisits, records: records())
-        XCTAssertEqual(listed.count, 2)
-        XCTAssertEqual(listed.last?.trailing, "No date")
+        let records = records()
+        XCTAssertEqual(records.totalVisits, 1, "One logged trip")
+        XCTAssertEqual(records.totalParks, 2, "…but both parks are in the collection")
+        XCTAssertEqual(rows(.allVisits, records: records).count, 1)
     }
 
     // MARK: - Streaks

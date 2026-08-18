@@ -272,11 +272,21 @@ final class IndexLatticeTests: XCTestCase {
 
     // MARK: - Following the shape
 
-    /// Models the sweep offline: grow from the centre, treat `isInPlace` as what the map
-    /// would say, and count the cells that would actually be searched.
+    /// What a cell turns out to be when it is searched.
+    enum Ground {
+        /// A park in the place being indexed.
+        case belongs
+        /// Parks, but all of them somewhere else.
+        case elsewhere
+        /// Nothing at all — water, an airfield, a stretch of nowhere.
+        case empty
+    }
+
+    /// Models the sweep offline: grow from the centre, treat `ground` as what the map would
+    /// say, and count the cells that would actually be searched.
     private func cellsSearched(
         radiusMeters: CLLocationDistance,
-        isInPlace: (CLLocationCoordinate2D) -> Bool
+        ground: (CLLocationCoordinate2D) -> Ground
     ) -> Int {
         var queue: [(MKCoordinateRegion, Int)] = [(cell(centre), 0)]
         var visited: Set<Int64> = [ParkDiscoveryService.latticeKey(queue[0].0)]
@@ -285,8 +295,7 @@ final class IndexLatticeTests: XCTestCase {
         while let (current, probe) = queue.first {
             queue.removeFirst()
             searched += 1
-            let belongs = isInPlace(current.center)
-            let nextProbe = belongs ? 0 : probe + 1
+            let nextProbe = ground(current.center) == .belongs ? 0 : probe + 1
             guard nextProbe <= ParkDiscoveryService.regionProbeDepth else { continue }
             for neighbour in ParkDiscoveryService.latticeNeighbours(of: current) {
                 let key = ParkDiscoveryService.latticeKey(neighbour)
@@ -309,10 +318,10 @@ final class IndexLatticeTests: XCTestCase {
 
         let shaped = cellsSearched(radiusMeters: geocodedRadius) { coordinate in
             CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                .distance(from: origin) <= cityRadius
+                .distance(from: origin) <= cityRadius ? .belongs : .elsewhere
         }
         // What filling the circle costs, which is what the sweep used to do.
-        let wholeCircle = cellsSearched(radiusMeters: geocodedRadius) { _ in true }
+        let wholeCircle = cellsSearched(radiusMeters: geocodedRadius) { _ in .belongs }
 
         XCTAssertLessThan(shaped, wholeCircle / 4, "Following the shape has to be dramatically cheaper")
         XCTAssertLessThanOrEqual(
@@ -333,11 +342,31 @@ final class IndexLatticeTests: XCTestCase {
         // Land, a 2 km channel, then more land.
         let reached = cellsSearched(radiusMeters: 30_000) { coordinate in
             let distance = metres(coordinate)
-            return distance <= 2_000 || (distance >= 4_000 && distance <= 6_000)
+            return distance <= 2_000 || (distance >= 4_000 && distance <= 6_000) ? .belongs : .empty
         }
-        let nearSideOnly = cellsSearched(radiusMeters: 30_000) { metres($0) <= 2_000 }
+        let nearSideOnly = cellsSearched(radiusMeters: 30_000) { metres($0) <= 2_000 ? .belongs : .elsewhere }
 
         XCTAssertGreaterThan(reached, nearSideOnly, "The far bank has to be reached across the channel")
+    }
+
+    /// The reported failure: a city on the coast spent its entire budget sweeping the sea,
+    /// because empty ground was treated as neither here nor there and so never ended the
+    /// expansion.
+    func testASweepDoesNotRunAwayIntoEmptyGround() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        let coastal = cellsSearched(radiusMeters: 30_000) { coordinate in
+            // Land to the north, open water everywhere else — San Francisco, roughly.
+            let distance = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin)
+            return (distance <= 3_000 && coordinate.latitude >= centre.latitude) ? .belongs : .empty
+        }
+
+        XCTAssertLessThanOrEqual(
+            coastal,
+            ParkDiscoveryService.maxIndexSearches,
+            "The sea is not part of the city and must not be swept to the horizon"
+        )
+        print("PLAN coastal=\(coastal)")
     }
 
     /// …but not so far that it wanders into the next town.
@@ -345,7 +374,7 @@ final class IndexLatticeTests: XCTestCase {
         let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
         let reached = cellsSearched(radiusMeters: 30_000) { coordinate in
             CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-                .distance(from: origin) <= 2_000
+                .distance(from: origin) <= 2_000 ? .belongs : .elsewhere
         }
         XCTAssertLessThan(reached, 120, "A sweep must not keep going once the place has ended")
     }

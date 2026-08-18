@@ -409,9 +409,10 @@ enum StatsEngine {
         calendar: Calendar
     ) -> Records {
         let visited = visitedParks(parks)
-        // Counts may include undated visits — they happened. Anything that answers "when"
-        // may not, so those figures go through `datedVisits` instead.
-        let allVisits = visited.flatMap { $0.visits ?? [] }
+        // Only logged trips. A park marked visited says the park belongs in the collection,
+        // which is what `totalParks` counts; it does not describe a trip, and counting it as
+        // one made "total visits" climb by a hundred the afternoon a backlog was ticked off.
+        let allVisits = visited.flatMap(\.datedVisits)
 
         let firsts = visited.compactMap(\.firstVisitDate)
         let parksThisMonth = firsts.filter { calendar.isDate($0, equalTo: now, toGranularity: .month) }.count

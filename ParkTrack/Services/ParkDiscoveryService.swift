@@ -686,12 +686,17 @@ final class ParkDiscoveryService {
                 persistCoverage()
             }
 
-            // Empty ground is not evidence of anything: a cell of water returns nothing at
-            // all, and a place is allowed to have water in the middle of it. Only results
-            // that belong somewhere else say the sweep has left the place.
+            // Only a cell that actually turned up a park in this place resets the probe.
+            //
+            // Treating an empty cell as neutral instead — on the grounds that a city is
+            // allowed to have water in the middle of it — meant expansion never terminated
+            // through empty ground at all, and ran to the circle backstop. San Francisco is
+            // surrounded by water on three sides and Bellevue sits between two lakes: both
+            // spent their whole budget sweeping the sea. A place is still allowed its
+            // internal water, because `regionProbeDepth` carries the sweep across a couple
+            // of cells of nothing before it gives up.
             let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
-            let isElsewhere = belongsToRegion != nil && !belongs && !saved.isEmpty
-            expand(from: cell, probe: isElsewhere ? probe + 1 : (belongs ? 0 : probe))
+            expand(from: cell, probe: belongs ? 0 : probe + 1)
 
             report()
         }
