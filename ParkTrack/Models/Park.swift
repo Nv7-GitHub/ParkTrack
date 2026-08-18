@@ -29,6 +29,14 @@ final class Park {
     /// Last time a reverse-geocode filled in the region fields, so we don't re-run it forever.
     var regionResolvedAt: Date?
 
+    /// Set when the region came from nearby parks rather than from this park's own placemark.
+    ///
+    /// Inference is a shortcut around a geocoder that answers about once a second, and it is
+    /// usually right — but it guesses, and a guess that lands on the wrong side of a river
+    /// quietly adds a park to another city's total. Marking them means they can be checked
+    /// later without re-geocoding the whole catalogue.
+    var regionInferredAt: Date?
+
     @Relationship(deleteRule: .cascade, inverse: \Visit.park)
     var visits: [Visit]? = []
 

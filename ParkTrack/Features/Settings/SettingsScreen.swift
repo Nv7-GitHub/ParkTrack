@@ -23,6 +23,7 @@ struct SettingsScreen: View {
     /// Fetched in full because deleting them and reacting to their arrival both need the
     /// objects, not just a count.
     @Query private var visits: [Visit]
+    @Query private var regionIndexes: [RegionIndex]
 
     // The data card's three figures each walked the whole catalogue on every body
     // evaluation — and the suspect check runs a category match per park — so scrolling this
@@ -498,6 +499,18 @@ struct SettingsScreen: View {
                     .disabled(suspiciousCount == 0)
 
                     Button {
+                        Task { await recheckPlacements() }
+                    } label: {
+                        settingsRow(
+                            title: "Recheck park locations",
+                            detail: recheckDetail,
+                            systemImage: "mappin.and.ellipse",
+                            tint: Theme.moss
+                        )
+                    }
+                    .disabled(activity != nil || indexedScopes.isEmpty)
+
+                    Button {
                         isFixingMarkedVisits = true
                     } label: {
                         settingsRow(
@@ -592,6 +605,52 @@ struct SettingsScreen: View {
         let added = max(0, storedParkCount() - before)
         auditRevision += 1
         show(status: added == 0 ? "No new parks found nearby." : "Found \(Format.parkCount(added)).")
+    }
+
+    /// Verifies where parks actually are, correcting any placed by inference.
+    ///
+    /// Parks with no placemark of their own borrow one from their neighbours, which is fast
+    /// and usually right — but near a boundary with nothing on the far side of it, every
+    /// neighbour can agree and every neighbour can be wrong. The Commonwealth Avenue Mall is
+    /// in Boston, a kilometre across the Charles from Cambridge, and was being counted
+    /// towards Cambridge.
+    ///
+    /// The geocoder answers about once a second, so this works through a batch at a time and
+    /// says what it did. Run it again to continue.
+    /// Only the places whose totals claim to be authoritative. Checking a whole catalogue
+    /// means one geocode per park at about a second each — tens of minutes for a few
+    /// thousand, and well into the geocoder's own limits — while the indexed places are
+    /// usually a handful and are the only ones publishing a number.
+    private var indexedScopes: Set<String> {
+        Set(regionIndexes.filter(\.isIndexed).map(\.identifier))
+    }
+
+    private var recheckDetail: String {
+        let scopes = indexedScopes
+        guard !scopes.isEmpty else {
+            return "Index a place first — this checks the parks counted by an indexed area"
+        }
+        let count = RegionResolver.shared.reverifiableParkCount(context: modelContext, within: scopes)
+        return "\(Format.parkCount(count)) in your \(scopes.count) indexed \(scopes.count == 1 ? "area" : "areas"), about a second each"
+    }
+
+    private func recheckPlacements() async {
+        errorMessage = nil
+        activity = "Checking where parks are…"
+        defer { activity = nil }
+
+        let corrected = await RegionResolver.shared.reverifyRegions(
+            context: modelContext,
+            limit: 150,
+            within: indexedScopes
+        ) { checked, total in
+            activity = "Checking park \(checked) of \(total)…"
+        }
+
+        auditRevision += 1
+        show(status: corrected == 0
+             ? "Every park checked was already in the right place."
+             : "Moved \(Format.parkCount(corrected)) to the right city. Run it again to check more.")
     }
 
     private func resolveRegions() async {
