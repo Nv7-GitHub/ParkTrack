@@ -344,6 +344,8 @@ final class RegionIndexer {
         // which the result filter then discards. Recording that as a completed index would
         // publish a total of zero, including to friends racing against it.
         let count = parkCount(matching: identifier, kind: kind)
+        // Also catches a sweep that was refused rather than answered: throttled searches
+        // return nothing, and nothing looks exactly like an empty city.
         guard count > 0 else {
             record.lastError = "The map returned no parks in \(name). It may not have understood the area — try again."
             lastError = record.lastError

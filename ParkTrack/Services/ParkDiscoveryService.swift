@@ -488,12 +488,18 @@ final class ParkDiscoveryService {
     /// sweep spent about 1.5 seconds per search against a 320 ms spacing, which is to say
     /// four fifths of it waiting. Overlapping them fills that gap without asking the map
     /// service for anything faster than it was already getting.
-    /// Three, not more. Six was measured too: the map service throttled hard, the sweep
-    /// gave up a fifth of the way in, and Bellevue came back with 29 parks instead of 69.
-    /// Sequential was managing about two thirds of a request a second, so three in flight
-    /// against a 320 ms spacing is already several times the traffic — past that the service
-    /// simply refuses, and a refusal costs a retry and a backoff rather than a result.
-    nonisolated static let concurrentCellSearches = 3
+    /// How many cells a sweep works on at once.
+    ///
+    /// One — because a cell is already two searches, asked together, so this is two requests
+    /// in flight and not one. Setting it to three meant six, which is precisely the level
+    /// measured to fail: the map service refuses, refused searches come back with no
+    /// candidates at all, and a sweep reading no candidates as "not this place" walls itself
+    /// in and finishes almost immediately having found nothing. Indexing Boston did exactly
+    /// that — sixty areas, zero parks.
+    ///
+    /// Two in flight still covers the round trip that sequential searching spent idle, which
+    /// was most of the win.
+    nonisolated static let concurrentCellSearches = 1
 
     // MARK: - The index lattice
 
@@ -707,6 +713,9 @@ final class ParkDiscoveryService {
                     order.append(park.identifier)
                 }
 
+                // A refusal is not an answer. Recording it as swept, or letting its empty
+                // result end the expansion, is how a throttled sweep convinced itself a city
+                // had no parks in it.
                 if outcome.failure != nil {
                     lastError = outcome.failure
                     batchFailures += 1
