@@ -243,33 +243,59 @@ final class RegionIndexer {
         }
 
         let identifier = RegionIndex.identity(kind: kind, name: name, container: container)
-        var resolved = placemark
-        if resolved == nil {
-            resolved = await geocode([name, container].compactMap { $0 }.joined(separator: ", "))
-        }
-        guard let center = resolved?.location?.coordinate ?? fallbackCenter else {
-            lastError = "Couldn't work out where \(name) is."
-            return nil
+        let existing = index(for: identifier)
+
+        // A place is geocoded once and then keeps the centre and radius it was given.
+        //
+        // The tile grid is derived entirely from those two numbers, and swept ground is
+        // matched by containment — so a centre that moves even a few metres shifts every
+        // tile off the ground already searched, and not one of them can be skipped. Since
+        // `indexPlace` re-geocoded on every attempt, and `CLGeocoder` does not answer
+        // identically twice, resuming a large region started again from nothing however
+        // faithfully its coverage had been saved.
+        //
+        // It is also what the number means: the radius is the area the count is a count
+        // *of*, and it is shared with friends racing the same place. It must not drift.
+        let center: CLLocationCoordinate2D
+        let radius: CLLocationDistance
+        let record: RegionIndex
+
+        if let existing, existing.radiusMeters > 0, CLLocationCoordinate2DIsValid(existing.center) {
+            center = existing.center
+            radius = existing.radiusMeters
+            record = existing
+        } else {
+            var resolved = placemark
+            if resolved == nil {
+                resolved = await geocode([name, container].compactMap { $0 }.joined(separator: ", "))
+            }
+            guard let resolvedCenter = resolved?.location?.coordinate ?? fallbackCenter else {
+                lastError = "Couldn't work out where \(name) is."
+                return nil
+            }
+            center = resolvedCenter
+            radius = Self.radiusMeters(for: resolved, kind: kind)
+
+            if let existing {
+                existing.centerLatitude = center.latitude
+                existing.centerLongitude = center.longitude
+                existing.radiusMeters = radius
+                record = existing
+            } else {
+                let fresh = RegionIndex(
+                    identifier: identifier,
+                    kind: kind,
+                    name: name,
+                    container: container,
+                    country: country ?? resolved?.country,
+                    center: center,
+                    radiusMeters: radius
+                )
+                modelContext.insert(fresh)
+                record = fresh
+            }
         }
 
-        let radius = Self.radiusMeters(for: resolved, kind: kind)
-        let record = index(for: identifier) ?? {
-            let fresh = RegionIndex(
-                identifier: identifier,
-                kind: kind,
-                name: name,
-                container: container,
-                country: country ?? resolved?.country,
-                center: center,
-                radiusMeters: radius
-            )
-            modelContext.insert(fresh)
-            return fresh
-        }()
-
-        record.centerLatitude = center.latitude
-        record.centerLongitude = center.longitude
-        record.radiusMeters = radius
         record.isIndexing = true
         record.lastError = nil
         activeRegionName = record.displayName

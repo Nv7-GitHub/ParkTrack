@@ -252,7 +252,7 @@ final class ParkDiscoveryService {
     /// Stop once this many levels in a row come back with nothing but failures, so a dead
     /// network ends the sweep instead of grinding through the rest of the plan.
     private nonisolated static let maxFailedLevels = 2
-    private nonisolated static let minimumSweepRadiusMiles = 0.25
+    nonisolated static let minimumSweepRadiusMiles = 0.25
 
     private nonisolated static let parkLikeCategories: Set<MKPointOfInterestCategory> = [.park, .nationalPark]
 
@@ -474,6 +474,24 @@ final class ParkDiscoveryService {
     /// all, however many times it was resumed.
     nonisolated static let maxSplitSide = 4
 
+    /// The ground one index covers, derived from nothing but its centre and radius.
+    ///
+    /// Every tile of a dense sweep is cut out of this, and swept ground is matched by
+    /// containment — so two runs over the same region only line up if this square is
+    /// identical, to the bit. That is why a region's geometry is settled once and then kept
+    /// rather than re-derived from the geocoder on each attempt.
+    nonisolated static func indexSquare(
+        around coordinate: CLLocationCoordinate2D,
+        radiusMiles: Double
+    ) -> MKCoordinateRegion {
+        let sideMeters = max(radiusMiles, minimumSweepRadiusMiles) * 2 * Format.metersPerMile
+        return MKCoordinateRegion(
+            center: coordinate,
+            latitudinalMeters: sideMeters,
+            longitudinalMeters: sideMeters
+        )
+    }
+
     /// How finely to cut a tile that came back at the result cap, or nil when it is already
     /// as small as it usefully gets.
     nonisolated static func splitSide(for tile: MKCoordinateRegion) -> Int? {
@@ -516,12 +534,8 @@ final class ParkDiscoveryService {
             isSearching = false
         }
 
+        let square = Self.indexSquare(around: coordinate, radiusMiles: radiusMiles)
         let sideMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * 2 * Format.metersPerMile
-        let square = MKCoordinateRegion(
-            center: coordinate,
-            latitudinalMeters: sideMeters,
-            longitudinalMeters: sideMeters
-        )
 
         // Adaptive rather than uniform. A fixed grid fine enough for a city centre costs
         // hundreds of requests across a county, nearly all of them spent confirming that
@@ -536,6 +550,9 @@ final class ParkDiscoveryService {
         var found: [String: Park] = [:]
         var order: [String] = []
         var searches = 0
+        /// Tiles a previous attempt already finished. Counted as progress but not against
+        /// the budget, which is only ever about requests actually made.
+        var reused = 0
         var failures = 0
         var retries: [String: Int] = [:]
         var tilesSinceSave = 0
@@ -544,8 +561,8 @@ final class ParkDiscoveryService {
 
         func report() {
             onProgress?(SweepProgress(
-                tilesSearched: searches,
-                tilesTotal: searches + queue.count,
+                tilesSearched: searches + reused,
+                tilesTotal: searches + reused + queue.count,
                 parksFound: order.count
             ))
         }
@@ -559,7 +576,14 @@ final class ParkDiscoveryService {
             // Ground a previous attempt already searched — including one that was cut short —
             // is not searched again. This is what makes retrying a big region resume rather
             // than start from nothing.
-            if coverage.coversFinely(tile, resolution: tile.span.latitudeDelta) { continue }
+            if coverage.coversFinely(tile, resolution: tile.span.latitudeDelta) {
+                // Ground a previous attempt already covered. It still counts as done, or a
+                // resumed run would appear frozen while it raced through hundreds of tiles
+                // it was right to skip.
+                reused += 1
+                report()
+                continue
+            }
 
             let outcome = await Self.candidates(in: tile)
             searches += 1

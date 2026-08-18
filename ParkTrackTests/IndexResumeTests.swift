@@ -167,6 +167,111 @@ final class IndexResumeTests: XCTestCase {
     }
 }
 
+/// Resuming only works if the two runs cut the ground the same way.
+///
+/// Swept ground is matched by containment, so a tile grid that has shifted even slightly
+/// lines up with nothing that was searched before. The grid comes from a region's centre
+/// and radius, which is why those are settled once and then kept.
+@MainActor
+final class IndexGridStabilityTests: XCTestCase {
+
+    private let centre = CLLocationCoordinate2D(latitude: 37.7599, longitude: -122.4370)
+    private let radiusMiles = 8.0
+
+    /// Every leaf a run would search, mirroring what `sweepDense` does when everything
+    /// saturates — which, measured against the live map, is what happens in a city.
+    private func leaves(around coordinate: CLLocationCoordinate2D, radiusMiles: Double) -> [MKCoordinateRegion] {
+        let square = ParkDiscoveryService.indexSquare(around: coordinate, radiusMiles: radiusMiles)
+        let sideMeters = radiusMiles * 2 * Format.metersPerMile
+        var queue = ParkDiscoveryService.tiles(
+            for: square,
+            side: max(1, Int((sideMeters / ParkDiscoveryService.coarseTileMeters).rounded(.up)))
+        )
+        var leaves: [MKCoordinateRegion] = []
+        while let tile = queue.first {
+            queue.removeFirst()
+            if let side = ParkDiscoveryService.splitSide(for: tile) {
+                queue.append(contentsOf: ParkDiscoveryService.tiles(for: tile, side: side))
+            } else {
+                leaves.append(tile)
+            }
+        }
+        return leaves
+    }
+
+    private func covered(_ tiles: [MKCoordinateRegion], by coverage: SweptCoverage) -> Int {
+        tiles.filter { coverage.coversFinely($0, resolution: $0.span.latitudeDelta) }.count
+    }
+
+    func testTheSameRegionProducesTheSameGridEveryTime() {
+        let first = leaves(around: centre, radiusMiles: radiusMiles)
+        let second = leaves(around: centre, radiusMiles: radiusMiles)
+
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertEqual(first.count, second.count)
+        for (a, b) in zip(first, second) {
+            XCTAssertEqual(a.center.latitude, b.center.latitude)
+            XCTAssertEqual(a.center.longitude, b.center.longitude)
+            XCTAssertEqual(a.span.latitudeDelta, b.span.latitudeDelta)
+        }
+    }
+
+    /// The whole point: a second attempt skips everything the first one finished.
+    func testAResumedRunSkipsEveryTileTheFirstRunFinished() {
+        var coverage = SweptCoverage()
+        let first = leaves(around: centre, radiusMiles: radiusMiles)
+        // Half a run, then the app dies.
+        let done = Array(first.prefix(first.count / 2))
+        for tile in done {
+            coverage.record(tile, resolution: tile.span.latitudeDelta)
+        }
+
+        var restored = SweptCoverage()
+        restored.restore(coverage.bounds)
+
+        let second = leaves(around: centre, radiusMiles: radiusMiles)
+        XCTAssertEqual(
+            covered(second, by: restored),
+            done.count,
+            "A resumed run has to skip exactly what the first one finished"
+        )
+    }
+
+    /// The regression this guards: the centre used to be re-derived from the geocoder on
+    /// every attempt, and `CLGeocoder` does not answer identically twice. A few metres is
+    /// all it takes.
+    func testACentreThatMovesAFewMetresThrowsAwayEveryFinishedTile() {
+        var coverage = SweptCoverage()
+        for tile in leaves(around: centre, radiusMiles: radiusMiles) {
+            coverage.record(tile, resolution: tile.span.latitudeDelta)
+        }
+
+        // Roughly five metres north — well inside the noise of a place lookup.
+        let drifted = CLLocationCoordinate2D(
+            latitude: centre.latitude + 0.00005,
+            longitude: centre.longitude
+        )
+        let shifted = leaves(around: drifted, radiusMiles: radiusMiles)
+
+        XCTAssertEqual(
+            covered(shifted, by: coverage),
+            0,
+            "This is what made a resumed index start from nothing"
+        )
+    }
+
+    /// …and the radius matters just as much as the centre.
+    func testARadiusThatMovesThrowsAwayEveryFinishedTile() {
+        var coverage = SweptCoverage()
+        for tile in leaves(around: centre, radiusMiles: radiusMiles) {
+            coverage.record(tile, resolution: tile.span.latitudeDelta)
+        }
+
+        let shifted = leaves(around: centre, radiusMiles: radiusMiles + 0.05)
+        XCTAssertEqual(covered(shifted, by: coverage), 0)
+    }
+}
+
 /// How finely a saturated tile is cut.
 ///
 /// Measured against the real map service: `MKLocalSearch` caps every answer at about 25
