@@ -320,7 +320,12 @@ final class RegionIndexer {
             // the same test the final count uses, applied early enough to save the searches
             // rather than late enough only to discard them.
             belongsToRegion: { park in
-                RegionIndex.identity(kind: kind, park: park) == identifier
+                // Name first, container only as a tie-breaker. See `RegionIndex.place(kind:
+                // park:isNamed:)`: the two sides get their container from different MapKit
+                // calls, and one answering "WA" where the other says "Washington" made every
+                // park in a city fail to belong to it.
+                RegionIndex.place(kind: kind, park: park, isNamed: name)
+                    || RegionIndex.identity(kind: kind, park: park) == identifier
             }
         ) { [weak self] update in
             self?.progress = update
@@ -343,7 +348,7 @@ final class RegionIndexer {
         // answer a query about somewhere far away with results from where the device is,
         // which the result filter then discards. Recording that as a completed index would
         // publish a total of zero, including to friends racing against it.
-        let count = parkCount(matching: identifier, kind: kind)
+        let count = parkCount(matching: identifier, named: name, kind: kind)
         // Also catches a sweep that was refused rather than answered: throttled searches
         // return nothing, and nothing looks exactly like an empty city.
         guard count > 0 else {
@@ -365,9 +370,12 @@ final class RegionIndexer {
     /// Parks the sweep found that actually belong to this region. Membership comes from the
     /// park's own placemark, so a sweep circle overlapping the next town over doesn't
     /// inflate the count.
-    private func parkCount(matching identifier: String, kind: RegionKind) -> Int {
+    private func parkCount(matching identifier: String, named name: String, kind: RegionKind) -> Int {
         let parks = (try? modelContext.fetch(FetchDescriptor<Park>())) ?? []
-        return parks.count { RegionIndex.identity(kind: kind, park: $0) == identifier }
+        return parks.count {
+            RegionIndex.place(kind: kind, park: $0, isNamed: name)
+                || RegionIndex.identity(kind: kind, park: $0) == identifier
+        }
     }
 
     // MARK: - Geocoding

@@ -147,3 +147,51 @@ final class SweptParkPlacementTests: XCTestCase {
         XCTAssertTrue(StatsEngine.completionByCity(parks: all).isEmpty)
     }
 }
+
+/// Whether a park counts as being in a place.
+///
+/// The strict key pairs a place with its container, and both sides get that container from
+/// different MapKit calls. One answering "WA" where the other says "Washington" made every
+/// park in a city fail to belong to it — which reads exactly like a city that is not there.
+final class RegionMembershipTests: XCTestCase {
+
+    private func park(city: String?, state: String?) -> Park {
+        let park = Park(identifier: "p", name: "A Park", latitude: 47.6, longitude: -122.0)
+        park.locality = city
+        park.administrativeArea = state
+        return park
+    }
+
+    func testAParkBelongsToItsCityWhateverTheStateIsCalled() {
+        XCTAssertTrue(RegionIndex.place(kind: .city, park: park(city: "Sammamish", state: "WA"), isNamed: "Sammamish"))
+        XCTAssertTrue(RegionIndex.place(kind: .city, park: park(city: "Sammamish", state: "Washington"), isNamed: "Sammamish"))
+        XCTAssertTrue(RegionIndex.place(kind: .city, park: park(city: "Sammamish", state: nil), isNamed: "Sammamish"))
+    }
+
+    /// The strict key disagrees in exactly the case that broke, which is why the looser test
+    /// exists alongside it.
+    func testTheStrictKeyIsWhatFailed() {
+        let abbreviated = RegionIndex.identity(kind: .city, park: park(city: "Sammamish", state: "WA"))
+        let spelledOut = RegionIndex.identity(kind: .city, name: "Sammamish", container: "Washington")
+        XCTAssertNotEqual(abbreviated, spelledOut)
+    }
+
+    func testCaseAndAccentsDoNotMatter() {
+        XCTAssertTrue(RegionIndex.place(kind: .city, park: park(city: "sammamish", state: "WA"), isNamed: "SAMMAMISH"))
+        XCTAssertTrue(RegionIndex.place(kind: .city, park: park(city: "Montréal", state: "QC"), isNamed: "Montreal"))
+    }
+
+    func testADifferentPlaceStillDoesNotBelong() {
+        XCTAssertFalse(RegionIndex.place(kind: .city, park: park(city: "Redmond", state: "WA"), isNamed: "Sammamish"))
+        XCTAssertFalse(RegionIndex.place(kind: .city, park: park(city: nil, state: "WA"), isNamed: "Sammamish"))
+    }
+
+    func testCountiesAndStatesUseTheirOwnField() {
+        let p = Park(identifier: "q", name: "B Park", latitude: 47.6, longitude: -122.0)
+        p.subAdministrativeArea = "King County"
+        p.administrativeArea = "WA"
+        XCTAssertTrue(RegionIndex.place(kind: .county, park: p, isNamed: "King County"))
+        XCTAssertTrue(RegionIndex.place(kind: .state, park: p, isNamed: "WA"))
+        XCTAssertFalse(RegionIndex.place(kind: .city, park: p, isNamed: "King County"))
+    }
+}

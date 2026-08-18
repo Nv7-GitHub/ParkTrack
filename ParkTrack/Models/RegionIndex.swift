@@ -127,6 +127,34 @@ extension RegionIndex {
         return "\(kind.rawValue)|\(normalise(name))|\(normalise(container ?? ""))"
     }
 
+    /// Whether a park is in a place of this name, judging by name alone.
+    ///
+    /// The strict key pairs a place with its container — "Sammamish" in "WA" — and that only
+    /// works if both sides spell the container the same way. They come from different calls:
+    /// the region's from geocoding a name, the park's from a search result's placemark, and
+    /// MapKit does not promise those agree. One saying "WA" and the other "Washington" makes
+    /// every park in the city fail to belong to it, which reads exactly like a city that is
+    /// not there: the sweep hunts for a seed it can never find and floods its whole budget.
+    ///
+    /// So the container is treated as a tie-breaker rather than a requirement. Two places of
+    /// the same name in different states is a real possibility, but a sweep is bounded by
+    /// one circle a few tens of miles across, so both being inside it is not.
+    static func place(kind: RegionKind, park: Park, isNamed name: String) -> Bool {
+        let own: String?
+        switch kind {
+        case .city: own = park.locality
+        case .county: own = park.subAdministrativeArea
+        case .state: own = park.administrativeArea
+        }
+        guard let own, !own.isEmpty else { return false }
+        return normalised(own) == normalised(name)
+    }
+
+    private static func normalised(_ value: String) -> String {
+        value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// The key a park would have for this kind of region, so parks can be matched to an
     /// index without another geocode.
     static func identity(kind: RegionKind, park: Park) -> String? {

@@ -708,3 +708,37 @@ final class SweepExpansionTests: XCTestCase {
         XCTAssertEqual(queued, afterFirst, "Nothing was learnt, so nothing is queued")
     }
 }
+
+/// The allowance a sweep gets to find the place it was asked about, before deciding the
+/// lookup was wrong rather than the ground empty.
+final class SeedingBudgetTests: XCTestCase {
+
+    private func budget(radiusMiles: Double) -> Int {
+        let cellArea = pow(ParkDiscoveryService.indexCellSpanDegrees * 111.0, 2)
+        let discCells = Double.pi * pow(radiusMiles * 1.609, 2) / max(cellArea, 0.0001)
+        return min(ParkDiscoveryService.maxIndexSearches / 2, max(48, Int(discCells * 2)))
+    }
+
+    /// A city's centre is not reliably inside it — there is a Sammamish next to a lake
+    /// called Sammamish — so the allowance has to cross the city's own radius.
+    func testACityCanReachAcrossItsOwnRadius() {
+        let cellSideKm = ParkDiscoveryService.indexCellSpanDegrees * 111.0
+        let allowance = budget(radiusMiles: 5.5)
+        // Cells the hunt can afford, and how far out that reaches spreading from a point.
+        let reachKm = (Double(allowance / 2) * cellSideKm * cellSideKm / Double.pi).squareRoot()
+        XCTAssertGreaterThanOrEqual(reachKm, 5.5 * 1.609, "It has to be able to reach the edge")
+    }
+
+    /// A county's can be forty miles of farmland first, and giving up there would report a
+    /// real place as one the map could not find.
+    func testACountyGetsAMuchLargerAllowance() {
+        XCTAssertGreaterThan(budget(radiusMiles: 37), budget(radiusMiles: 5.5))
+    }
+
+    /// However lost it gets, the hunt must leave something for the sweep it was starting.
+    func testTheHuntNeverEatsTheWholeRun() {
+        for radius in [1.0, 10.0, 40.0, 500.0] {
+            XCTAssertLessThanOrEqual(budget(radiusMiles: radius), ParkDiscoveryService.maxIndexSearches / 2)
+        }
+    }
+}

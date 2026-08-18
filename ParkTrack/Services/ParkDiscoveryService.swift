@@ -716,7 +716,24 @@ final class ParkDiscoveryService {
         ///
         /// A place should be within a few cells of its own centre. If it is not, something is
         /// wrong with the lookup and sweeping the whole circle will not fix it.
-        let seedingBudget = 48
+        /// Enough to reach anywhere inside the place's own circle.
+        ///
+        /// The hunt spreads outward from the centre, so reaching something *d* away costs a
+        /// whole disc of radius *d* — and the centre is not reliably inside the place. There
+        /// is a city called Sammamish next to a lake called Sammamish, and geocoding the name
+        /// can land in the water several kilometres from any park in the city. A fixed
+        /// allowance covered about four kilometres and stopped just short, reporting a city
+        /// that plainly exists as one the map could not find.
+        ///
+        /// So the allowance is the area it might have to cross, not a constant. Capped at
+        /// half the run, so a hunt that really is going nowhere still leaves something for
+        /// the sweep it was meant to start.
+        let cellArea = pow(Self.indexCellSpanDegrees * 111.0, 2)
+        let discCells = Double.pi * pow(radiusMiles * 1.609, 2) / max(cellArea, 0.0001)
+        let seedingBudget = min(
+            Self.maxIndexSearches / 2,
+            max(48, Int(discCells * 2))
+        )
 
         /// Consumed from the front by an index rather than by shifting the array. A sweep
         /// queues thousands of cells, and `removeFirst` on an `Array` copies the remainder
