@@ -498,8 +498,14 @@ struct SettingsScreen: View {
                     }
                     .disabled(suspiciousCount == 0)
 
-                    Button {
-                        Task { await recheckPlacements() }
+                    Menu {
+                        Button("Indexed areas only · \(recheckCount(scoped: true))") {
+                            Task { await recheckPlacements(scoped: true) }
+                        }
+                        .disabled(indexedScopes.isEmpty)
+                        Button("Every park · \(recheckCount(scoped: false)), \(recheckMinutes) min") {
+                            Task { await recheckPlacements(scoped: false) }
+                        }
                     } label: {
                         settingsRow(
                             title: "Recheck park locations",
@@ -508,7 +514,7 @@ struct SettingsScreen: View {
                             tint: Theme.moss
                         )
                     }
-                    .disabled(activity != nil || indexedScopes.isEmpty)
+                    .disabled(activity != nil || parks.isEmpty)
 
                     Button {
                         isFixingMarkedVisits = true
@@ -625,16 +631,24 @@ struct SettingsScreen: View {
         Set(regionIndexes.filter(\.isIndexed).map(\.identifier))
     }
 
-    private var recheckDetail: String {
-        let scopes = indexedScopes
-        guard !scopes.isEmpty else {
-            return "Index a place first — this checks the parks counted by an indexed area"
-        }
-        let count = RegionResolver.shared.reverifiableParkCount(context: modelContext, within: scopes)
-        return "\(Format.parkCount(count)) in your \(scopes.count) indexed \(scopes.count == 1 ? "area" : "areas"), about a second each"
+    private func recheckCount(scoped: Bool) -> Int {
+        RegionResolver.shared.reverifiableParkCount(
+            context: modelContext,
+            within: scoped ? indexedScopes : nil
+        )
     }
 
-    private func recheckPlacements() async {
+    /// The geocoder answers about once a second, which is the only thing that makes checking
+    /// a whole catalogue a decision rather than a button.
+    private var recheckMinutes: Int {
+        max(1, Int((Double(recheckCount(scoped: false)) * 1.2 / 60).rounded()))
+    }
+
+    private var recheckDetail: String {
+        "Moves any park filed under the wrong city. Indexed areas are the ones publishing a total"
+    }
+
+    private func recheckPlacements(scoped: Bool) async {
         errorMessage = nil
         activity = "Checking where parks are…"
         defer { activity = nil }
@@ -642,7 +656,7 @@ struct SettingsScreen: View {
         let corrected = await RegionResolver.shared.reverifyRegions(
             context: modelContext,
             limit: 150,
-            within: indexedScopes
+            within: scoped ? indexedScopes : nil
         ) { checked, total in
             activity = "Checking park \(checked) of \(total)…"
         }
