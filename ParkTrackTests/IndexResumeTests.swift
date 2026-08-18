@@ -369,6 +369,93 @@ final class IndexLatticeTests: XCTestCase {
         print("PLAN coastal=\(coastal)")
     }
 
+    // MARK: - Spending the budget across runs
+
+    /// Runs the sweep with a budget and a coverage store, so repeated attempts can be
+    /// followed the way the real thing works.
+    private func budgetedRun(
+        budget: Int,
+        radiusMeters: CLLocationDistance,
+        coverage: inout SweptCoverage,
+        ground: (CLLocationCoordinate2D) -> Ground
+    ) -> (searched: Int, reused: Int) {
+        var queue: [(MKCoordinateRegion, Int)] = [(cell(centre), 0)]
+        var visited: Set<Int64> = [ParkDiscoveryService.latticeKey(queue[0].0)]
+        var searched = 0
+        var reused = 0
+
+        while let (current, probe) = queue.first {
+            queue.removeFirst()
+            if searched >= budget { break }
+
+            let alreadyDone = coverage.coversFinely(current, resolution: current.span.latitudeDelta)
+            if alreadyDone {
+                reused += 1
+            } else {
+                searched += 1
+                coverage.record(current, resolution: current.span.latitudeDelta)
+            }
+
+            let nextProbe = ground(current.center) == .belongs ? 0 : probe + 1
+            guard nextProbe <= ParkDiscoveryService.regionProbeDepth else { continue }
+            for neighbour in ParkDiscoveryService.latticeNeighbours(of: current) {
+                let key = ParkDiscoveryService.latticeKey(neighbour)
+                guard !visited.contains(key) else { continue }
+                guard ParkDiscoveryService.tile(
+                    neighbour, intersectsCircleAround: centre, radiusMeters: radiusMeters
+                ) else { continue }
+                visited.insert(key)
+                queue.append((neighbour, nextProbe))
+            }
+        }
+        return (searched, reused)
+    }
+
+    /// The question behind the ceiling: does a second attempt spend its budget on new
+    /// ground, so two runs really are worth twice one?
+    func testASecondRunSpendsItsWholeBudgetOnNewGround() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        func ground(_ coordinate: CLLocationCoordinate2D) -> Ground {
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin) <= 20_000 ? .belongs : .elsewhere
+        }
+
+        var coverage = SweptCoverage()
+        let budget = 100
+
+        let first = budgetedRun(budget: budget, radiusMeters: 30_000, coverage: &coverage, ground: ground)
+        XCTAssertEqual(first.searched, budget, "The first run spends the lot")
+        XCTAssertEqual(first.reused, 0)
+
+        // A relaunch: coverage is all that carries over.
+        var restored = SweptCoverage()
+        restored.restore(coverage.bounds)
+
+        let second = budgetedRun(budget: budget, radiusMeters: 30_000, coverage: &restored, ground: ground)
+        XCTAssertEqual(second.reused, budget, "Everything the first run did is skipped, not redone")
+        XCTAssertEqual(second.searched, budget, "…and the whole budget goes on ground nobody has seen")
+    }
+
+    /// And it converges: enough attempts finish the place, rather than circling forever.
+    func testRepeatedRunsEventuallyFinish() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        func ground(_ coordinate: CLLocationCoordinate2D) -> Ground {
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin) <= 8_000 ? .belongs : .elsewhere
+        }
+
+        var coverage = SweptCoverage()
+        var runs = 0
+        var lastSearched = Int.max
+        while lastSearched > 0, runs < 20 {
+            let result = budgetedRun(budget: 100, radiusMeters: 30_000, coverage: &coverage, ground: ground)
+            lastSearched = result.searched
+            runs += 1
+        }
+        XCTAssertLessThan(runs, 20, "A place has to finish in a sane number of attempts")
+        print("PLAN runs to finish: \(runs)")
+    }
+
     /// …but not so far that it wanders into the next town.
     func testASweepStopsAtALargeGap() {
         let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
