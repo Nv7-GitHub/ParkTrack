@@ -14,6 +14,50 @@ struct RadiusCompletion: Identifiable {
 }
 
 /// How much of a named area (city, county, state) has been visited.
+extension RegionCompletion {
+    /// Rebuilds one region's standing from whatever is in the store right now.
+    ///
+    /// A completion is a value, so a screen handed one keeps showing the moment it was
+    /// opened. That is fine for a list that is rebuilt as the store changes, and wrong for a
+    /// sheet left open across a sweep: the park count came right, because it is re-read from
+    /// the index record, while "Still to go" stayed frozen at whatever it held when the
+    /// sheet appeared — so a sweep could find eleven new parks in a city and the list of
+    /// what was left in that city would not gain one of them, even after it finished.
+    ///
+    /// Membership is the same test the indexer counts with, so what this shows and what the
+    /// index publishes cannot drift apart.
+    static func rebuilt(
+        from snapshot: RegionCompletion,
+        parks: [Park],
+        index: RegionIndex?
+    ) -> RegionCompletion {
+        let members = parks.filter {
+            RegionIndex.place(kind: snapshot.kind, park: $0, isNamed: snapshot.name)
+                || (!snapshot.identifier.isEmpty
+                    && RegionIndex.identity(kind: snapshot.kind, park: $0) == snapshot.identifier)
+        }
+        // Nothing matched, so the snapshot is the better answer: a region whose parks cannot
+        // be found by name is a bug to leave visible, not one to blank the screen over.
+        guard !members.isEmpty else { return snapshot }
+
+        let visited = members.filter(\.isVisited)
+        let total = max(index?.parkCount ?? members.count, members.count)
+        return RegionCompletion(
+            name: snapshot.name,
+            visited: visited.count,
+            total: total,
+            fraction: total == 0 ? 0 : Double(visited.count) / Double(total),
+            remaining: members.filter { !$0.isVisited }.sorted { $0.name < $1.name },
+            visitedParks: visited.sorted { ($0.lastVisitDate ?? .distantPast) > ($1.lastVisitDate ?? .distantPast) },
+            isIndexed: index?.isIndexed ?? false,
+            isApproximate: index?.isApproximate ?? false,
+            indexedAt: index?.indexedAt,
+            identifier: snapshot.identifier,
+            kind: snapshot.kind
+        )
+    }
+}
+
 struct RegionCompletion: Identifiable {
     var id: String { name }
     let name: String

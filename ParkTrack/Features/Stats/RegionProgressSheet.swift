@@ -8,28 +8,26 @@ import CoreLocation
 /// second question is the one the completion bar raises. Both halves are shown, with the
 /// visited side collapsed by default so the actionable half is what you land on.
 struct RegionProgressSheet: View {
-    /// The snapshot this sheet was opened with. Everything index-related is re-read live from
-    /// the store below, because the sheet used to keep showing "index this place" after the
-    /// sweep had finished — the value it was handed at presentation never changed, so the only
-    /// way to see the result was to close and reopen.
+    /// The snapshot this sheet was opened with, and only a starting point.
+    ///
+    /// Everything is re-derived from the store below. Re-reading just the index record was
+    /// not enough: the total moved when a sweep finished while "Still to go" stayed exactly
+    /// as it had been when the sheet appeared, because that list is an array of parks the
+    /// value was built with and nothing ever added to it. Watching a sweep from this screen
+    /// meant watching the number climb past a list that never grew.
     let initialCompletion: RegionCompletion
     var origin: CLLocation?
 
     @Query private var indexes: [RegionIndex]
+    @Query private var parks: [Park]
 
-    /// The snapshot with its index facts refreshed from whatever is in the store now.
+    /// This place as the store has it right now, parks and all.
     private var completion: RegionCompletion {
-        guard let record = indexes.first(where: { $0.identifier == initialCompletion.identifier }),
-              record.isIndexed else {
-            return initialCompletion
-        }
-        var updated = initialCompletion
-        updated.isIndexed = true
-        updated.isApproximate = record.isApproximate
-        updated.indexedAt = record.indexedAt
-        updated.total = max(record.parkCount, initialCompletion.visited + initialCompletion.remaining.count)
-        updated.fraction = updated.total == 0 ? 0 : Double(updated.visited) / Double(updated.total)
-        return updated
+        RegionCompletion.rebuilt(
+            from: initialCompletion,
+            parks: parks,
+            index: indexes.first { $0.identifier == initialCompletion.identifier }
+        )
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -38,9 +36,7 @@ struct RegionProgressSheet: View {
     @State private var showsVisited = false
     @State private var indexError: String?
 
-    private var visitedParks: [Park] {
-        completion.visitedParks.sorted { ($0.lastVisitDate ?? .distantPast) > ($1.lastVisitDate ?? .distantPast) }
-    }
+    private var visitedParks: [Park] { completion.visitedParks }
 
     var body: some View {
         NavigationStack {
