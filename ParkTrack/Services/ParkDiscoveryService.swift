@@ -456,8 +456,8 @@ final class ParkDiscoveryService {
         let found: [Park]
         /// False when the sweep was cancelled or gave up after repeated failures.
         let completed: Bool
-        /// True when the area needed more tiles than the budget allows, so the result is a
-        /// floor rather than a full count.
+        /// True when the count is a floor rather than a total: the budget ran out, or
+        /// searches came back at the map's per-request cap. See `RegionIndex.isApproximate`.
         let truncated: Bool
     }
 
@@ -848,7 +848,11 @@ final class ParkDiscoveryService {
         // rather than per cell: it used to run alongside every tile, which doubled the cost
         // of a sweep to no benefit, since an uncategorised park is found just as well by a
         // wide query as a narrow one.
-        if completed, !Task.isCancelled {
+        // Only if this run actually searched something. A resumed sweep that found every
+        // cell already covered has nothing new to sweep up, and paying a request to confirm
+        // that on every attempt is exactly the re-searching the coverage record exists to
+        // prevent.
+        if completed, !Task.isCancelled, searches > 0 {
             if let wide = try? await Self.search(query: "park", region: square, poiFiltered: false, requireParkLike: true) {
                 for park in persist(Self.confined(wide, to: square)) where found[park.identifier] == nil {
                     found[park.identifier] = park

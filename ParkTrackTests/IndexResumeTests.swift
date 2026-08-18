@@ -436,6 +436,28 @@ final class IndexLatticeTests: XCTestCase {
         XCTAssertEqual(second.searched, budget, "…and the whole budget goes on ground nobody has seen")
     }
 
+    /// A run over ground entirely covered already must cost nothing at all.
+    func testAFullyCoveredRegionCostsNoSearches() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        func ground(_ coordinate: CLLocationCoordinate2D) -> Ground {
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin) <= 8_000 ? .belongs : .elsewhere
+        }
+
+        var coverage = SweptCoverage()
+        // Enough attempts to finish it.
+        var guard_ = 0
+        while guard_ < 40 {
+            let run = budgetedRun(budget: 200, radiusMeters: 30_000, coverage: &coverage, ground: ground)
+            guard_ += 1
+            if run.searched == 0 { break }
+        }
+
+        let final = budgetedRun(budget: 200, radiusMeters: 30_000, coverage: &coverage, ground: ground)
+        XCTAssertEqual(final.searched, 0, "Nothing left to search means nothing is searched")
+        XCTAssertGreaterThan(final.reused, 0, "…and the ground is still walked, from the record")
+    }
+
     /// And it converges: enough attempts finish the place, rather than circling forever.
     func testRepeatedRunsEventuallyFinish() {
         let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)

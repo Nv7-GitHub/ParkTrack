@@ -97,7 +97,7 @@ struct StatsRegionSection: View {
                                                 .font(.caption2)
                                                 .foregroundStyle(Theme.textSecondary)
                                         } else if completion.isApproximate {
-                                            Text("At least this many — searching hit its limit. Index again to go further.")
+                                            Text("At least this many — some searches here came back full, so there are probably more.")
                                                 .font(.caption2)
                                                 .foregroundStyle(Theme.textSecondary)
                                         }

@@ -56,13 +56,13 @@ final class RegionIndex {
     /// which is exactly what records written before this existed decode as.
     var indexerVersion: Int = 0
 
-    /// True when the sweep ran out of its search budget before finishing, so the count is a
-    /// floor rather than a total.
+    /// True when the count is a floor rather than a total.
     ///
-    /// This is about density as much as size: a sweep splits a tile whenever the map answers
-    /// it at the per-request cap, so somewhere with a great many parks packed together spends
-    /// its budget long before somewhere merely large. Running it again continues from the
-    /// ground already covered rather than starting over.
+    /// Two things cause it and the record cannot tell them apart. The sweep may have run out
+    /// of its search budget with ground still to cover, which indexing again gets further
+    /// through. Or individual searches may have come back at the map's per-request cap,
+    /// which indexing again does nothing about — the same searches return the same results.
+    /// So the wording has to be true of both, and must not promise that another pass helps.
     var isApproximate: Bool = false
 
     /// Set while a sweep is running so the UI can show progress and refuse to start twice.
