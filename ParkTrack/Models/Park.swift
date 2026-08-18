@@ -108,16 +108,32 @@ extension Park {
     /// city without a round trip to the geocoder. Only counts as resolved when the search
     /// result actually carried a locality — a bare country is not enough to group by.
     func apply(_ candidate: ParkCandidate) {
-        if locality == nil { locality = candidate.locality }
-        if subAdministrativeArea == nil { subAdministrativeArea = candidate.subAdministrativeArea }
-        if administrativeArea == nil { administrativeArea = candidate.administrativeArea }
-        if country == nil { country = candidate.country }
-        if locality != nil, administrativeArea != nil, regionResolvedAt == nil {
-            regionResolvedAt = Date()
-            // The map's own placemark for this result, which is the same answer the geocoder
-            // would give — so it needs no checking later, unlike a region guessed from the
-            // parks nearby.
+        // A search result carries the map's own placemark for that place, which outranks a
+        // region guessed from the parks nearby. So re-finding a park — which is what indexing
+        // a city does to everything already in it — is the chance to correct one that was
+        // guessed wrongly, rather than leaving the old answer because a field was non-nil.
+        let outranksWhatWeHave = candidate.locality != nil && regionVerifiedAt == nil
+
+        if let value = candidate.locality, locality == nil || outranksWhatWeHave {
+            locality = value
+        }
+        if let value = candidate.subAdministrativeArea, subAdministrativeArea == nil || outranksWhatWeHave {
+            subAdministrativeArea = value
+        }
+        if let value = candidate.administrativeArea, administrativeArea == nil || outranksWhatWeHave {
+            administrativeArea = value
+        }
+        if let value = candidate.country, country == nil || outranksWhatWeHave {
+            country = value
+        }
+
+        guard locality != nil, administrativeArea != nil else { return }
+        if regionResolvedAt == nil { regionResolvedAt = Date() }
+        // Placed from the map's own answer, so it is settled: no longer a guess, and nothing
+        // for a recheck to confirm later.
+        if candidate.locality != nil {
             regionVerifiedAt = Date()
+            regionInferredAt = nil
         }
     }
 

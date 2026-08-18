@@ -558,6 +558,52 @@ final class SweepExpansionTests: XCTestCase {
         )
     }
 
+    /// A flood fill needs a seed inside what it is filling. A city's geocoded centre is not
+    /// reliably that — a harbour, a river, a downtown block with no park on it — and giving
+    /// up two cells from a bad seed means never finding the city at all.
+    func testASweepFindsAPlaceItsCentreIsNotIn() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        func distance(_ coordinate: CLLocationCoordinate2D) -> Double {
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude).distance(from: origin)
+        }
+
+        // The place is a ring 4-7 km out; the centre and everything near it is water.
+        func ground(_ coordinate: CLLocationCoordinate2D) -> Bool {
+            let metres = distance(coordinate)
+            return metres >= 4_000 && metres <= 7_000
+        }
+
+        var bestProbe: [Int64: Int] = [:]
+        var queue: [(MKCoordinateRegion, Int)] = [(ParkDiscoveryService.latticeCell(containing: centre), 0)]
+        bestProbe[ParkDiscoveryService.latticeKey(queue[0].0)] = 0
+        var hasFound = false
+        var searched = 0
+        var reachedThePlace = 0
+        var cursor = 0
+
+        while cursor < queue.count, searched < 2_000 {
+            let (cell, probe) = queue[cursor]
+            cursor += 1
+            searched += 1
+
+            let belongs = ground(cell.center)
+            if belongs { hasFound = true; reachedThePlace += 1 }
+            let next = (belongs || !hasFound) ? 0 : probe + 1
+            guard next <= ParkDiscoveryService.regionProbeDepth else { continue }
+            for neighbour in ParkDiscoveryService.latticeNeighbours(of: cell) {
+                let key = ParkDiscoveryService.latticeKey(neighbour)
+                if let seen = bestProbe[key], seen <= next { continue }
+                guard ParkDiscoveryService.tile(
+                    neighbour, intersectsCircleAround: centre, radiusMeters: 12_000
+                ) else { continue }
+                bestProbe[key] = next
+                queue.append((neighbour, next))
+            }
+        }
+
+        XCTAssertGreaterThan(reachedThePlace, 10, "The sweep has to cross the water and find the city")
+    }
+
     /// The same route twice is not worth queueing twice.
     func testAWorseOrEqualRouteIsIgnored() {
         var bestProbe: [Int64: Int] = [:]

@@ -90,6 +90,48 @@ final class SweptParkPlacementTests: XCTestCase {
         XCTAssertEqual(placed.first?.locality, "San Francisco")
     }
 
+    /// Indexing a city re-finds everything already in it, and that is the moment to correct
+    /// a park that was filed wrongly — the search result carries the map's own placemark,
+    /// which outranks a city guessed from the parks nearby.
+    func testRefindingAParkCorrectsARegionThatWasGuessed() {
+        let park = service.persist([candidate("Commonwealth Avenue Mall", city: nil, state: nil)]).first!
+        // Placed by inference from its neighbours, wrongly.
+        park.locality = "Cambridge"
+        park.subAdministrativeArea = "Middlesex County"
+        park.administrativeArea = "MA"
+        park.regionResolvedAt = Date()
+        park.regionInferredAt = Date()
+        try? context.save()
+
+        let refound = service.persist([
+            candidate("Commonwealth Avenue Mall", city: "Boston", state: "MA")
+        ]).first!
+
+        XCTAssertEqual(refound.identifier, park.identifier, "Still the same park")
+        XCTAssertEqual(refound.locality, "Boston", "…moved to where the map says it is")
+        XCTAssertNil(refound.regionInferredAt, "…and no longer a guess")
+        XCTAssertNotNil(refound.regionVerifiedAt, "…so nothing is left for a recheck to do")
+    }
+
+    /// A park the geocoder has already confirmed is not overwritten by a re-find, and a
+    /// result carrying no city of its own never overwrites anything.
+    func testAConfirmedRegionAndAPlacelessResultAreBothLeftAlone() {
+        let park = service.persist([candidate("Dolores Park")]).first!
+        park.locality = "San Francisco"
+        park.regionVerifiedAt = Date()
+        try? context.save()
+
+        service.persist([candidate("Dolores Park", city: nil, state: nil)])
+        XCTAssertEqual(park.locality, "San Francisco", "A result with no city says nothing")
+    }
+
+    /// A park placed from a search result needs no recheck — only guesses do.
+    func testAParkPlacedFromItsOwnResultIsAlreadyConfirmed() {
+        let park = service.persist([candidate("Dolores Park")]).first!
+        XCTAssertNotNil(park.regionVerifiedAt)
+        XCTAssertNil(park.regionInferredAt)
+    }
+
     /// A result the map itself could not place is left for the geocoder, not invented.
     func testAResultWithNoRegionIsLeftForTheGeocoder() {
         let parks = service.persist([candidate("Mystery Green", city: nil, state: nil)])

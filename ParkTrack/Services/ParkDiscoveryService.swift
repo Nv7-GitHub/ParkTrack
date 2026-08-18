@@ -680,11 +680,25 @@ final class ParkDiscoveryService {
         var cellsSinceSave = 0
         var completed = true
         var truncated = false
+        /// Whether the sweep has found the place it is looking for yet.
+        ///
+        /// A flood fill needs a seed inside what it is filling, and the geocoder's centre
+        /// for a city is not reliably that: it can land in a harbour, a river, an industrial
+        /// strip, a downtown block with no park on it. Enforcing the give-up rule from the
+        /// first cell meant such a place died two cells from its own centre having found
+        /// nothing — which is exactly what indexing Boston, whose centre sits by the water,
+        /// looked like. So the rule only applies once there is something to have left.
+        var hasFoundRegion = false
+
+        /// Consumed from the front by an index rather than by shifting the array. A sweep
+        /// queues thousands of cells, and `removeFirst` on an `Array` copies the remainder
+        /// every time, which is quadratic in the size of the frontier.
+        var cursor = 0
 
         func report() {
             onProgress?(SweepProgress(
                 tilesSearched: searches + reused,
-                tilesTotal: searches + reused + queue.count,
+                tilesTotal: searches + reused + max(0, queue.count - cursor),
                 parksFound: order.count
             ))
         }
@@ -710,7 +724,7 @@ final class ParkDiscoveryService {
             }
         }
 
-        while !queue.isEmpty {
+        while cursor < queue.count {
             if Task.isCancelled { completed = false; break }
             if searches >= Self.maxIndexSearches { truncated = true; break }
 
@@ -720,12 +734,14 @@ final class ParkDiscoveryService {
             // searching it again: the parks it found are already saved, and they know which
             // city they are in.
             var batch: [(cell: MKCoordinateRegion, probe: Int)] = []
-            while !queue.isEmpty, batch.count < Self.concurrentCellSearches {
-                let entry = queue.removeFirst()
+            while cursor < queue.count, batch.count < Self.concurrentCellSearches {
+                let entry = queue[cursor]
+                cursor += 1
                 if coverage.coversFinely(entry.cell, resolution: entry.cell.span.latitudeDelta, generation: Self.searchGeneration) {
                     reused += 1
                     let known = belongsToRegion.map { test in storedParks(in: entry.cell).contains(where: test) } ?? true
-                    expand(from: entry.cell, probe: known ? 0 : entry.probe + 1)
+                    if known { hasFoundRegion = true }
+                    expand(from: entry.cell, probe: (known || !hasFoundRegion) ? 0 : entry.probe + 1)
                     report()
                     continue
                 }
@@ -796,6 +812,7 @@ final class ParkDiscoveryService {
                 // is still allowed its internal water, because `regionProbeDepth` carries
                 // the sweep a couple of cells past nothing before it gives up.
                 let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
+                if belongs { hasFoundRegion = true }
                 sweepLog.debug("""
                     cell \(Self.latticeKey(cell), privacy: .public) \
                     at \(cell.center.latitude, privacy: .public),\(cell.center.longitude, privacy: .public) \
@@ -803,7 +820,9 @@ final class ParkDiscoveryService {
                     belongs=\(belongs, privacy: .public) probe=\(probe, privacy: .public) \
                     queue=\(queue.count, privacy: .public)
                     """)
-                expand(from: cell, probe: belongs ? 0 : probe + 1)
+                // Until the place has been found at all, keep going: the give-up rule is
+                // about having left somewhere, and the sweep may not have arrived yet.
+                expand(from: cell, probe: (belongs || !hasFoundRegion) ? 0 : probe + 1)
             }
 
             // Only a batch that failed outright counts against giving up. A single refusal
