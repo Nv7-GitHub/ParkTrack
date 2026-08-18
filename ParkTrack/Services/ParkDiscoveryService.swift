@@ -129,20 +129,19 @@ struct SweptCoverage {
         // must not erase the memory of a careful one underneath it.
         squares.removeAll { square.contains($0) && $0.resolution >= square.resolution }
         squares.append(square)
-        // Over the cap, the least carefully searched square goes first, and among equals the
-        // smallest. Dropping by size alone — which is what this did — always chose an index
-        // tile, because index tiles are the smallest things here: the sweep that most needs
-        // its progress remembered was the one whose progress was discarded. Coarse ground is
-        // the cheaper loss; a wide square costs a handful of requests to redo, where the fine
-        // tiles collectively stand for hundreds.
-        if squares.count > Self.limit {
-            let victim = squares.indices.min { lhs, rhs in
-                if squares[lhs].resolution != squares[rhs].resolution {
-                    return squares[lhs].resolution > squares[rhs].resolution
-                }
-                return squares[lhs].area < squares[rhs].area
-            }
-            if let victim { squares.remove(at: victim) }
+        // Over the cap the smallest square goes.
+        //
+        // Preferring to drop the *coarsest* looked right — index tiles are the smallest
+        // things here, so dropping by size seemed to throw away exactly the progress a
+        // resumed index needs. But the coarse squares are what the completion rings read to
+        // say an area has been swept, and there are only ever a handful of them, so
+        // targeting them meant indexing one city could quietly un-sweep the ground around
+        // the user's home. The size rule protects those, and the cap is now large enough
+        // that a single index run — bounded by `maxIndexSearches` — fits underneath it
+        // without evicting anything at all.
+        if squares.count > Self.limit,
+           let smallest = squares.indices.min(by: { squares[$0].area < squares[$1].area }) {
+            squares.remove(at: smallest)
         }
     }
 
@@ -474,6 +473,30 @@ final class ParkDiscoveryService {
     /// all, however many times it was resumed.
     nonisolated static let maxSplitSide = 4
 
+    /// Whether any part of a tile lies within `radiusMeters` of a point.
+    ///
+    /// Compared against the tile's nearest corner rather than its centre, so a tile that
+    /// only clips the edge of the region is still searched.
+    nonisolated static func tile(
+        _ tile: MKCoordinateRegion,
+        intersectsCircleAround centre: CLLocationCoordinate2D,
+        radiusMeters: CLLocationDistance
+    ) -> Bool {
+        let minLatitude = tile.center.latitude - tile.span.latitudeDelta / 2
+        let maxLatitude = tile.center.latitude + tile.span.latitudeDelta / 2
+        let minLongitude = tile.center.longitude - tile.span.longitudeDelta / 2
+        let maxLongitude = tile.center.longitude + tile.span.longitudeDelta / 2
+
+        let nearest = CLLocationCoordinate2D(
+            latitude: min(max(centre.latitude, minLatitude), maxLatitude),
+            longitude: min(max(centre.longitude, minLongitude), maxLongitude)
+        )
+        guard CLLocationCoordinate2DIsValid(nearest) else { return false }
+        return CLLocation(latitude: nearest.latitude, longitude: nearest.longitude)
+            .distance(from: CLLocation(latitude: centre.latitude, longitude: centre.longitude))
+            <= radiusMeters
+    }
+
     /// The ground one index covers, derived from nothing but its centre and radius.
     ///
     /// Every tile of a dense sweep is cut out of this, and swept ground is matched by
@@ -517,9 +540,12 @@ final class ParkDiscoveryService {
     /// number of parks in a place. Here every tile is the same small size, whatever the
     /// extent, and the caller is told when the area was too big to cover at that density.
     @discardableResult
+    /// - Parameter belongsToRegion: Whether a result is actually in the place being
+    ///   indexed. Supplied by the indexer; without it every tile is pursued to full depth.
     func sweepDense(
         around coordinate: CLLocationCoordinate2D,
         radiusMiles: Double,
+        belongsToRegion: (@Sendable (ParkCandidate) -> Bool)? = nil,
         onProgress: ((SweepProgress) -> Void)? = nil
     ) async -> DenseSweepResult {
         // Wait for whatever is already searching rather than failing. Bailing out here is how
@@ -543,10 +569,15 @@ final class ParkDiscoveryService {
         // only when its answer comes back at the map's per-request cap, which is the one
         // signal that a tile is hiding parks. Dense ground gets the fine grid it needs and
         // empty ground is dismissed in a single request.
+        // Only the tiles that touch the circle the region actually describes. The square is
+        // drawn around that circle, so its corners are ground the place was never claimed to
+        // include — better than a fifth of every sweep, spent on results that the count then
+        // discards anyway.
+        let radiusMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * Format.metersPerMile
         var queue: [MKCoordinateRegion] = Self.tiles(
             for: square,
             side: max(1, Int((sideMeters / Self.coarseTileMeters).rounded(.up)))
-        )
+        ).filter { Self.tile($0, intersectsCircleAround: coordinate, radiusMeters: radiusMeters) }
         var found: [String: Park] = [:]
         var order: [String] = []
         var searches = 0
@@ -608,8 +639,22 @@ final class ParkDiscoveryService {
                 try? await Task.sleep(for: .milliseconds(900 * failures))
             } else {
                 failures = 0
-                if outcome.rawCount >= Self.saturatedResultCount,
-                   let side = Self.splitSide(for: tile) {
+                // A tile whose results all belong somewhere else is not this place, whatever
+                // the geocoder's bounding circle says. A city's radius is drawn around
+                // everything its name might refer to — San Francisco's is 42 km, enough to
+                // take in Oakland, Marin and a great deal of ocean — so pursuing every tile
+                // to full depth meant spending hundreds of searches on other people's towns
+                // and then throwing the results out of the count. One request is enough to
+                // learn a tile is elsewhere; its subtree is then worth nothing.
+                let isElsewhere = belongsToRegion.map { test in
+                    !outcome.candidates.isEmpty && !outcome.candidates.contains(where: test)
+                } ?? false
+
+                if isElsewhere {
+                    coverage.record(tile, resolution: tile.span.latitudeDelta)
+                    tilesSinceSave += 1
+                } else if outcome.rawCount >= Self.saturatedResultCount,
+                          let side = Self.splitSide(for: tile) {
                     // Saturated: its pieces are searched instead, so the tile itself is not
                     // yet covered. See `maxSplitSide` for why it is cut this finely.
                     queue.append(contentsOf: Self.tiles(for: tile, side: side))

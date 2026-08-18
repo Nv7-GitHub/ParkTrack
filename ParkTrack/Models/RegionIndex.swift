@@ -120,6 +120,20 @@ extension RegionIndex {
         return "\(kind.rawValue)|\(normalise(name))|\(normalise(container ?? ""))"
     }
 
+    /// The key a search result would have, before it is ever saved — so a sweep can tell
+    /// whether the ground it just searched belongs to the place it is indexing.
+    static func identity(kind: RegionKind, candidate: ParkCandidate) -> String? {
+        let name: String?
+        switch kind {
+        case .city: name = candidate.locality
+        case .county: name = candidate.subAdministrativeArea
+        case .state: name = candidate.administrativeArea
+        }
+        guard let name, !name.isEmpty else { return nil }
+        let container = kind == .state ? candidate.country : candidate.administrativeArea
+        return identity(kind: kind, name: name, container: container)
+    }
+
     /// The key a park would have for this kind of region, so parks can be matched to an
     /// index without another geocode.
     static func identity(kind: RegionKind, park: Park) -> String? {

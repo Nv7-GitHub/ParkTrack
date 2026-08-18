@@ -315,7 +315,13 @@ final class RegionIndexer {
         // time, and re-searches anything that was only skimmed.
         let result = await discovery.sweepDense(
             around: center,
-            radiusMiles: radius / Format.metersPerMile
+            radiusMiles: radius / Format.metersPerMile,
+            // What counts as this place, judged from the search result's own placemark —
+            // the same test the final count uses, applied early enough to save the searches
+            // rather than late enough only to discard them.
+            belongsToRegion: { candidate in
+                RegionIndex.identity(kind: kind, candidate: candidate) == identifier
+            }
         ) { [weak self] update in
             self?.progress = update
         }

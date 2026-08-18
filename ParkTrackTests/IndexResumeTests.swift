@@ -148,6 +148,42 @@ final class IndexResumeTests: XCTestCase {
         XCTAssertEqual(Set(after.map { ObjectIdentifier($0) }), identities, "Unchanged coverage was rewritten")
     }
 
+    /// Indexing a city must not un-sweep the ground around the user.
+    ///
+    /// The rings on Home read coverage to decide whether an area has been swept or is only
+    /// partially known. There are just a handful of those wide squares, against hundreds of
+    /// index tiles, so an eviction rule that went after them turned "Swept" back into
+    /// "Partial" the moment a city was indexed.
+    func testIndexingACityDoesNotUnsweepTheAreaAroundHome() {
+        var coverage = SweptCoverage()
+
+        // A 25-mile sweep around home, of the kind the rings are built on.
+        let home = CLLocationCoordinate2D(latitude: 47.674, longitude: -122.121)
+        let sweep = ParkDiscoveryService.boundingSquare(around: home, radiusMiles: 25)
+        coverage.record(sweep, resolution: sweep.span.latitudeDelta)
+        XCTAssertTrue(coverage.covers(center: home, radiusMiles: 25))
+
+        // Then a full budget's worth of index tiles somewhere else entirely.
+        record(cityTiles(count: ParkDiscoveryService.maxIndexSearches), into: &coverage)
+
+        XCTAssertTrue(
+            coverage.covers(center: home, radiusMiles: 25),
+            "Home is still swept"
+        )
+    }
+
+    /// Even well past the cap, the wide squares are the last things to go.
+    func testTheWidestCoverageSurvivesHeavyPressure() {
+        var coverage = SweptCoverage()
+        let home = CLLocationCoordinate2D(latitude: 47.674, longitude: -122.121)
+        let sweep = ParkDiscoveryService.boundingSquare(around: home, radiusMiles: 25)
+        coverage.record(sweep, resolution: sweep.span.latitudeDelta)
+
+        record(cityTiles(count: 3_000), into: &coverage)
+
+        XCTAssertTrue(coverage.covers(center: home, radiusMiles: 25))
+    }
+
     /// A coarse pass must never be able to erase the memory of a fine one underneath it,
     /// or a browse of the map would undo an index.
     func testACoarsePassDoesNotEraseFineCoverage() {
