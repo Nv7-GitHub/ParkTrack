@@ -290,14 +290,36 @@ final class ParkDiscoveryService {
     private nonisolated static let maxFailedLevels = 2
     nonisolated static let minimumSweepRadiusMiles = 0.25
 
-    private nonisolated static let parkLikeCategories: Set<MKPointOfInterestCategory> = [.park, .nationalPark]
+    /// What the map may call something for it to count as a park.
+    ///
+    /// `playground` is not declared by the SDK, but the service returns it — Meydenbauer
+    /// Park in Bellevue carries it — and a filter built from the raw value works: over one
+    /// patch of downtown Bellevue, asking for parks alone returned three results and asking
+    /// for parks and playgrounds returned five, the extra two being Inspiration Playground
+    /// and Kids' Cove. Those are areas *inside* a park rather than parks in their own right,
+    /// which is a fair thing to collect separately.
+    private nonisolated static let parkLikeCategories: Set<MKPointOfInterestCategory> = [
+        .park,
+        .nationalPark,
+        MKPointOfInterestCategory(rawValue: "MKPOICategoryPlayground")
+    ]
 
-    /// Generic vocabulary, not a place list: these are the words that make an uncategorised
-    /// map result plausibly a park in the first place.
+    /// Words that make an uncategorised map result plausibly a park.
+    ///
+    /// Generic vocabulary, not a place list — and deliberately missing the most obvious
+    /// word of all. "Park" is what people name *buildings* after: every false positive that
+    /// prompted this used it and nothing else — Parkside Esterra Park, Capella at Esterra
+    /// Park, Park Bellevue, Park 88, all blocks of flats named for the park across the road,
+    /// all uncategorised. So are "green", "commons", "meadow" and "woods", which name
+    /// housing developments at least as often as they name open ground.
+    ///
+    /// What is left is vocabulary nobody puts on an apartment building. South Mercer
+    /// Playfields is uncategorised and is plainly a park; so is Bellevue Botanical Garden.
+    /// Keeping those costs nothing the tidy-up sheet cannot undo, where admitting anything
+    /// called "Park" cost a catalogue full of flats.
     private nonisolated static let parkLikeWords: Set<String> = [
-        "park", "parks", "green", "greens", "commons", "preserve", "preserves",
-        "trail", "trails", "garden", "gardens", "playfield", "playfields",
-        "arboretum", "arboretums", "woods", "meadow", "meadows"
+        "preserve", "preserves", "trail", "trails", "garden", "gardens",
+        "playfield", "playfields", "arboretum", "arboretums", "greenway", "greenways"
     ]
 
     init(modelContext: ModelContext) {
@@ -526,7 +548,7 @@ final class ParkDiscoveryService {
     /// bounded points-of-interest request instead of either, which is the first generation
     /// whose answers are actually about the cell it asked about; every earlier record claims
     /// ground the map never looked at, so none of it may be reused.
-    nonisolated static let searchGeneration = 2
+    nonisolated static let searchGeneration = 3
 
     /// How many cells a sweep keeps in flight.
     ///
@@ -1016,7 +1038,10 @@ final class ParkDiscoveryService {
         // cell already covered has nothing new to sweep up, and paying a request to confirm
         // that on every attempt is exactly the re-searching the coverage record exists to
         // prevent.
-        if completed, !Task.isCancelled, searches > 0 {
+        // Skipped when the caller supplied its own map: a test that injects `searchCell` is
+        // describing the whole world it wants swept, and a live request sneaking in behind it
+        // made the offline suite depend on what the real service happened to return that day.
+        if completed, !Task.isCancelled, searches > 0, searchCell == nil {
             if let wide = try? await Self.search(query: "park", region: square, poiFiltered: false, requireParkLike: true) {
                 for park in persist(Self.confined(wide, to: square)) where found[park.identifier] == nil {
                     found[park.identifier] = park
@@ -1617,8 +1642,8 @@ final class ParkDiscoveryService {
     /// The name is still worth having as a hint for a human — see `hasParkLikeName` — but it
     /// is not enough on its own to file something in the catalogue.
     nonisolated static func isParkLike(name: String, category: MKPointOfInterestCategory?) -> Bool {
-        guard let category else { return false }
-        return parkLikeCategories.contains(category)
+        if let category { return parkLikeCategories.contains(category) }
+        return hasParkLikeName(name)
     }
 
     /// Whether a name reads like a park's, for explaining a judgement rather than making one.

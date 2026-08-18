@@ -22,22 +22,35 @@ final class DiscoveryTests: XCTestCase {
         XCTAssertFalse(ParkDiscoveryService.isParkLike(name: "Parkview Elementary", category: .school))
     }
 
-    /// A park word in the name is not enough on its own, and this is the case that proved it:
-    /// both of these are blocks of flats named after the park across the road, and both came
-    /// back from the real map service with no category at all.
-    func testUncategorisedResultsAreNotParksHoweverTheyAreNamed() {
+    /// The word "park" is what people name buildings after. All four of these came back from
+    /// the real map service uncategorised, and all four are blocks of flats.
+    func testAnUncategorisedResultCalledParkIsNotOne() {
         for name in ["Parkside Esterra Park", "Capella at Esterra Park", "Park Bellevue", "Park 88",
-                     "Cedar Park", "The Commons", "Village Green"] {
+                     "Riverside Apartments", "Parking Garage", "Main Street Deli"] {
             XCTAssertFalse(ParkDiscoveryService.isParkLike(name: name, category: nil), name)
         }
     }
 
-    /// The name test survives as a way of explaining a judgement, not making one.
-    func testAParkishNameIsStillRecognisableAsOne() {
-        XCTAssertTrue(ParkDiscoveryService.hasParkLikeName("parc JARDÍN gardens"))
-        XCTAssertTrue(ParkDiscoveryService.hasParkLikeName("Cedar Park"))
-        XCTAssertFalse(ParkDiscoveryService.hasParkLikeName("Parking Garage"))
-        XCTAssertFalse(ParkDiscoveryService.hasParkLikeName("Main Street Deli"))
+    /// …but nobody puts these on an apartment building, and the map leaves real parks
+    /// uncategorised often enough to matter.
+    func testUncategorisedResultsWithDistinctiveNamesAreParks() {
+        for name in ["South Mercer Playfields", "Bellevue Botanical Garden",
+                     "Washington Park Arboretum", "Mercer Slough Nature Preserve",
+                     "Eastrail Greenway", "Ridge Trail"] {
+            XCTAssertTrue(ParkDiscoveryService.isParkLike(name: name, category: nil), name)
+        }
+    }
+
+    func testTheNameTestIgnoresCaseAndDiacritics() {
+        XCTAssertTrue(ParkDiscoveryService.hasParkLikeName("JARDÍN gardens"))
+    }
+
+    /// A playground is a category the SDK does not declare but the service returns, and a
+    /// filter built from its raw value really does surface them.
+    func testPlaygroundsCount() {
+        let playground = MKPointOfInterestCategory(rawValue: "MKPOICategoryPlayground")
+        XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Inspiration Playground", category: playground))
+        XCTAssertTrue(ParkDiscoveryService.isParkLike(name: "Kids' Cove", category: playground))
     }
 
     // MARK: - Asking about a cell

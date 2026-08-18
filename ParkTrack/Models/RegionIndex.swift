@@ -113,7 +113,10 @@ extension RegionIndex {
     /// come back with nothing; and every count, near or far, was marked "at least this many"
     /// by a saturation test that measured the size of the response instead of the contents
     /// of the cell. Neither number can be defended, so both are marked for re-indexing.
-    static let currentIndexerVersion = 3
+    /// Generation 4 also counts playgrounds, and the parks the map left uncategorised whose
+    /// names are not the sort that get put on apartment buildings — South Mercer Playfields,
+    /// Bellevue Botanical Garden. Earlier totals were short by those.
+    static let currentIndexerVersion = 4
 
     /// True for a record written by an older generation, which still names a place worth
     /// indexing but whose count can no longer be believed.

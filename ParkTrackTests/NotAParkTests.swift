@@ -109,7 +109,7 @@ final class NotAParkTests: XCTestCase {
             address: "15551 NE Turing St, Redmond, WA 98052, United States"
         )
         XCTAssertTrue(ParkAudit.isSuspicious(flats))
-        XCTAssertEqual(ParkAudit.reason(for: flats), "Named like a park, but the map doesn't list it as one")
+        XCTAssertEqual(ParkAudit.reason(for: flats), "The map doesn't list this as a park")
     }
 
     /// A pin the user dropped has neither, and is nobody's business but theirs.
