@@ -88,16 +88,14 @@ struct YearInReviewSummary: Equatable {
 /// exactly what the user sees at a fixed width.
 struct YearInReviewPoster: View {
     let summary: YearInReviewSummary
-    /// Passed in rather than read from the environment.
-    ///
-    /// `ImageRenderer` walks this view outside the app's normal environment, so a poster
-    /// that looked up the colour scheme itself would render correctly on screen and wrongly
-    /// in the shared image. The card knows the scheme and hands down the answer.
-    let ink: Color
 
-    init(summary: YearInReviewSummary, ink: Color) {
+    /// Fixed, not adaptive. See `Theme.posterGradient`: the card on screen and the image it
+    /// exports have to be the same picture, and only a background that does not depend on
+    /// the drawing context can guarantee that.
+    private let ink = Theme.posterInk
+
+    init(summary: YearInReviewSummary) {
         self.summary = summary
-        self.ink = ink
     }
 
     var body: some View {
@@ -157,7 +155,7 @@ struct YearInReviewPoster: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.heroGradient)
+        .background(Theme.posterGradient)
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Year in review for \(String(summary.year))")
@@ -191,10 +189,7 @@ struct YearInReviewCard: View {
     let summary: YearInReviewSummary
 
     @Environment(\.displayScale) private var displayScale
-    @Environment(\.colorScheme) private var colorScheme
     @State private var rendered: Image?
-
-    private var ink: Color { Theme.heroInk(colorScheme) }
 
     init(summary: YearInReviewSummary) {
         self.summary = summary
@@ -210,7 +205,7 @@ struct YearInReviewCard: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader("Year in review", subtitle: "A card built for sharing")
 
-            YearInReviewPoster(summary: summary, ink: ink)
+            YearInReviewPoster(summary: summary)
                 .shadow(color: .black.opacity(0.16), radius: 14, x: 0, y: 6)
 
             if summary.isEmpty {
@@ -231,7 +226,7 @@ struct YearInReviewCard: View {
                 .accessibilityHint("Shares the year in review card as an image")
             }
         }
-        .task(id: RenderKey(summary: summary, scale: displayScale, scheme: colorScheme)) { await renderWhenIdle() }
+        .task(id: RenderKey(summary: summary, scale: displayScale)) { await renderWhenIdle() }
     }
 
     /// What a rasterisation depends on, so the card re-renders when the figures or the
@@ -239,7 +234,6 @@ struct YearInReviewCard: View {
     private struct RenderKey: Equatable {
         let summary: YearInReviewSummary
         let scale: CGFloat
-        let scheme: ColorScheme
     }
 
     /// Rasterised ahead of time so the share sheet opens instantly — but not during the
@@ -257,7 +251,7 @@ struct YearInReviewCard: View {
         try? await Task.sleep(for: .milliseconds(400))
         guard !Task.isCancelled else { return }
 
-        let renderer = ImageRenderer(content: YearInReviewPoster(summary: summary, ink: ink).frame(width: 360))
+        let renderer = ImageRenderer(content: YearInReviewPoster(summary: summary).frame(width: 360))
         renderer.scale = displayScale
         guard let image = renderer.uiImage else { return }
         rendered = Image(uiImage: image)

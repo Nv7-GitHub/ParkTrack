@@ -62,6 +62,23 @@ enum Theme {
     /// element half-hidden unless it reserves this much space.
     static let tabBarClearance: CGFloat = 76
 
+    /// The year-in-review poster's background, fixed rather than adaptive.
+    ///
+    /// `heroGradient` is built from dynamic colours, which resolve against whatever trait
+    /// collection is in force when they are drawn. `ImageRenderer` draws outside the view
+    /// hierarchy and gets the default one, so a card that looked right on a dark-mode screen
+    /// exported with the light palette's gradient and the dark palette's ink — near-black
+    /// text on dark green. The poster is also the one thing here that leaves the device, and
+    /// it should look the same to whoever receives it as it did to whoever sent it.
+    static let posterGradient = LinearGradient(
+        colors: [Color(hex: 0x1B4332), Color(hex: 0x2D6A4F), Color(hex: 0x1D6F9E).opacity(0.75)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+    )
+
+    /// Ink for `posterGradient`. Fixed for the same reason it is.
+    static let posterInk = Color.white
+
     /// Text drawn on `heroGradient`.
     ///
     /// The gradient inverts with the palette — its dark-mode colours are the light ones, a
