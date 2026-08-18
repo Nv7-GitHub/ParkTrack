@@ -456,6 +456,55 @@ final class IndexLatticeTests: XCTestCase {
         print("PLAN runs to finish: \(runs)")
     }
 
+    // MARK: - Fixing a cache built by an older sweep
+
+    /// Ground swept before the index asked the map both ways is real coverage, but it is not
+    /// what a sweep would find now — about a tenth short. Re-indexing has to redo it.
+    func testGroundSweptByAnOlderGenerationIsNotReused() {
+        var coverage = SweptCoverage()
+        let old = cell(centre)
+        coverage.record(old, resolution: old.span.latitudeDelta, generation: 0)
+
+        XCTAssertFalse(
+            coverage.coversFinely(old, resolution: old.span.latitudeDelta,
+                                  generation: ParkDiscoveryService.searchGeneration),
+            "A re-index must not skip ground the old search under-covered"
+        )
+        XCTAssertTrue(
+            coverage.coversFinely(old, resolution: old.span.latitudeDelta, generation: 0),
+            "…but the map may still browse it without re-searching"
+        )
+    }
+
+    /// Once redone, it is skipped again — so a re-index costs less the second time and
+    /// continuing an unfinished one costs only what it never reached.
+    func testGroundRedoneAtTheCurrentGenerationIsReusedAgain() {
+        var coverage = SweptCoverage()
+        let old = cell(centre)
+        coverage.record(old, resolution: old.span.latitudeDelta, generation: 0)
+        coverage.record(old, resolution: old.span.latitudeDelta,
+                        generation: ParkDiscoveryService.searchGeneration)
+
+        XCTAssertTrue(coverage.coversFinely(old, resolution: old.span.latitudeDelta,
+                                            generation: ParkDiscoveryService.searchGeneration))
+    }
+
+    /// Every place counted by the old sweep has to surface as needing attention, or the
+    /// short totals stay on screen looking authoritative.
+    func testAnIndexFromTheOldSweepAsksToBeRedone() {
+        let record = RegionIndex(
+            identifier: RegionIndex.identity(kind: .city, name: "Bellevue", container: "WA"),
+            kind: .city, name: "Bellevue", container: "WA", country: "United States",
+            center: centre, radiusMeters: 8_833
+        )
+        record.parkCount = 66
+        record.indexedAt = Date()
+        record.indexerVersion = 1
+
+        XCTAssertTrue(record.needsReindexing)
+        XCTAssertFalse(record.isIndexed, "…and it reads as partial until it is")
+    }
+
     /// …but not so far that it wanders into the next town.
     func testASweepStopsAtALargeGap() {
         let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)

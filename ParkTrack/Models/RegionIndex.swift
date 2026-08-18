@@ -100,7 +100,14 @@ extension RegionIndex {
     /// Bump when a change makes previously recorded totals untrustworthy. Generation 1 is the
     /// first that always sweeps at region resolution instead of reusing whatever ground a
     /// coarse startup pass had covered, and that refuses to record an empty result.
-    static let currentIndexerVersion = 1
+    ///
+    /// Generation 2 asks the map both ways for every cell — the category filter and a plain
+    /// text search — rather than the filter alone. Measured over Bellevue, the two together
+    /// find about a tenth more parks than either does by itself, so every total recorded
+    /// before this is short by roughly that much. Those places show up under "Needs
+    /// re-indexing" and read as partial until they have been swept again, because a number
+    /// that cannot be defended should not be presented as though it can.
+    static let currentIndexerVersion = 2
 
     /// True for a record written by an older generation, which still names a place worth
     /// indexing but whose count can no longer be believed.
