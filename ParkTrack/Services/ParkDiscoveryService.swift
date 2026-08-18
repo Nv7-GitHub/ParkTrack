@@ -133,12 +133,36 @@ struct SweptCoverage {
         }
     }
 
+    /// Whether a record is from a superseded index generation, and so can never be reused.
+    ///
+    /// A generation is stamped by one thing only: an index sweep recording a cell it has
+    /// just searched. Everything else — a map pan, a completion ring, ground restored from
+    /// a build that predates generations — records generation zero, and is left alone here
+    /// whatever size it is, because a small square is not by itself evidence of an index.
+    ///
+    /// A stamped record from an earlier generation is dead weight: `coversFinely` will never
+    /// accept it again, since the method that produced it has been replaced. That would be
+    /// harmless if it only took up space, but index cells are also the *smallest* squares
+    /// here and the cap evicts the smallest. Three cities indexed by the old sweep leave
+    /// about 350 of them, and a fresh 700-cell run measured losing 286 of its own — so the
+    /// run finished, wrote down less than half the ground it had searched, and the next one
+    /// paid for that ground all over again.
+    private static func isSuperseded(_ square: Square) -> Bool {
+        square.generation > 0 && square.generation < ParkDiscoveryService.searchGeneration
+    }
+
     mutating func record(_ region: MKCoordinateRegion, resolution: Double? = nil, generation: Int = 0) {
         let square = Square(region, resolution: resolution ?? region.span.latitudeDelta, generation: generation)
         guard square.isUsable else { return }
+        // Restoring reads every square the store kept, including the dead ones; this is where
+        // they stop coming back. The next `persistCoverage` then deletes their rows.
+        guard !Self.isSuperseded(square) else { return }
         // Only swallow ground that was not searched more finely than this. A wide, thin pass
         // must not erase the memory of a careful one underneath it.
-        squares.removeAll { square.contains($0) && $0.resolution >= square.resolution && $0.generation <= square.generation }
+        squares.removeAll {
+            Self.isSuperseded($0)
+                || (square.contains($0) && $0.resolution >= square.resolution && $0.generation <= square.generation)
+        }
         squares.append(square)
         // Over the cap the smallest square goes.
         //

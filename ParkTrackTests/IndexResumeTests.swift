@@ -542,6 +542,37 @@ final class IndexLatticeTests: XCTestCase {
         XCTAssertFalse(record.isIndexed, "…and it reads as partial until it is")
     }
 
+    /// Coverage from the old, biased sweep can never be reused — but does it get out of the
+    /// way of the new sweep, or does it sit there taking up room?
+    func testOldGenerationCoverageDoesNotCrowdOutTheNew() {
+        var coverage = SweptCoverage()
+        // Three cities' worth of cells recorded by the previous generation, at the cell size
+        // it used.
+        for index in 0..<350 {
+            let stale = MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 47.0 + Double(index) * 0.014, longitude: -122.0),
+                span: MKCoordinateSpan(latitudeDelta: 0.014, longitudeDelta: 0.014)
+            )
+            coverage.record(stale, resolution: 0.014, generation: 1)
+        }
+        // Then a full run at the current generation and cell size.
+        var recorded: [MKCoordinateRegion] = []
+        for index in 0..<ParkDiscoveryService.maxIndexSearches {
+            let cell = ParkDiscoveryService.latticeCell(
+                containing: CLLocationCoordinate2D(latitude: 40.0 + Double(index) * 0.010, longitude: -122.0)
+            )
+            recorded.append(cell)
+            coverage.record(cell, resolution: cell.span.latitudeDelta,
+                            generation: ParkDiscoveryService.searchGeneration)
+        }
+
+        let kept = recorded.count {
+            coverage.coversFinely($0, resolution: $0.span.latitudeDelta,
+                                  generation: ParkDiscoveryService.searchGeneration)
+        }
+        XCTAssertEqual(kept, recorded.count, "the new run's cells were evicted by dead ones")
+    }
+
     /// …but not so far that it wanders into the next town.
     func testASweepStopsAtALargeGap() {
         let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
