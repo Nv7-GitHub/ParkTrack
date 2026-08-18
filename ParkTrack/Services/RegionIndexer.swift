@@ -319,8 +319,8 @@ final class RegionIndexer {
             // What counts as this place, judged from the search result's own placemark —
             // the same test the final count uses, applied early enough to save the searches
             // rather than late enough only to discard them.
-            belongsToRegion: { candidate in
-                RegionIndex.identity(kind: kind, candidate: candidate) == identifier
+            belongsToRegion: { park in
+                RegionIndex.identity(kind: kind, park: park) == identifier
             }
         ) { [weak self] update in
             self?.progress = update

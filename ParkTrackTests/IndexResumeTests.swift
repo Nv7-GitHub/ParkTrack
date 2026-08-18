@@ -203,174 +203,151 @@ final class IndexResumeTests: XCTestCase {
     }
 }
 
-/// Resuming only works if the two runs cut the ground the same way.
-///
-/// Swept ground is matched by containment, so a tile grid that has shifted even slightly
-/// lines up with nothing that was searched before. The grid comes from a region's centre
-/// and radius, which is why those are settled once and then kept.
+/// Cells come from a fixed worldwide lattice, which is what lets one run reuse another's
+/// work — and what lets a sweep follow the shape of a place instead of covering a box.
 @MainActor
-final class IndexGridStabilityTests: XCTestCase {
+final class IndexLatticeTests: XCTestCase {
 
     private let centre = CLLocationCoordinate2D(latitude: 37.7599, longitude: -122.4370)
-    private let radiusMiles = 8.0
 
-    /// Every leaf a run would search, mirroring what `sweepDense` does when everything
-    /// saturates — which, measured against the live map, is what happens in a city.
-    private func leaves(around coordinate: CLLocationCoordinate2D, radiusMiles: Double) -> [MKCoordinateRegion] {
-        let square = ParkDiscoveryService.indexSquare(around: coordinate, radiusMiles: radiusMiles)
-        let sideMeters = radiusMiles * 2 * Format.metersPerMile
-        var queue = ParkDiscoveryService.tiles(
-            for: square,
-            side: max(1, Int((sideMeters / ParkDiscoveryService.coarseTileMeters).rounded(.up)))
+    private func cell(_ coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        ParkDiscoveryService.latticeCell(containing: coordinate)
+    }
+
+    func testTheSameGroundAlwaysGivesTheSameCell() {
+        let a = cell(centre)
+        // Anywhere inside the cell has to land on the cell.
+        let inside = CLLocationCoordinate2D(
+            latitude: a.center.latitude + a.span.latitudeDelta * 0.4,
+            longitude: a.center.longitude - a.span.longitudeDelta * 0.4
         )
-        var leaves: [MKCoordinateRegion] = []
-        while let tile = queue.first {
+        let b = cell(inside)
+
+        XCTAssertEqual(ParkDiscoveryService.latticeKey(a), ParkDiscoveryService.latticeKey(b))
+        XCTAssertEqual(a.center.latitude, b.center.latitude, accuracy: 1e-12)
+    }
+
+    /// The regression that made resuming impossible: the grid used to hang off the region's
+    /// geocoded centre, which moves. On a world lattice it cannot.
+    func testACentreThatMovesDoesNotMoveTheGrid() {
+        let drifted = CLLocationCoordinate2D(latitude: centre.latitude + 0.00005, longitude: centre.longitude)
+        XCTAssertEqual(
+            ParkDiscoveryService.latticeKey(cell(centre)),
+            ParkDiscoveryService.latticeKey(cell(drifted)),
+            "Five metres of geocoder drift used to throw away every finished cell"
+        )
+    }
+
+    /// Two places whose sweeps overlap share the ground between them, so indexing a city
+    /// leaves work its neighbouring county can reuse.
+    func testNeighbouringRegionsShareTheirOverlap() {
+        var coverage = SweptCoverage()
+        let shared = cell(centre)
+        coverage.record(shared, resolution: shared.span.latitudeDelta)
+
+        let fromElsewhere = ParkDiscoveryService.latticeCell(
+            containing: CLLocationCoordinate2D(
+                latitude: centre.latitude + 0.0001,
+                longitude: centre.longitude + 0.0001
+            )
+        )
+        XCTAssertTrue(coverage.coversFinely(fromElsewhere, resolution: fromElsewhere.span.latitudeDelta))
+    }
+
+    func testEveryNeighbourTouchesTheCellItCameFrom() {
+        let origin = cell(centre)
+        let neighbours = ParkDiscoveryService.latticeNeighbours(of: origin)
+
+        XCTAssertEqual(neighbours.count, 8)
+        XCTAssertEqual(Set(neighbours.map(ParkDiscoveryService.latticeKey)).count, 8, "No duplicates")
+        XCTAssertFalse(
+            neighbours.map(ParkDiscoveryService.latticeKey).contains(ParkDiscoveryService.latticeKey(origin)),
+            "A cell is not its own neighbour"
+        )
+        for neighbour in neighbours {
+            let gap = abs(neighbour.center.latitude - origin.center.latitude)
+            XCTAssertLessThanOrEqual(gap, origin.span.latitudeDelta * 1.01)
+        }
+    }
+
+    // MARK: - Following the shape
+
+    /// Models the sweep offline: grow from the centre, treat `isInPlace` as what the map
+    /// would say, and count the cells that would actually be searched.
+    private func cellsSearched(
+        radiusMeters: CLLocationDistance,
+        isInPlace: (CLLocationCoordinate2D) -> Bool
+    ) -> Int {
+        var queue: [(MKCoordinateRegion, Int)] = [(cell(centre), 0)]
+        var visited: Set<Int64> = [ParkDiscoveryService.latticeKey(queue[0].0)]
+        var searched = 0
+
+        while let (current, probe) = queue.first {
             queue.removeFirst()
-            if let side = ParkDiscoveryService.splitSide(for: tile) {
-                queue.append(contentsOf: ParkDiscoveryService.tiles(for: tile, side: side))
-            } else {
-                leaves.append(tile)
+            searched += 1
+            let belongs = isInPlace(current.center)
+            let nextProbe = belongs ? 0 : probe + 1
+            guard nextProbe <= ParkDiscoveryService.regionProbeDepth else { continue }
+            for neighbour in ParkDiscoveryService.latticeNeighbours(of: current) {
+                let key = ParkDiscoveryService.latticeKey(neighbour)
+                guard !visited.contains(key) else { continue }
+                guard ParkDiscoveryService.tile(
+                    neighbour, intersectsCircleAround: centre, radiusMeters: radiusMeters
+                ) else { continue }
+                visited.insert(key)
+                queue.append((neighbour, nextProbe))
             }
         }
-        return leaves
+        return searched
     }
 
-    private func covered(_ tiles: [MKCoordinateRegion], by coverage: SweptCoverage) -> Int {
-        tiles.filter { coverage.coversFinely($0, resolution: $0.span.latitudeDelta) }.count
-    }
+    /// San Francisco's numbers: a 30 km geocoded radius around a city about 6 km across.
+    func testASweepCostsWhatThePlaceIsWorthNotWhatTheCircleIs() {
+        let cityRadius: CLLocationDistance = 6_000
+        let geocodedRadius: CLLocationDistance = 30_000
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
 
-    func testTheSameRegionProducesTheSameGridEveryTime() {
-        let first = leaves(around: centre, radiusMiles: radiusMiles)
-        let second = leaves(around: centre, radiusMiles: radiusMiles)
-
-        XCTAssertFalse(first.isEmpty)
-        XCTAssertEqual(first.count, second.count)
-        for (a, b) in zip(first, second) {
-            XCTAssertEqual(a.center.latitude, b.center.latitude)
-            XCTAssertEqual(a.center.longitude, b.center.longitude)
-            XCTAssertEqual(a.span.latitudeDelta, b.span.latitudeDelta)
+        let shaped = cellsSearched(radiusMeters: geocodedRadius) { coordinate in
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin) <= cityRadius
         }
-    }
+        // What filling the circle costs, which is what the sweep used to do.
+        let wholeCircle = cellsSearched(radiusMeters: geocodedRadius) { _ in true }
 
-    /// The whole point: a second attempt skips everything the first one finished.
-    func testAResumedRunSkipsEveryTileTheFirstRunFinished() {
-        var coverage = SweptCoverage()
-        let first = leaves(around: centre, radiusMiles: radiusMiles)
-        // Half a run, then the app dies.
-        let done = Array(first.prefix(first.count / 2))
-        for tile in done {
-            coverage.record(tile, resolution: tile.span.latitudeDelta)
-        }
-
-        var restored = SweptCoverage()
-        restored.restore(coverage.bounds)
-
-        let second = leaves(around: centre, radiusMiles: radiusMiles)
-        XCTAssertEqual(
-            covered(second, by: restored),
-            done.count,
-            "A resumed run has to skip exactly what the first one finished"
-        )
-    }
-
-    /// The regression this guards: the centre used to be re-derived from the geocoder on
-    /// every attempt, and `CLGeocoder` does not answer identically twice. A few metres is
-    /// all it takes.
-    func testACentreThatMovesAFewMetresThrowsAwayEveryFinishedTile() {
-        var coverage = SweptCoverage()
-        for tile in leaves(around: centre, radiusMiles: radiusMiles) {
-            coverage.record(tile, resolution: tile.span.latitudeDelta)
-        }
-
-        // Roughly five metres north — well inside the noise of a place lookup.
-        let drifted = CLLocationCoordinate2D(
-            latitude: centre.latitude + 0.00005,
-            longitude: centre.longitude
-        )
-        let shifted = leaves(around: drifted, radiusMiles: radiusMiles)
-
-        XCTAssertEqual(
-            covered(shifted, by: coverage),
-            0,
-            "This is what made a resumed index start from nothing"
-        )
-    }
-
-    /// …and the radius matters just as much as the centre.
-    func testARadiusThatMovesThrowsAwayEveryFinishedTile() {
-        var coverage = SweptCoverage()
-        for tile in leaves(around: centre, radiusMiles: radiusMiles) {
-            coverage.record(tile, resolution: tile.span.latitudeDelta)
-        }
-
-        let shifted = leaves(around: centre, radiusMiles: radiusMiles + 0.05)
-        XCTAssertEqual(covered(shifted, by: coverage), 0)
-    }
-}
-
-/// How finely a saturated tile is cut.
-///
-/// Measured against the real map service: `MKLocalSearch` caps every answer at about 25
-/// results however wide the region, so any populated tile above a couple of kilometres
-/// saturates — every tile at every level did, over a dense city and a suburb alike. So the
-/// intermediate steps of a halving search are requests spent confirming what is already
-/// known, and skipping them is what lets a large city finish inside its budget.
-final class TileSplittingTests: XCTestCase {
-
-    private func region(spanDegrees: Double) -> MKCoordinateRegion {
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 37.77, longitude: -122.42),
-            span: MKCoordinateSpan(latitudeDelta: spanDegrees, longitudeDelta: spanDegrees)
-        )
-    }
-
-    /// Roughly the 26 km tile a sweep starts from.
-    func testAWideTileIsCutAsFinelyAsAllowed() {
-        XCTAssertEqual(ParkDiscoveryService.splitSide(for: region(spanDegrees: 0.234)), 4)
-    }
-
-    /// A tile whose children would fall below the useful minimum is left alone.
-    func testATileNearTheMinimumIsNotCut() {
-        XCTAssertNil(ParkDiscoveryService.splitSide(for: region(spanDegrees: 0.0147)))
-        XCTAssertNil(ParkDiscoveryService.splitSide(for: region(spanDegrees: ParkDiscoveryService.minimumTileSpanDegrees)))
-    }
-
-    /// Whatever the cut, no child may come out smaller than the floor — that is the line
-    /// past which a tile is smaller than the parks in it.
-    func testChildrenNeverFallBelowTheMinimum() {
-        for span in stride(from: 0.028, through: 0.5, by: 0.004) {
-            guard let side = ParkDiscoveryService.splitSide(for: region(spanDegrees: span)) else { continue }
-            let childSpan = span / Double(side)
-            XCTAssertGreaterThanOrEqual(
-                childSpan,
-                ParkDiscoveryService.minimumTileSpanDegrees * 0.999,
-                "A \(span)° tile cut \(side) ways gives \(childSpan)° children"
-            )
-        }
-    }
-
-    /// The point of the change: a city reaches the same final resolution in far fewer
-    /// requests, and inside the budget it used to blow through.
-    func testACityFitsInsideTheSearchBudget() {
-        var queue = [region(spanDegrees: 0.234)]
-        var requests = 0
-        var finest = Double.greatestFiniteMagnitude
-
-        // Everything saturates, which is what the live probe measured.
-        while let tile = queue.first {
-            queue.removeFirst()
-            requests += 1
-            finest = min(finest, tile.span.latitudeDelta)
-            guard let side = ParkDiscoveryService.splitSide(for: tile) else { continue }
-            queue.append(contentsOf: ParkDiscoveryService.tiles(for: tile, side: side))
-        }
-
+        XCTAssertLessThan(shaped, wholeCircle / 4, "Following the shape has to be dramatically cheaper")
         XCTAssertLessThanOrEqual(
-            requests,
+            shaped,
             ParkDiscoveryService.maxIndexSearches,
-            "A city has to be able to finish, not just resume forever"
+            "…and it has to fit in the budget, or the city can never finish"
         )
-        XCTAssertLessThanOrEqual(finest, ParkDiscoveryService.minimumTileSpanDegrees * 1.1,
-                                 "…and still reach full resolution")
+        print("PLAN shaped=\(shaped) wholeCircle=\(wholeCircle) budget=\(ParkDiscoveryService.maxIndexSearches)")
+    }
+
+    /// A place with water through the middle is still one place. The sweep keeps going a
+    /// little way past a cell that came back as somewhere else.
+    func testASweepCrossesASmallGapInThePlace() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        func metres(_ coordinate: CLLocationCoordinate2D) -> Double {
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude).distance(from: origin)
+        }
+        // Land, a 2 km channel, then more land.
+        let reached = cellsSearched(radiusMeters: 30_000) { coordinate in
+            let distance = metres(coordinate)
+            return distance <= 2_000 || (distance >= 4_000 && distance <= 6_000)
+        }
+        let nearSideOnly = cellsSearched(radiusMeters: 30_000) { metres($0) <= 2_000 }
+
+        XCTAssertGreaterThan(reached, nearSideOnly, "The far bank has to be reached across the channel")
+    }
+
+    /// …but not so far that it wanders into the next town.
+    func testASweepStopsAtALargeGap() {
+        let origin = CLLocation(latitude: centre.latitude, longitude: centre.longitude)
+        let reached = cellsSearched(radiusMeters: 30_000) { coordinate in
+            CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+                .distance(from: origin) <= 2_000
+        }
+        XCTAssertLessThan(reached, 120, "A sweep must not keep going once the place has ended")
     }
 }
+

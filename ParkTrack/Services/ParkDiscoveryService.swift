@@ -457,21 +457,66 @@ final class ParkDiscoveryService {
     /// Refinement stops here. Below roughly 1.5 km a tile is smaller than the parks in it.
     nonisolated static let minimumTileSpanDegrees = 0.014
 
-    /// How many pieces a saturated tile is cut into, per side.
+    /// Hard ceiling on one region's searches, so a pathological area cannot run forever.
+    /// A sweep that hits it reports itself as approximate and resumes where it stopped.
+    nonisolated static let maxIndexSearches = 320
+
+    /// How many cells in a row may fail before a sweep gives up.
+    nonisolated static let maxConsecutiveTileFailures = 12
+
+    // MARK: - The index lattice
+
+    /// How far a sweep will keep probing past the last cell that belonged to the region.
     ///
-    /// Halving is the obvious choice and it is the wrong one. `MKLocalSearch` answers with
-    /// at most about 25 results however wide the region, so any populated tile above a
-    /// couple of kilometres comes back saturated — measured over San Francisco and over a
-    /// suburb, that was *every* tile at *every* level, right down to 2.8 km. The
-    /// intermediate steps therefore never tell us anything: a 26 km tile that saturates has
-    /// a 13 km quarter that saturates too, and searching it is a request spent learning what
-    /// was already known.
+    /// A city is not always one connected piece of land at this resolution — a bay, a park
+    /// the size of two cells, an island reached by a bridge. Giving up at the first cell
+    /// that comes back as somewhere else would cut those off, so a sweep keeps going a
+    /// little way and resumes properly if the region turns up again.
+    nonisolated static let regionProbeDepth = 2
+
+    /// One cell of a fixed worldwide lattice, at the finest size worth searching.
     ///
-    /// Cutting four ways per side skips those levels. San Francisco goes from 1 + 4 + 16 +
-    /// 64 + 256 = 341 requests down to 1 + 16 + 256 = 273 for the same final resolution —
-    /// and 341 was over the per-region budget, so the city could never finish indexing at
-    /// all, however many times it was resumed.
-    nonisolated static let maxSplitSide = 4
+    /// Cut from the world rather than from the region, so the same ground always produces
+    /// exactly the same cell — on a later run, and for a neighbouring place whose own sweep
+    /// overlaps this one. Coverage is matched by containment, so cells that line up are what
+    /// make swept ground reusable at all.
+    nonisolated static func latticeCell(containing coordinate: CLLocationCoordinate2D) -> MKCoordinateRegion {
+        let step = minimumTileSpanDegrees
+        let latitudeIndex = (coordinate.latitude / step).rounded(.down)
+        let longitudeIndex = (coordinate.longitude / step).rounded(.down)
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(
+                latitude: (latitudeIndex + 0.5) * step,
+                longitude: (longitudeIndex + 0.5) * step
+            ),
+            span: MKCoordinateSpan(latitudeDelta: step, longitudeDelta: step)
+        )
+    }
+
+    /// The eight cells around one, so a sweep can grow outward in any direction.
+    nonisolated static func latticeNeighbours(of cell: MKCoordinateRegion) -> [MKCoordinateRegion] {
+        let step = minimumTileSpanDegrees
+        var neighbours: [MKCoordinateRegion] = []
+        for latitudeOffset in -1...1 {
+            for longitudeOffset in -1...1 where !(latitudeOffset == 0 && longitudeOffset == 0) {
+                let coordinate = CLLocationCoordinate2D(
+                    latitude: cell.center.latitude + Double(latitudeOffset) * step,
+                    longitude: cell.center.longitude + Double(longitudeOffset) * step
+                )
+                guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+                neighbours.append(latticeCell(containing: coordinate))
+            }
+        }
+        return neighbours
+    }
+
+    /// Stable key for a lattice cell, for the visited set.
+    nonisolated static func latticeKey(_ cell: MKCoordinateRegion) -> Int64 {
+        let step = minimumTileSpanDegrees
+        let latitudeIndex = Int64((cell.center.latitude / step).rounded(.down))
+        let longitudeIndex = Int64((cell.center.longitude / step).rounded(.down))
+        return latitudeIndex &* 1_000_003 &+ longitudeIndex
+    }
 
     /// Whether any part of a tile lies within `radiusMeters` of a point.
     ///
@@ -515,37 +560,27 @@ final class ParkDiscoveryService {
         )
     }
 
-    /// How finely to cut a tile that came back at the result cap, or nil when it is already
-    /// as small as it usefully gets.
-    nonisolated static func splitSide(for tile: MKCoordinateRegion) -> Int? {
-        let span = tile.span.latitudeDelta
-        // Children must not come out below the size at which a tile is smaller than the
-        // parks inside it, so a tile that cannot be cut usefully is left as it is.
-        guard span >= minimumTileSpanDegrees * 2 else { return nil }
-        return min(maxSplitSide, max(2, Int(span / minimumTileSpanDegrees)))
-    }
-
-    /// Hard ceiling on one region's searches, so a pathological area cannot run forever.
-    nonisolated static let maxIndexSearches = 320
-
-    /// How many tiles in a row may fail before a dense sweep gives up.
-    nonisolated static let maxConsecutiveTileFailures = 12
-
-    /// Sweeps an area at even density, for indexing.
+    /// Sweeps a place by following its shape, rather than by covering a box around it.
     ///
-    /// The ordinary sweep grows in concentric levels that trible in size, so its outer tiles
-    /// end up tens of kilometres across — and a single search answers with at most a couple
-    /// of dozen results, so a wide tile silently sees a fraction of what is in it. That is
-    /// fine for filling a map as the user pans, and wrong for a count that claims to be the
-    /// number of parks in a place. Here every tile is the same small size, whatever the
-    /// extent, and the caller is told when the area was too big to cover at that density.
-    @discardableResult
-    /// - Parameter belongsToRegion: Whether a result is actually in the place being
-    ///   indexed. Supplied by the indexer; without it every tile is pursued to full depth.
+    /// There is no public API for a city's boundary — `CLPlacemark` offers a circle and
+    /// nothing else — and that circle is drawn around everything the name might refer to.
+    /// San Francisco's is 42 km, which takes in Oakland, Marin and a great deal of ocean:
+    /// squared off and cut into cells, 1,449 searches for a city of 121 km², against a
+    /// budget of 320. It could never finish.
+    ///
+    /// So the shape is discovered instead of assumed. The sweep starts at the centre and
+    /// grows outward one cell at a time, and a cell whose results all belong somewhere else
+    /// is a wall it does not expand through. What gets searched is then proportional to the
+    /// place itself rather than to the square around it, and the boundary costs one request
+    /// per cell along it. The circle survives only as a backstop, so a runaway can never
+    /// wander further than the geocoder thought the place extended.
+    ///
+    /// - Parameter belongsToRegion: Whether a park is actually in the place being indexed.
+    ///   Without it the sweep simply fills the circle, which is what a plain area scan wants.
     func sweepDense(
         around coordinate: CLLocationCoordinate2D,
         radiusMiles: Double,
-        belongsToRegion: (@Sendable (ParkCandidate) -> Bool)? = nil,
+        belongsToRegion: ((Park) -> Bool)? = nil,
         onProgress: ((SweepProgress) -> Void)? = nil
     ) async -> DenseSweepResult {
         // Wait for whatever is already searching rather than failing. Bailing out here is how
@@ -561,32 +596,17 @@ final class ParkDiscoveryService {
         }
 
         let square = Self.indexSquare(around: coordinate, radiusMiles: radiusMiles)
-        let sideMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * 2 * Format.metersPerMile
-
-        // Adaptive rather than uniform. A fixed grid fine enough for a city centre costs
-        // hundreds of requests across a county, nearly all of them spent confirming that
-        // farmland is still empty. Instead every tile starts coarse and is split into four
-        // only when its answer comes back at the map's per-request cap, which is the one
-        // signal that a tile is hiding parks. Dense ground gets the fine grid it needs and
-        // empty ground is dismissed in a single request.
-        // Only the tiles that touch the circle the region actually describes. The square is
-        // drawn around that circle, so its corners are ground the place was never claimed to
-        // include — better than a fifth of every sweep, spent on results that the count then
-        // discards anyway.
         let radiusMeters = max(radiusMiles, Self.minimumSweepRadiusMiles) * Format.metersPerMile
-        var queue: [MKCoordinateRegion] = Self.tiles(
-            for: square,
-            side: max(1, Int((sideMeters / Self.coarseTileMeters).rounded(.up)))
-        ).filter { Self.tile($0, intersectsCircleAround: coordinate, radiusMeters: radiusMeters) }
+
+        var queue: [(cell: MKCoordinateRegion, probe: Int)] = [(Self.latticeCell(containing: coordinate), 0)]
+        var visited: Set<Int64> = [Self.latticeKey(queue[0].cell)]
         var found: [String: Park] = [:]
         var order: [String] = []
         var searches = 0
-        /// Tiles a previous attempt already finished. Counted as progress but not against
-        /// the budget, which is only ever about requests actually made.
         var reused = 0
         var failures = 0
-        var retries: [String: Int] = [:]
-        var tilesSinceSave = 0
+        var retries: [Int64: Int] = [:]
+        var cellsSinceSave = 0
         var completed = true
         var truncated = false
 
@@ -599,28 +619,44 @@ final class ParkDiscoveryService {
         }
         report()
 
+        /// Grows into the cells around one that turned out to be part of the place.
+        func expand(from cell: MKCoordinateRegion, probe: Int) {
+            guard probe <= Self.regionProbeDepth else { return }
+            for neighbour in Self.latticeNeighbours(of: cell) {
+                let key = Self.latticeKey(neighbour)
+                guard !visited.contains(key) else { continue }
+                // The circle is the backstop: whatever the results say, a sweep never
+                // wanders beyond the extent the place was given.
+                guard Self.tile(neighbour, intersectsCircleAround: coordinate, radiusMeters: radiusMeters) else { continue }
+                visited.insert(key)
+                queue.append((neighbour, probe))
+            }
+        }
+
         while !queue.isEmpty {
             if Task.isCancelled { completed = false; break }
             if searches >= Self.maxIndexSearches { truncated = true; break }
 
-            let tile = queue.removeFirst()
-            // Ground a previous attempt already searched — including one that was cut short —
-            // is not searched again. This is what makes retrying a big region resume rather
-            // than start from nothing.
-            if coverage.coversFinely(tile, resolution: tile.span.latitudeDelta) {
-                // Ground a previous attempt already covered. It still counts as done, or a
-                // resumed run would appear frozen while it raced through hundreds of tiles
-                // it was right to skip.
+            let (cell, probe) = queue.removeFirst()
+
+            // Ground a previous attempt already searched — including one that was cut short.
+            // Whether to keep growing through it is answered from the store rather than by
+            // searching it again: the parks it found are already saved, and they know which
+            // city they are in.
+            if coverage.coversFinely(cell, resolution: cell.span.latitudeDelta) {
                 reused += 1
+                let known = belongsToRegion.map { test in storedParks(in: cell).contains(where: test) } ?? true
+                expand(from: cell, probe: known ? 0 : probe + 1)
                 report()
                 continue
             }
 
-            let outcome = await Self.candidates(in: tile)
+            let outcome = await Self.candidates(in: cell)
             searches += 1
             if Task.isCancelled { completed = false; break }
 
-            for park in persist(Self.confined(outcome.candidates, to: tile)) where found[park.identifier] == nil {
+            let saved = persist(Self.confined(outcome.candidates, to: cell))
+            for park in saved where found[park.identifier] == nil {
                 found[park.identifier] = park
                 order.append(park.identifier)
             }
@@ -629,50 +665,39 @@ final class ParkDiscoveryService {
                 lastError = outcome.failure
                 failures += 1
                 if failures >= Self.maxConsecutiveTileFailures { completed = false; break }
-                // Being refused is not the same as having searched. The tile goes back on the
+                // Being refused is not the same as having searched. The cell goes back on the
                 // queue so its ground is not quietly dropped from a count that claims to be
                 // exhaustive, and the throttle widens the gap on its own.
-                if retries[Self.key(for: tile), default: 0] < Self.maxTileRetries {
-                    retries[Self.key(for: tile), default: 0] += 1
-                    queue.append(tile)
+                let key = Self.latticeKey(cell)
+                if retries[key, default: 0] < Self.maxTileRetries {
+                    retries[key, default: 0] += 1
+                    queue.append((cell, probe))
                 }
                 try? await Task.sleep(for: .milliseconds(900 * failures))
-            } else {
-                failures = 0
-                // A tile whose results all belong somewhere else is not this place, whatever
-                // the geocoder's bounding circle says. A city's radius is drawn around
-                // everything its name might refer to — San Francisco's is 42 km, enough to
-                // take in Oakland, Marin and a great deal of ocean — so pursuing every tile
-                // to full depth meant spending hundreds of searches on other people's towns
-                // and then throwing the results out of the count. One request is enough to
-                // learn a tile is elsewhere; its subtree is then worth nothing.
-                let isElsewhere = belongsToRegion.map { test in
-                    !outcome.candidates.isEmpty && !outcome.candidates.contains(where: test)
-                } ?? false
-
-                if isElsewhere {
-                    coverage.record(tile, resolution: tile.span.latitudeDelta)
-                    tilesSinceSave += 1
-                } else if outcome.rawCount >= Self.saturatedResultCount,
-                          let side = Self.splitSide(for: tile) {
-                    // Saturated: its pieces are searched instead, so the tile itself is not
-                    // yet covered. See `maxSplitSide` for why it is cut this finely.
-                    queue.append(contentsOf: Self.tiles(for: tile, side: side))
-                } else {
-                    coverage.record(tile, resolution: tile.span.latitudeDelta)
-                    tilesSinceSave += 1
-                    if tilesSinceSave >= Self.coverageSaveInterval {
-                        tilesSinceSave = 0
-                        persistCoverage()
-                    }
-                }
+                report()
+                continue
             }
+
+            failures = 0
+            coverage.record(cell, resolution: cell.span.latitudeDelta)
+            cellsSinceSave += 1
+            if cellsSinceSave >= Self.coverageSaveInterval {
+                cellsSinceSave = 0
+                persistCoverage()
+            }
+
+            // Empty ground is not evidence of anything: a cell of water returns nothing at
+            // all, and a place is allowed to have water in the middle of it. Only results
+            // that belong somewhere else say the sweep has left the place.
+            let belongs = belongsToRegion.map { test in saved.contains(where: test) } ?? true
+            let isElsewhere = belongsToRegion != nil && !belongs && !saved.isEmpty
+            expand(from: cell, probe: isElsewhere ? probe + 1 : (belongs ? 0 : probe))
 
             report()
         }
 
         // One text pass over the whole area, for parks the map never categorised. Done once
-        // rather than per tile: it used to run alongside every tile, which doubled the cost
+        // rather than per cell: it used to run alongside every tile, which doubled the cost
         // of a sweep to no benefit, since an uncategorised park is found just as well by a
         // wide query as a narrow one.
         if completed, !Task.isCancelled {
@@ -685,10 +710,12 @@ final class ParkDiscoveryService {
             report()
         }
 
-        if completed && !truncated {
-            // The region as a whole, at the resolution its tiles were actually searched.
-            coverage.record(square, resolution: Self.targetTileMeters / 111_000)
-        }
+        // Deliberately not recording the whole square as swept, even on a clean finish. The
+        // sweep followed the shape of the place; the corners of the box around it were never
+        // searched, and claiming them would let a later sweep of the town next door skip
+        // ground nobody has ever looked at. Each cell records itself as it is finished, which
+        // is the only claim that is true.
+        //
         // Whatever was finished is written down either way. A sweep that stopped early still
         // searched real ground, and losing that is what made a retry repeat everything.
         persistCoverage()
@@ -856,6 +883,25 @@ final class ParkDiscoveryService {
         var descriptor = FetchDescriptor<Park>(predicate: #Predicate { $0.identifier == identifier })
         descriptor.fetchLimit = 1
         return (try? modelContext.fetch(descriptor))?.first
+    }
+
+    /// Parks already saved inside one cell.
+    ///
+    /// Asked of the store rather than of the map, so a resumed sweep can tell whether ground
+    /// it has already covered was part of the place without spending a request to find out
+    /// again. Bounded by the cell, so it never materialises the catalogue.
+    private func storedParks(in cell: MKCoordinateRegion) -> [Park] {
+        let minLatitude = cell.center.latitude - cell.span.latitudeDelta / 2
+        let maxLatitude = cell.center.latitude + cell.span.latitudeDelta / 2
+        let minLongitude = cell.center.longitude - cell.span.longitudeDelta / 2
+        let maxLongitude = cell.center.longitude + cell.span.longitudeDelta / 2
+        let descriptor = FetchDescriptor<Park>(
+            predicate: #Predicate<Park> {
+                $0.latitude >= minLatitude && $0.latitude <= maxLatitude
+                    && $0.longitude >= minLongitude && $0.longitude <= maxLongitude
+            }
+        )
+        return (try? modelContext.fetch(descriptor)) ?? []
     }
 
     private func nearestCachedPark(to origin: CLLocation, within meters: CLLocationDistance) -> Park? {
