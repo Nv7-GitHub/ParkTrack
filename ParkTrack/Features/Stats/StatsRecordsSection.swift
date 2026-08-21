@@ -4,10 +4,15 @@ import SwiftUI
 struct StatsRecordsSection: View {
     let records: Records
     let streaks: Streaks
+    /// How the ring anchor reads in a sentence — "you", "home", "your pin". The farthest
+    /// park is measured from whatever the radius section is pointed at, and "your anchor"
+    /// named the mechanism rather than the place.
+    let anchorLabel: String
 
-    init(records: Records, streaks: Streaks) {
+    init(records: Records, streaks: Streaks, anchorLabel: String) {
         self.records = records
         self.streaks = streaks
+        self.anchorLabel = anchorLabel
     }
 
     private var hasAnything: Bool { records.totalVisits > 0 }
@@ -32,7 +37,7 @@ struct StatsRecordsSection: View {
                         if let park = records.farthestPark {
                             StatsRecordRow(
                                 systemImage: "airplane",
-                                label: "Farthest from your anchor",
+                                label: "Farthest from \(anchorLabel)",
                                 value: park.name,
                                 detail: records.farthestDistanceMeters.map { Format.distance($0) },
                                 tint: Theme.sky

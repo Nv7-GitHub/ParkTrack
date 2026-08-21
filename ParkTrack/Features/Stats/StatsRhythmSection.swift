@@ -102,9 +102,13 @@ struct StatsRhythmSection: View {
             if peak == 0 {
                 StatsChartPlaceholder(systemImage: "chart.bar", message: emptyMessage)
             } else {
+                // A plottable *category* on x, not the bucket's numeric index. `.ratio`
+                // widths are a fraction of a discrete scale's step, and a continuous x
+                // scale has no step to take a fraction of — so every bar came out with no
+                // width and both charts drew an empty plot with correct axes.
                 Chart(buckets) { bucket in
                     BarMark(
-                        x: .value("Period", Double(bucket.id)),
+                        x: .value("Period", bucket.fullLabel),
                         y: .value("Visits", Double(bucket.count)),
                         width: .ratio(0.6)
                     )
@@ -119,7 +123,9 @@ struct StatsRhythmSection: View {
                     .accessibilityLabel(bucket.fullLabel)
                     .accessibilityValue("\(bucket.count) \(bucket.count == 1 ? "visit" : "visits")")
                 }
-                .chartXScale(domain: -0.6...(Double(buckets.count) - 0.4))
+                // The domain fixes the order: without it the categories sort themselves
+                // alphabetically, which puts Friday before Monday and April before January.
+                .chartXScale(domain: buckets.map(\.fullLabel))
                 .chartYScale(domain: 0...(Double(peak) * 1.15))
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
@@ -134,10 +140,12 @@ struct StatsRhythmSection: View {
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: buckets.map { Double($0.id) }) { value in
+                    // Labelled by the full name so the ticks line up with the bars, drawn
+                    // as the short one so twelve months fit across a phone.
+                    AxisMarks(values: buckets.map(\.fullLabel)) { value in
                         AxisValueLabel {
-                            if let raw = value.as(Double.self),
-                               let match = buckets.first(where: { $0.id == Int(raw.rounded()) }) {
+                            if let raw = value.as(String.self),
+                               let match = buckets.first(where: { $0.fullLabel == raw }) {
                                 Text(match.shortLabel)
                                     .font(.caption2)
                                     .foregroundStyle(Theme.textSecondary)

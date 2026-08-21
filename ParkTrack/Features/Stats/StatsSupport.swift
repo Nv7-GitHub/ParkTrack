@@ -68,9 +68,9 @@ enum StatsAnchor: Hashable, Identifiable {
 
 // MARK: - Derived buckets
 
-/// One column of a bar chart. `id` doubles as the plotted x position, so the buckets are
-/// drawn in the user's own week order and duplicate short symbols (two "S" days, three
-/// "J" months) can't collapse into a single bar.
+/// One column of a bar chart. `fullLabel` is the plotted category and `id` its position in
+/// the user's own week order, because duplicate short symbols (two "S" days, three "J"
+/// months) would collapse into a single bar if the axis plotted those instead.
 struct StatsBucket: Identifiable, Equatable {
     let id: Int
     let shortLabel: String

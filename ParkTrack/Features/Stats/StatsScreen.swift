@@ -63,21 +63,52 @@ struct StatsScreen: View {
         }
     }
 
+    /// The ring the year card reports each saved place at. Deliberately the tightest of the
+    /// fixed bands: "how much of my own neighbourhood" is a question about walking distance,
+    /// and a wider ring turns every answer into the same small percentage.
+    private static let placeRadiusMiles: Double = 2.5
+
     private var yearSummary: YearInReviewSummary {
         let streakWeeks = streaks.currentWeeks
+        let places = settings.savedPlaces
+        // The coordinates and labels are part of the signature: renaming "work" or moving
+        // the pin on it changes the card, and neither changes the park or visit counts.
+        let placeCoordinates = places.compactMap { settings.coordinate(for: $0) }
         let signature = StatsSignature(
             parkCount: parks.count,
             visitCount: modelContext.visitCount(),
             anchor: nil,
-            extra: [Double(streakWeeks)],
-            tokens: [settings.displayName]
+            extra: [Double(streakWeeks), StatsScreen.placeRadiusMiles]
+                + placeCoordinates.flatMap { [$0.latitude, $0.longitude] },
+            tokens: [settings.displayName] + places.map { settings.label(for: $0) }
         )
         return yearCache.value(for: signature) {
             YearInReviewSummary.make(
                 parks: parks,
                 year: Calendar.current.component(.year, from: Date()),
                 streakWeeks: streakWeeks,
-                displayName: settings.displayName
+                displayName: settings.displayName,
+                placeCompletions: placeCompletions(),
+                placeRadiusMiles: StatsScreen.placeRadiusMiles
+            )
+        }
+    }
+
+    /// One figure per saved place that actually has parks around it. A ring with nothing in
+    /// it yet would read as 0%, which says something about the index rather than the user.
+    private func placeCompletions() -> [YearInReviewSummary.PlaceCompletion] {
+        settings.savedPlaces.compactMap { kind in
+            guard let coordinate = settings.coordinate(for: kind) else { return nil }
+            let completion = StatsEngine.radiusCompletion(
+                parks: parks,
+                center: coordinate,
+                radiusMiles: StatsScreen.placeRadiusMiles
+            )
+            guard completion.total > 0 else { return nil }
+            return YearInReviewSummary.PlaceCompletion(
+                label: settings.label(for: kind),
+                visited: completion.visited,
+                total: completion.total
             )
         }
     }
@@ -129,7 +160,11 @@ struct StatsScreen: View {
 
                             StatsRhythmSection(parks: parks, signature: statsSignature, cache: cache)
 
-                            StatsRecordsSection(records: records, streaks: streaks)
+                            StatsRecordsSection(
+                                records: records,
+                                streaks: streaks,
+                                anchorLabel: anchor.sheetLabel(in: settings)
+                            )
 
                             YearInReviewCard(summary: yearSummary)
                         }

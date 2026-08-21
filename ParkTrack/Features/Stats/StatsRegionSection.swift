@@ -80,6 +80,14 @@ struct StatsRegionSection: View {
                             message: "No \(scope.noun) names resolved yet. They fill in as parks are looked up."
                         )
                     } else {
+                        // A collapse control at both ends. With 250-odd indexed cities the
+                        // expanded list is several screens tall, and a "Show fewer" that
+                        // only lives underneath it means scrolling the whole way down to
+                        // undo a tap you made at the top.
+                        if isExpanded && all.count > collapsedLimit {
+                            collapseToggle(total: all.count)
+                        }
+
                         VStack(spacing: 14) {
                             ForEach(Array(shown.enumerated()), id: \.element.id) { index, completion in
                                 Button {
@@ -117,17 +125,7 @@ struct StatsRegionSection: View {
                         .animation(.smooth(duration: 0.4), value: shown.map(\.id))
 
                         if all.count > collapsedLimit {
-                            Button {
-                                withAnimation(.smooth(duration: 0.35)) { isExpanded.toggle() }
-                            } label: {
-                                Label(
-                                    isExpanded ? "Show fewer" : "Show all \(all.count)",
-                                    systemImage: isExpanded ? "chevron.up" : "chevron.down"
-                                )
-                                .font(.caption.weight(.medium))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Theme.accent)
+                            collapseToggle(total: all.count)
                         }
                     }
                 }
@@ -140,5 +138,19 @@ struct StatsRegionSection: View {
             RegionProgressSheet(initialCompletion: completion, origin: nil)
                 .presentationDetents([.medium, .large])
         }
+    }
+
+    private func collapseToggle(total: Int) -> some View {
+        Button {
+            withAnimation(.smooth(duration: 0.35)) { isExpanded.toggle() }
+        } label: {
+            Label(
+                isExpanded ? "Show fewer" : "Show all \(total)",
+                systemImage: isExpanded ? "chevron.up" : "chevron.down"
+            )
+            .font(.caption.weight(.medium))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Theme.accent)
     }
 }

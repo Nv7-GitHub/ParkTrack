@@ -149,7 +149,7 @@ struct HomeMapPickerSheet: View {
         VStack(spacing: 10) {
             if purpose == .setHome {
                 actionCard(
-                    title: "Centre the map on home",
+                    title: "Center the map on home",
                     detail: "Rings and suggestions are measured from this point.",
                     buttonTitle: "Set home here"
                 ) {

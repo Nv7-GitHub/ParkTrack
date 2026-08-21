@@ -277,7 +277,7 @@ struct SettingsScreen: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Text("Home is also the fallback centre for the rest of the app when there's no location fix.")
+                Text("Home is also the fallback center for the rest of the app when there's no location fix.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

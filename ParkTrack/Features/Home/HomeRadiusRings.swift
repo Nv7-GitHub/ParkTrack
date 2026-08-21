@@ -114,7 +114,7 @@ struct HomeLocationPrompt: View {
                 Image(systemName: "location.circle")
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(Theme.accent)
-                Text("Rings need a centre point")
+                Text("Rings need a center point")
                     .font(.headline)
                     .foregroundStyle(Theme.textPrimary)
                 Text("Completion rings measure how much you've seen within a few miles of you. Share your location, or drop a home pin and we'll measure from there.")

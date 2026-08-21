@@ -7,6 +7,20 @@ import CoreLocation
 /// `ImageRenderer`, which walks the view outside the app's normal environment, so nothing
 /// in the poster may reach back into SwiftData or the model context.
 struct YearInReviewSummary: Equatable {
+
+    /// How much of the neighbourhood around one saved place has been ticked off.
+    ///
+    /// Carries its own label and figures rather than a `SavedPlaceKind`, for the same
+    /// reason as everything else here: the poster is drawn outside the app's environment
+    /// and cannot ask `AppSettings` what the user renamed "work" to.
+    struct PlaceCompletion: Equatable {
+        let label: String
+        let visited: Int
+        let total: Int
+
+        var fraction: Double { total == 0 ? 0 : Double(visited) / Double(total) }
+    }
+
     let year: Int
     let displayName: String
     let parksDiscovered: Int
@@ -18,6 +32,13 @@ struct YearInReviewSummary: Equatable {
     let topParkVisits: Int
     let firstVisitOfYear: Date?
     let averageRating: Double?
+    /// One entry per saved place that exists and has parks near it, in Home/School/Work
+    /// order. Unlike everything else on the poster this is the whole collection rather
+    /// than the year's slice — "how much of my own neighbourhood have I done" doesn't
+    /// reset in January.
+    let placeCompletions: [PlaceCompletion]
+    /// The ring these were measured at, so the poster can name it.
+    let placeRadiusMiles: Double
 
     var isEmpty: Bool { parksDiscovered == 0 && visits == 0 }
 
@@ -28,6 +49,8 @@ struct YearInReviewSummary: Equatable {
         year: Int,
         streakWeeks: Int,
         displayName: String,
+        placeCompletions: [PlaceCompletion] = [],
+        placeRadiusMiles: Double = 2.5,
         calendar: Calendar = .current
     ) -> YearInReviewSummary {
         let discovered = StatsBreakdown.parksDiscovered(parks: parks, year: year, calendar: calendar)
@@ -73,7 +96,9 @@ struct YearInReviewSummary: Equatable {
             topParkName: ranked.first?.park.name,
             topParkVisits: ranked.first?.count ?? 0,
             firstVisitOfYear: visitDates.min(),
-            averageRating: ratingAverage
+            averageRating: ratingAverage,
+            placeCompletions: placeCompletions,
+            placeRadiusMiles: placeRadiusMiles
         )
     }
 
@@ -126,7 +151,7 @@ struct YearInReviewPoster: View {
 
             if let top = summary.topParkName {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Favourite this year")
+                    Text("Favorite this year")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(ink.opacity(0.75))
                     Text(top)
@@ -141,6 +166,10 @@ struct YearInReviewPoster: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
                 .background(ink.opacity(0.16), in: RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous))
+            }
+
+            if !summary.placeCompletions.isEmpty {
+                placeCompletions
             }
 
             HStack(spacing: 6) {
@@ -159,6 +188,51 @@ struct YearInReviewPoster: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Year in review for \(String(summary.year))")
+    }
+
+    /// Home, school and work side by side, so the card answers "how much of where I
+    /// actually live have I covered" alongside the year's totals.
+    private var placeCompletions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Within \(Format.miles(summary.placeRadiusMiles))")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(ink.opacity(0.75))
+
+            HStack(spacing: 10) {
+                ForEach(summary.placeCompletions, id: \.label) { place in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(Format.percent(place.fraction))
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .foregroundStyle(ink)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                        Text(place.label)
+                            .font(.caption2)
+                            .foregroundStyle(ink.opacity(0.85))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text("\(place.visited)/\(place.total)")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(ink.opacity(0.7))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 12)
+                    .background(ink.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(place.label), within \(Format.miles(summary.placeRadiusMiles))")
+                    .accessibilityValue("\(place.visited) of \(place.total) parks visited, \(Format.percent(place.fraction))")
+                }
+                // One or two places would otherwise stretch to fill the row and dwarf the
+                // stat tiles above them.
+                if summary.placeCompletions.count < 3 {
+                    ForEach(summary.placeCompletions.count..<3, id: \.self) { _ in
+                        Color.clear.frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
     }
 
     private func posterStat(_ value: String, _ label: String) -> some View {
