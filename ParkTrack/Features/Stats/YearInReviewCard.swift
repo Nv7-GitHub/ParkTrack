@@ -224,13 +224,6 @@ struct YearInReviewPoster: View {
                     .accessibilityLabel("\(place.label), within \(Format.miles(summary.placeRadiusMiles))")
                     .accessibilityValue("\(place.visited) of \(place.total) parks visited, \(Format.percent(place.fraction))")
                 }
-                // One or two places would otherwise stretch to fill the row and dwarf the
-                // stat tiles above them.
-                if summary.placeCompletions.count < 3 {
-                    ForEach(summary.placeCompletions.count..<3, id: \.self) { _ in
-                        Color.clear.frame(maxWidth: .infinity)
-                    }
-                }
             }
         }
     }

@@ -131,10 +131,15 @@ struct StatsTimelineSection: View {
         // Bars occupy at most ~55% of the plot so they never swamp the curve.
         let barScale = Double(ceiling) * 0.55 / Double(barPeak)
 
+        let step = xStride(for: data.count)
+        // Every mark plots at the middle of its month. A `BarMark` given a month unit fills
+        // the whole month and so sits half a month to the right of the month's own date —
+        // which is where the curve and the axis labels were, so at 6M, where every month is
+        // labelled, each bar stood visibly to the right of its label and its own curve point.
         Chart {
             ForEach(data) { point in
                 AreaMark(
-                    x: .value("Month", point.date, unit: .month),
+                    x: .value("Month", midMonth(point.date)),
                     y: .value("Total parks", Double(point.cumulative))
                 )
                 .interpolationMethod(.catmullRom)
@@ -151,7 +156,7 @@ struct StatsTimelineSection: View {
 
             ForEach(data) { point in
                 LineMark(
-                    x: .value("Month", point.date, unit: .month),
+                    x: .value("Month", midMonth(point.date)),
                     y: .value("Total parks", Double(point.cumulative))
                 )
                 .interpolationMethod(.catmullRom)
@@ -195,11 +200,15 @@ struct StatsTimelineSection: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .stride(by: .month, count: xStride(for: data.count))) { value in
+            // Two passes: the grid lines belong on the month boundaries, and the labels
+            // belong under the middle of the month they name, which is where its bar is.
+            AxisMarks(values: .stride(by: .month, count: step)) { _ in
                 AxisGridLine().foregroundStyle(Theme.separator.opacity(0.5))
+            }
+            AxisMarks(values: labelDates(for: data, step: step)) { value in
                 AxisValueLabel {
                     if let date = value.as(Date.self) {
-                        Text(axisLabel(date))
+                        Text(axisLabel(date, usesInitials: usesInitials(data: data, step: step)))
                             .font(.caption2)
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -242,21 +251,38 @@ struct StatsTimelineSection: View {
 
     private func xStride(for count: Int) -> Int {
         switch count {
-        case ..<8: return 1
-        case ..<15: return 2
+        case ..<15: return 1
         case ..<27: return 4
         case ..<50: return 6
         default: return 12
         }
     }
 
-    /// Month names, not initials.
+    /// The middle of `date`'s month — where a month-wide bar actually sits.
+    private func midMonth(_ date: Date) -> Date {
+        guard let month = Calendar.current.dateInterval(of: .month, for: date) else { return date }
+        return month.start.addingTimeInterval(month.duration / 2)
+    }
+
+    /// The months the axis names, at the position their bars occupy.
+    private func labelDates(for data: [TimelinePoint], step: Int) -> [Date] {
+        Swift.stride(from: 0, to: data.count, by: step).map { midMonth(data[$0].date) }
+    }
+
+    /// Initials once every month is named and there are enough of them to crowd.
     ///
-    /// The narrow format renders a single letter, and since the axis only labels every second
-    /// or third month, a year came out as "S N J M M J" — unreadable, and worse than useless
-    /// because it looks like it should mean something. Abbreviated names survive the same
-    /// stride, and the year is called out at each January so a multi-year range stays placed.
-    private func axisLabel(_ date: Date) -> String {
+    /// A year is twelve labels across a phone, which is exactly what the rhythm charts
+    /// draw as single letters. Below that there is room for the abbreviated name, and it
+    /// is worth having: a strided axis labelling every fourth month as "S N J M M J" would
+    /// be unreadable, and worse than useless because it looks like it should mean something.
+    private func usesInitials(data: [TimelinePoint], step: Int) -> Bool {
+        step == 1 && data.count > 8
+    }
+
+    /// Month names, with the year called out at each January so a multi-year range stays
+    /// placed.
+    private func axisLabel(_ date: Date, usesInitials: Bool) -> String {
+        if usesInitials { return date.formatted(.dateTime.month(.narrow)) }
         let month = date.formatted(.dateTime.month(.abbreviated))
         guard monthsBack > 14 else { return month }
         let isJanuary = Calendar.current.component(.month, from: date) == 1
