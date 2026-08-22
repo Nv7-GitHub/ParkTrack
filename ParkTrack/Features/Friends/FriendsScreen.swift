@@ -55,7 +55,13 @@ struct FriendsScreen: View {
                         FriendsDisplayNameCard(settings: settings)
                     }
 
-                    if let social, let phase = social.publishPhase, let fraction = social.publishProgress {
+                    // Only when something is genuinely being sent. The mock reports progress
+                    // so this card can be looked at during development, which meant a build
+                    // running on sample data drew a convincing upload — a real bar, over a
+                    // real byte count, for a backend that discards everything. Sitting
+                    // directly beneath a banner saying nothing leaves the device.
+                    if let social, social.backendKind.isLive,
+                       let phase = social.publishPhase, let fraction = social.publishProgress {
                         FriendsSharingBanner(phase: phase, fraction: fraction, bytes: social.publishBytes)
                     }
 

@@ -34,7 +34,39 @@ enum CloudKitAvailability {
 
     static var isUsable: Bool { status.isLive }
 
+    /// Whether this build carries the iCloud container entitlement.
+    ///
+    /// Read from the embedded provisioning profile, which is the only copy of the
+    /// entitlements a process can inspect without private API — and which is *absent from
+    /// App Store builds*. Apple strips the profile when it re-signs for distribution, so a
+    /// TestFlight build has no file to read and the old version of this concluded it was
+    /// unentitled. Friends silently fell back to invented sample data on every build that
+    /// left this machine, while working perfectly in Xcode, and the upload progress came
+    /// from the mock reporting fake steps.
+    ///
+    /// So a missing profile is now read the other way round. Three cases, and only one of
+    /// them is ambiguous:
+    ///
+    /// - **Simulator:** never has a profile and never has real entitlements. Unentitled.
+    /// - **Profile present:** a development or ad-hoc build. Believe what it says, which is
+    ///   what makes deliberately building without entitlements still work.
+    /// - **Profile absent on a device:** only reachable by an App Store-signed build, and
+    ///   the app is signed with the entitlements file every time it is built for
+    ///   distribution. Entitled.
     static let hasICloudEntitlement: Bool = {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        guard Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision") != nil else {
+            // Distribution build: the profile was stripped, not missing.
+            return true
+        }
+        return profileGrantsICloud
+        #endif
+    }()
+
+    /// What the embedded provisioning profile says, for the builds that have one.
+    private static let profileGrantsICloud: Bool = {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
               let raw = String(data: data, encoding: .isoLatin1),
