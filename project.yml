@@ -48,7 +48,16 @@ targets:
         # generator. See the comment in that file. GENERATE_INFOPLIST_FILE above still
         # applies: the file is the base and the generated keys merge on top.
         INFOPLIST_FILE: ParkTrack/Info.plist
-        TARGETED_DEVICE_FAMILY: "1,2"
+        # iPhone only. Declaring iPad brings a rule with it: an iPad app must support all
+        # four orientations, because it can be resized into any of them by multitasking —
+        # and the upload is rejected outright for declaring iPad while offering only
+        # portrait. Supporting them would mean designing and testing a landscape layout that
+        # has never existed, to ship an iPad experience nobody has looked at.
+        #
+        # An iPhone-only app still installs and runs on an iPad, scaled. That is an honest
+        # description of what this is. Worth settling now: device support cannot be narrowed
+        # after release, only widened.
+        TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     postBuildScripts:
       # The friends features degrade silently rather than failing: with no iCloud entitlement

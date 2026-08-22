@@ -155,6 +155,45 @@ final class BackgroundModeTests: XCTestCase {
         XCTAssertTrue(modes.contains("remote-notification"), "background modes are \(modes)")
     }
 
+    /// Declared orientations have to match the devices declared.
+    ///
+    /// An iPad app must offer all four orientations or the upload is rejected — multitasking
+    /// can resize it into any of them. Nothing catches that locally: it builds, it runs, it
+    /// passes every test, and then App Store Connect refuses the binary after the archive
+    /// and the upload have already been waited through. Cheaper to fail here.
+    func testOrientationsMatchTheDevicesDeclared() throws {
+        let yml = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("project.yml"),
+            encoding: .utf8
+        )
+        let settings = yml
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.hasPrefix("#") }
+
+        let family = try XCTUnwrap(
+            settings.first { $0.hasPrefix("TARGETED_DEVICE_FAMILY:") },
+            "no TARGETED_DEVICE_FAMILY in project.yml"
+        )
+        guard family.contains("2") else { return } // iPhone only: portrait alone is allowed.
+
+        let orientations = try XCTUnwrap(
+            settings.first { $0.hasPrefix("INFOPLIST_KEY_UISupportedInterfaceOrientations:") },
+            "iPad is declared but no orientations are"
+        )
+        for required in [
+            "UIInterfaceOrientationPortrait",
+            "UIInterfaceOrientationPortraitUpsideDown",
+            "UIInterfaceOrientationLandscapeLeft",
+            "UIInterfaceOrientationLandscapeRight"
+        ] {
+            XCTAssertTrue(
+                orientations.contains(required),
+                "iPad is declared, so \(required) is required too or the upload is rejected"
+            )
+        }
+    }
+
     /// The export compliance answer, so uploads stop asking.
     ///
     /// Guarded because it is a declaration to a regulator rather than a convenience: if the
