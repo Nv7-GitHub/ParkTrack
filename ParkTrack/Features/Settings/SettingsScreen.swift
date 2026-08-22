@@ -183,7 +183,7 @@ struct SettingsScreen: View {
             }
             .fileImporter(
                 isPresented: $isImporting,
-                allowedContentTypes: [BackupArchive.contentType],
+                allowedContentTypes: BackupArchive.contentTypes,
                 allowsMultipleSelection: false
             ) { result in
                 Task { await handleImport(result) }
@@ -276,7 +276,7 @@ struct SettingsScreen: View {
     private func shareText(for settings: AppSettings) -> String {
         let name = settings.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let who = name.isEmpty ? "me" : name
-        return "Add \(who) on ParkTrack with friend code \(settings.friendCode)."
+        return "Add \(who) on ParkMax with friend code \(settings.friendCode)."
     }
 
     // MARK: - Places
@@ -301,7 +301,7 @@ struct SettingsScreen: View {
                 }
 
                 if !location.isAuthorized {
-                    Text("Location access is off, so ParkTrack can't read your current position.")
+                    Text("Location access is off, so ParkMax can't read your current position.")
                         .font(.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -652,7 +652,7 @@ struct SettingsScreen: View {
 
     private func rescanArea() async {
         guard let discovery, let centre = scanCentre else {
-            errorMessage = "Set a home location first so ParkTrack knows where to look."
+            errorMessage = "Set a home location first so ParkMax knows where to look."
             return
         }
         errorMessage = nil

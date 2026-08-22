@@ -30,6 +30,19 @@
 	  this has to be revisited, because it is a declaration to a regulator and not a build
 	  setting.
 	-->
+	<!--
+	  What the icon says on the home screen, which is not what the App Store calls it.
+	  Store names are unique across every developer and "ParkTrack" is already taken, so the
+	  listing has to carry a longer one. This is the short name, and it has no uniqueness
+	  requirement at all — two apps may both call themselves ParkMax on a phone.
+
+	  The target, the module and the bundle id are all still ParkTrack, deliberately. None of
+	  them is visible to anybody using the app, and changing the bundle id would mean a new
+	  iCloud container, a re-upload of every photo, and abandoning everything already
+	  published — a great deal of work to tidy a string only the developer ever reads.
+	-->
+	<key>CFBundleDisplayName</key>
+	<string>ParkMax</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>UIBackgroundModes</key>

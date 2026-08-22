@@ -28,7 +28,15 @@ import UniformTypeIdentifiers
 enum BackupArchive {
     static let magic = Data("PTBK".utf8)
     static let formatVersion: UInt32 = 1
-    static let fileExtension = "parktrackbackup"
+    static let fileExtension = "parkmaxbackup"
+
+    /// What backups were called before the app was renamed.
+    ///
+    /// Still opened, because a rename is no reason to stop reading somebody's backup — and
+    /// the file itself did not change at all. Only the extension differs; the magic number,
+    /// the layout and the manifest are identical, so a file written under either name is
+    /// read by the same code.
+    static let legacyFileExtension = "parktrackbackup"
 
     /// A dynamic type derived from the extension rather than one declared in the Info.plist.
     /// Declaring an exported UTI would mean an array of dictionaries in the generated
@@ -37,6 +45,15 @@ enum BackupArchive {
     /// system declines to mint one, in which case the magic-number check still rejects
     /// anything that is not a backup.
     static let contentType: UTType = UTType(filenameExtension: fileExtension) ?? .data
+
+    /// Everything the file picker should offer, newest name first.
+    static let contentTypes: [UTType] = [
+        UTType(filenameExtension: fileExtension),
+        UTType(filenameExtension: legacyFileExtension)
+    ].compactMap { $0 }.isEmpty ? [.data] : [
+        UTType(filenameExtension: fileExtension),
+        UTType(filenameExtension: legacyFileExtension)
+    ].compactMap { $0 }
 
     /// Guards against a corrupt or hostile length prefix being taken at face value and
     /// turned into an allocation. Nothing ParkTrack writes comes close to this.
@@ -52,8 +69,8 @@ enum BackupArchiveError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notAnArchive: "That doesn't look like a ParkTrack backup."
-        case .unsupportedVersion(let version): "That backup was made by a newer version of ParkTrack (format \(version))."
+        case .notAnArchive: "That doesn't look like a ParkMax backup."
+        case .unsupportedVersion(let version): "That backup was made by a newer version of ParkMax (format \(version))."
         case .truncated: "That backup file is incomplete."
         case .corruptEntry: "That backup file is damaged."
         }

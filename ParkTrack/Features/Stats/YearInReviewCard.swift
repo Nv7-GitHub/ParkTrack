@@ -174,7 +174,7 @@ struct YearInReviewPoster: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "tree.fill").font(.caption2)
-                Text("ParkTrack").font(.caption.weight(.semibold))
+                Text("ParkMax").font(.caption.weight(.semibold))
                 Spacer(minLength: 0)
                 if let first = summary.firstVisitOfYear {
                     Text("since \(Format.shortDate(first))").font(.caption2)

@@ -15,7 +15,7 @@ struct AddFriendSheet: View {
     @State private var didCopy = false
 
     private var shareMessage: String {
-        "Add me on ParkTrack — my friend code is \(myCode)."
+        "Add me on ParkMax — my friend code is \(myCode)."
     }
 
     /// Nil while the field is incomplete: half-typed codes shouldn't read as errors.

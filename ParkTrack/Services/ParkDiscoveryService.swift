@@ -12,7 +12,7 @@ import SwiftData
 /// Taken from the bundle rather than written out, so it follows the app across a change of
 /// signing team instead of leaving the logs filed under a name nothing is called any more.
 let sweepLog = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "ParkTrack",
+    subsystem: Bundle.main.bundleIdentifier ?? "ParkMax",
     category: "sweep"
 )
 

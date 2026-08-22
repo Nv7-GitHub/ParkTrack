@@ -931,7 +931,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ParkTrack/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo or video at a park to attach to your visit.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkMax uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos and videos from your library to a park visit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -1092,7 +1092,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ParkTrack/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo or video at a park to attach to your visit.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkMax uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos and videos from your library to a park visit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

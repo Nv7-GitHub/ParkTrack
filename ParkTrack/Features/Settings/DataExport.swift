@@ -172,8 +172,8 @@ enum BackupError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unreadableFile: "That file couldn't be opened."
-        case .notABackup: "That doesn't look like a ParkTrack backup."
-        case .unsupportedVersion(let version): "That backup was made by a newer version of ParkTrack (format \(version))."
+        case .notABackup: "That doesn't look like a ParkMax backup."
+        case .unsupportedVersion(let version): "That backup was made by a newer version of ParkMax (format \(version))."
         }
     }
 }
@@ -365,7 +365,7 @@ enum DataExport {
 
     static func defaultFileName(date: Date = Date()) -> String {
         let stamp = date.formatted(.iso8601.year().month().day().dateSeparator(.dash))
-        return "ParkTrack-Backup-\(stamp).\(BackupArchive.fileExtension)"
+        return "ParkMax-Backup-\(stamp).\(BackupArchive.fileExtension)"
     }
 
     // MARK: - Reading an archive
