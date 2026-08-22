@@ -19,6 +19,19 @@
 	  GENERATE_INFOPLIST_FILE stays on: Xcode treats this as the base and merges the generated
 	  keys on top, so the usage descriptions and the rest still come from project.yml.
 	-->
+	<!--
+	  Answers the export compliance question at upload time rather than in a dialog.
+	  Every build otherwise asks whether the app uses non-exempt encryption, on every
+	  upload, forever. It does not: CloudKit and HTTPS are exempt under the standard
+	  exemption for encryption that is only used to protect a connection, and nothing here
+	  implements or ships any of its own.
+
+	  If that ever stops being true — a custom cipher, encrypted local storage of its own —
+	  this has to be revisited, because it is a declaration to a regulator and not a build
+	  setting.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

@@ -155,6 +155,27 @@ final class BackgroundModeTests: XCTestCase {
         XCTAssertTrue(modes.contains("remote-notification"), "background modes are \(modes)")
     }
 
+    /// The export compliance answer, so uploads stop asking.
+    ///
+    /// Guarded because it is a declaration to a regulator rather than a convenience: if the
+    /// app ever does ship its own encryption, this key becoming wrong is not something a
+    /// build failure would catch, and the upload dialog it suppresses is the only other
+    /// place anybody would be asked.
+    func testExportComplianceIsDeclared() throws {
+        let url = repositoryRoot
+            .appendingPathComponent("ParkTrack")
+            .appendingPathComponent("Info.plist")
+        let plist = try XCTUnwrap(
+            try PropertyListSerialization.propertyList(
+                from: try Data(contentsOf: url), options: [], format: nil
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(
+            plist["ITSAppUsesNonExemptEncryption"] as? Bool, false,
+            "the export compliance answer is gone, so every upload will ask again"
+        )
+    }
+
     /// And that the project still points at the file, since the build setting alone is a
     /// no-op and would look identical in a diff.
     func testProjectUsesTheInfoPlistFile() throws {
