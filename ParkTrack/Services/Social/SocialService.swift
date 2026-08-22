@@ -296,10 +296,29 @@ final class SocialService {
             publishBytes = 0
         }
 
-        publishPhase = .preparing
-        publishProgress = 0
-        let payloads = await visitPayloads(from: parks) { [weak self] fraction in
-            self?.publishProgress = fraction
+        let known = publishedSignatures(under: profile.code)
+        var current: [String: String] = [:]
+        var changed: [(park: Park, visit: Visit)] = []
+
+        for park in parks {
+            for visit in park.visits ?? [] {
+                let id = visit.identifier.uuidString
+                let signature = Self.signature(park: park, visit: visit)
+                current[id] = signature
+                if known[id] != signature { changed.append((park, visit)) }
+            }
+        }
+
+        // The profile itself is a single small record and its numbers move whenever anything
+        // does, so it always goes. The visits are the expensive part and only the changed
+        // ones are touched.
+        var payloads: [FriendVisitPayload] = []
+        if !changed.isEmpty {
+            publishPhase = .preparing
+            publishProgress = 0
+            payloads = await visitPayloads(for: changed) { [weak self] fraction in
+                self?.publishProgress = fraction
+            }
         }
 
         publishPhase = .uploading
@@ -310,6 +329,10 @@ final class SocialService {
             try await backend.publish(profile: profile, visits: payloads) { [weak self] fraction in
                 self?.publishProgress = fraction
             }
+            // Only once it has actually landed. A failed upload that recorded success here
+            // would leave those visits permanently unshared, since nothing would ever think
+            // to send them again.
+            recordPublished(current, under: profile.code)
             lastSyncedAt = Date()
         } catch {
             lastError = message(for: error)
@@ -483,13 +506,12 @@ final class SocialService {
     /// that owns the store, but the decode-scale-encode after it does not — and that is the
     /// part that costs tenths of a second each and used to freeze the tab.
     private func visitPayloads(
-        from parks: [Park],
+        for candidates: [(park: Park, visit: Visit)],
         progress: @MainActor (Double) -> Void
     ) async -> [FriendVisitPayload] {
-        let candidates = parks.flatMap { park in (park.visits ?? []).map { (park, $0) } }
         var payloads: [FriendVisitPayload] = []
 
-        for (index, pair) in candidates.enumerated() {
+        for (index, pair) in candidates.prefix(Self.maxPublishedVisits).enumerated() {
             let (park, visit) = pair
             let shared = await attachment(for: visit)
             payloads.append(
@@ -508,10 +530,7 @@ final class SocialService {
             )
             progress(Double(index + 1) / Double(max(candidates.count, 1)))
         }
-        return payloads
-            .sorted { $0.date > $1.date }
-            .prefix(Self.maxPublishedVisits)
-            .map { $0 }
+        return payloads.sorted { $0.date > $1.date }
     }
 
     /// Photos win over video because they're already small; a heavy video degrades to
@@ -560,6 +579,68 @@ final class SocialService {
     }
 
     // MARK: - Identity
+
+    // MARK: - What has already been shared
+
+    /// A fingerprint per visit, kept between launches.
+    ///
+    /// Publishing used to re-share the entire history every time the Friends tab appeared:
+    /// the flag guarding it was view state, so it reset on every launch, and the payload was
+    /// rebuilt from nothing each time. For a library of any size that is a hundred photos
+    /// decoded, scaled and re-encoded, and a hundred records uploaded, to say exactly what
+    /// iCloud was already told yesterday.
+    ///
+    /// Only visits whose fingerprint has changed are rebuilt and sent. In the ordinary case
+    /// — open the app, nothing logged since — that is none of them, and the whole expensive
+    /// half is skipped.
+    private static let signaturesKey = "social.publishedVisitSignatures"
+    private static let signaturesCodeKey = "social.publishedUnderCode"
+
+    /// What has been shared, and under which friend code.
+    ///
+    /// The code matters as much as the fingerprints. Every shared visit carries the code it
+    /// was published under, and that is what a friend queries on — so after the code changes,
+    /// which happens whenever a backup is restored onto a fresh install, every record out
+    /// there is still tagged with the old one. Skipping them as "unchanged" would leave a
+    /// whole history published under a name nobody is looking for, and invisible for good.
+    /// A different code means everything counts as new.
+    private func publishedSignatures(under code: String) -> [String: String] {
+        guard UserDefaults.standard.string(forKey: Self.signaturesCodeKey) == code else { return [:] }
+        return UserDefaults.standard.dictionary(forKey: Self.signaturesKey) as? [String: String] ?? [:]
+    }
+
+    private func recordPublished(_ signatures: [String: String], under code: String) {
+        UserDefaults.standard.set(signatures, forKey: Self.signaturesKey)
+        UserDefaults.standard.set(code, forKey: Self.signaturesCodeKey)
+    }
+
+    /// Everything about a visit that a friend can see, as a string.
+    ///
+    /// Deliberately not `Hasher`, which is seeded per process and would therefore disagree
+    /// with itself across launches — which is exactly when this has to be comparable.
+    private static func signature(park: Park, visit: Visit) -> String {
+        let media = visit.sortedMedia
+            .map { "\($0.identifier.uuidString):\($0.byteCount)" }
+            .joined(separator: ",")
+        return [
+            park.name,
+            String(format: "%.5f,%.5f", park.latitude, park.longitude),
+            park.regionLabel ?? "",
+            String(visit.date.timeIntervalSince1970),
+            visit.notes,
+            String(visit.rating),
+            media
+        ].joined(separator: "|")
+    }
+
+    /// Forgets what has been shared, so the next publish sends everything again.
+    ///
+    /// Needed whenever the far end may no longer have what we think it has — a new friend
+    /// code is a new profile, and its visits have never been sent under it.
+    func forgetPublishedState() {
+        UserDefaults.standard.removeObject(forKey: Self.signaturesKey)
+        UserDefaults.standard.removeObject(forKey: Self.signaturesCodeKey)
+    }
 
     /// Read from the same defaults `AppSettings` writes to, so the service doesn't
     /// need the settings object injected just to know who "I" am.
