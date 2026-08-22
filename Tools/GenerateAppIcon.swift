@@ -27,7 +27,14 @@ enum Variant {
     case light, dark, tinted
 }
 
-func makeContext() -> CGContext {
+/// Tinted icons are a mask and need their transparency; light and dark are full-bleed
+/// artwork and must not have an alpha channel at all.
+///
+/// App Store Connect will not display an icon whose PNG contains alpha, even when every
+/// pixel in it is opaque — which is what these were: a channel carried for no reason, and an
+/// app with no picture next to it in the console. Nothing about the artwork changes here,
+/// only whether a fourth channel is written out beside it.
+func makeContext(_ variant: Variant) -> CGContext {
     let context = CGContext(
         data: nil,
         width: Int(side),
@@ -35,7 +42,9 @@ func makeContext() -> CGContext {
         bitsPerComponent: 8,
         bytesPerRow: 0,
         space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        bitmapInfo: variant == .tinted
+            ? CGImageAlphaInfo.premultipliedLast.rawValue
+            : CGImageAlphaInfo.noneSkipLast.rawValue
     )!
     // Draw in top-left origin coordinates, which is easier to reason about.
     context.translateBy(x: 0, y: side)
@@ -132,7 +141,7 @@ func drawTree(_ context: CGContext, _ variant: Variant) {
 }
 
 func render(_ variant: Variant, to url: URL) {
-    let context = makeContext()
+    let context = makeContext(variant)
     drawBackground(context, variant)
     drawRing(context, variant)
     drawTree(context, variant)
