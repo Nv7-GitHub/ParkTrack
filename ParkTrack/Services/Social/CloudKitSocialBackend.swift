@@ -142,12 +142,29 @@ struct CloudKitSocialBackend: SocialBackend {
         do {
             for batch in stride(from: 0, to: records.count, by: Self.saveBatchSize) {
                 let end = min(batch + Self.saveBatchSize, records.count)
-                _ = try await database.modifyRecords(
+                let (saved, _) = try await database.modifyRecords(
                     saving: Array(records[batch..<end]),
                     deleting: [],
                     savePolicy: .allKeys,
                     atomically: false
                 )
+
+                // Every result is inspected, because `atomically: false` reports a failed
+                // record in this dictionary rather than by throwing. Discarding it meant a
+                // batch could fail in its entirety while publishing returned as though it
+                // had worked — and the caller would then record those visits as shared and
+                // never send them again. Which is the exact thing recording-after-success
+                // was there to prevent.
+                //
+                // Failing on the first one is deliberate: the causes are all wholesale
+                // rather than per-record — no schema in this environment, no account, no
+                // network — so the second failure says nothing the first did not.
+                for result in saved.values {
+                    if case .failure(let error) = result {
+                        throw Self.socialError(from: error)
+                    }
+                }
+
                 let done = Double(end) / Double(records.count)
                 await MainActor.run { progress(done) }
             }

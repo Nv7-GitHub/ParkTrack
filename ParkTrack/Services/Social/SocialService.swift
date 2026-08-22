@@ -335,6 +335,11 @@ final class SocialService {
             recordPublished(current, under: profile.code)
             lastSyncedAt = Date()
         } catch {
+            // Forgetting rather than leaving what was there. A publish that failed partway
+            // has sent an unknown amount, and the record of what is already shared is only
+            // useful while it is true — so the next attempt starts again rather than
+            // skipping whatever the failed one claimed to have done.
+            forgetPublishedState()
             lastError = message(for: error)
         }
     }
@@ -595,6 +600,17 @@ final class SocialService {
     /// half is skipped.
     private static let signaturesKey = "social.publishedVisitSignatures"
     private static let signaturesCodeKey = "social.publishedUnderCode"
+    private static let signaturesVersionKey = "social.publishedFormatVersion"
+
+    /// Bump to make every install re-share everything once.
+    ///
+    /// Version 2 exists because version 1 could record a lie. Publishing did not inspect the
+    /// per-record results CloudKit returns when saving non-atomically, so a batch that
+    /// failed in its entirety — no schema in this environment, most likely — still counted
+    /// as sent, and those visits would never be offered again. Installs carrying that
+    /// verdict cannot tell it apart from the truth, so the only repair is to disbelieve all
+    /// of it once.
+    private static let signaturesVersion = 2
 
     /// What has been shared, and under which friend code.
     ///
@@ -605,13 +621,15 @@ final class SocialService {
     /// whole history published under a name nobody is looking for, and invisible for good.
     /// A different code means everything counts as new.
     private func publishedSignatures(under code: String) -> [String: String] {
-        guard UserDefaults.standard.string(forKey: Self.signaturesCodeKey) == code else { return [:] }
+        guard UserDefaults.standard.integer(forKey: Self.signaturesVersionKey) == Self.signaturesVersion,
+              UserDefaults.standard.string(forKey: Self.signaturesCodeKey) == code else { return [:] }
         return UserDefaults.standard.dictionary(forKey: Self.signaturesKey) as? [String: String] ?? [:]
     }
 
     private func recordPublished(_ signatures: [String: String], under code: String) {
         UserDefaults.standard.set(signatures, forKey: Self.signaturesKey)
         UserDefaults.standard.set(code, forKey: Self.signaturesCodeKey)
+        UserDefaults.standard.set(Self.signaturesVersion, forKey: Self.signaturesVersionKey)
     }
 
     /// Everything about a visit that a friend can see, as a string.
@@ -640,6 +658,7 @@ final class SocialService {
     func forgetPublishedState() {
         UserDefaults.standard.removeObject(forKey: Self.signaturesKey)
         UserDefaults.standard.removeObject(forKey: Self.signaturesCodeKey)
+        UserDefaults.standard.removeObject(forKey: Self.signaturesVersionKey)
     }
 
     /// Read from the same defaults `AppSettings` writes to, so the service doesn't
