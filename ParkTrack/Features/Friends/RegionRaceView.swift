@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 /// Head-to-head completion of one indexed place.
 ///
@@ -11,11 +12,47 @@ struct RegionRaceView: View {
     let friends: [Friend]
     let myName: String
 
+    @Environment(AppSettings.self) private var settings
+
     @Query(sort: \RegionIndex.name) private var indexes: [RegionIndex]
     @Query private var myExclusions: [ExcludedPlace]
     @State private var selection: String?
 
-    private var races: [RegionIndex] { indexes.filter(\.isIndexed) }
+    /// Indexed places, with the ones you actually live in first.
+    ///
+    /// Alphabetical alone buries the race you care about. The place your home, school or
+    /// work sits in is the one you are really competing over — everywhere else is somewhere
+    /// you happened to pass through — and an alphabetical list puts it wherever its name
+    /// falls, which for most people is the middle.
+    ///
+    /// Only your own saved places can be honoured here. A friend publishes their standings,
+    /// not where they live, and that is the right way round: a friend code is handed out
+    /// freely and nothing behind one should say where somebody sleeps.
+    private var races: [RegionIndex] {
+        let indexed = indexes.filter(\.isIndexed)
+        let anchors = SavedPlaceKind.allCases.compactMap { settings.coordinate(for: $0) }
+        guard !anchors.isEmpty else { return indexed }
+
+        return indexed.enumerated()
+            .sorted { left, right in
+                let leftIsHome = holds(anAnchorIn: anchors, left.element)
+                let rightIsHome = holds(anAnchorIn: anchors, right.element)
+                if leftIsHome != rightIsHome { return leftIsHome }
+                // `indexes` is already name-sorted, so falling back to its order keeps the
+                // rest alphabetical without sorting the strings a second time.
+                return left.offset < right.offset
+            }
+            .map(\.element)
+    }
+
+    /// Whether one of the places you measure from falls inside this region.
+    private func holds(anAnchorIn anchors: [CLLocationCoordinate2D], _ region: RegionIndex) -> Bool {
+        let centre = CLLocation(latitude: region.centerLatitude, longitude: region.centerLongitude)
+        return anchors.contains { anchor in
+            CLLocation(latitude: anchor.latitude, longitude: anchor.longitude)
+                .distance(from: centre) <= region.radiusMeters
+        }
+    }
 
     private var active: RegionIndex? {
         races.first { $0.identifier == selection } ?? races.first

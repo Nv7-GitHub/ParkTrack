@@ -15,6 +15,7 @@ struct SettingsScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(LocationProvider.self) private var location
     @Environment(AppSettings.self) private var settings
+    @Environment(CloudSyncMonitor.self) private var cloudSync
     @Environment(ServiceHub.self) private var services
 
     @Query private var parks: [Park]
@@ -988,6 +989,14 @@ struct SettingsScreen: View {
                         value: cloudSyncValue,
                         detail: cloudSyncDetail
                     )
+
+                    if PersistenceController.isCloudSyncActive {
+                        aboutRow(
+                            title: "Sync status",
+                            value: cloudSync.activity == .idle ? "Idle" : cloudSync.activity.label,
+                            detail: cloudSync.summary
+                        )
+                    }
 
                     aboutRow(
                         title: "Friend sync",
