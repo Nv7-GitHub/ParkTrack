@@ -1,6 +1,9 @@
 name: ParkTrack
 options:
-  bundleIdPrefix: com.nv7.parktrack
+  # Inert: every target below sets PRODUCT_BUNDLE_IDENTIFIER from $(PARKTRACK_BUNDLE_ID)
+  # explicitly, so this is only XcodeGen's fallback for a target that doesn't. Kept in step
+  # with the real id anyway rather than left naming a team the app no longer ships under.
+  bundleIdPrefix: org.hopetree
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true

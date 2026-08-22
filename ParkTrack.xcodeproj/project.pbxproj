@@ -232,7 +232,7 @@
 		C2031F9409776F3B4308F9F0 /* AdoptExclusionsRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdoptExclusionsRenderTests.swift; sourceTree = "<group>"; };
 		C3274780BF0159D9BD6A725B /* AddFriendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFriendSheet.swift; sourceTree = "<group>"; };
 		C5B45D0DECD757974113ECD2 /* FriendDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendDetailScreen.swift; sourceTree = "<group>"; };
-		C9091A4498E1E31B8482BD5E /* ParkTrack.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ParkTrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C9091A4498E1E31B8482BD5E /* ParkTrack.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ParkTrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CB76293C6BF81CCD1E035795 /* ParkAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkAudit.swift; sourceTree = "<group>"; };
 		CE3DA6446FC0F23452D3BC0B /* StatBreakdownSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatBreakdownSheet.swift; sourceTree = "<group>"; };
 		D1AC6F85ADB93D5BA266D6D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -244,12 +244,12 @@
 		DC5A31BBD54B032503B025D4 /* MapLayerOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLayerOptions.swift; sourceTree = "<group>"; };
 		DCD54EE8B166E95C3660D228 /* MediaItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaItem.swift; sourceTree = "<group>"; };
 		DECC6FAD2AE69932634B9120 /* RegionIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionIndexer.swift; sourceTree = "<group>"; };
-		E2603B37CC4BFD2506C80CF2 /* ParkTrackUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ParkTrackUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2603B37CC4BFD2506C80CF2 /* ParkTrackUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ParkTrackUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E37DDC27A47FEADF156B8428 /* HomeQuickActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeQuickActions.swift; sourceTree = "<group>"; };
 		E4832852DC3352814011047A /* RegionIndexManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionIndexManager.swift; sourceTree = "<group>"; };
 		ECBBE391192EA924945BF0F9 /* ParksListScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParksListScreen.swift; sourceTree = "<group>"; };
 		ED97EEC1FC26C6236CC253EA /* MediaCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaCapture.swift; sourceTree = "<group>"; };
-		F0B68403A967BA9D71BAB106 /* ParkTrackTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ParkTrackTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F0B68403A967BA9D71BAB106 /* ParkTrackTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ParkTrackTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F1C04C3FE47A398B8B8F136E /* MockSocialBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockSocialBackend.swift; sourceTree = "<group>"; };
 		F50969988F0761B928037635 /* MapScanCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapScanCoordinator.swift; sourceTree = "<group>"; };
 		F5AF97EE5F8D0E0881DCFF7F /* Formatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Formatters.swift; sourceTree = "<group>"; };
@@ -610,7 +610,6 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					8A5EE0A6842C0BE85F53A7CF = {
-						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 					90108CDC50BFF08C315857EA = {
@@ -887,6 +886,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = FTVNWWU5J2;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -916,6 +916,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ParkTrack/ParkTrack.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = P83ADQ795M;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo or video at a park to attach to your visit.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
@@ -1040,6 +1041,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = FTVNWWU5J2;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1076,6 +1078,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = ParkTrack/ParkTrack.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = P83ADQ795M;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Take a photo or video at a park to attach to your visit.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";

@@ -6,9 +6,15 @@ import OSLog
 import SwiftData
 
 /// Everything a sweep does, so a run that goes wrong can be read back afterwards rather
-/// than guessed at. Visible in Console.app, and in Xcode's debug console, under the
-/// subsystem below.
-let sweepLog = Logger(subsystem: "com.nv7.parktrack", category: "sweep")
+/// than guessed at. Visible in Console.app, and in Xcode's debug console, under this
+/// build's bundle id.
+///
+/// Taken from the bundle rather than written out, so it follows the app across a change of
+/// signing team instead of leaving the logs filed under a name nothing is called any more.
+let sweepLog = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "ParkTrack",
+    category: "sweep"
+)
 
 /// A park the map returned that has not (necessarily) been saved yet.
 ///
