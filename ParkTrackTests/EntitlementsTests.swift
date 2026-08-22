@@ -74,14 +74,26 @@ final class EntitlementsTests: XCTestCase {
 
     /// The build setting that actually applies the file. Without it the entitlements sit in
     /// the repository doing nothing at all.
-    func testProjectReferencesTheEntitlementsFile() throws {
+    ///
+    /// It reads through a variable rather than naming the file, so a build can deliberately
+    /// go out with none — an old bundle id being rebuilt under an old team cannot carry an
+    /// entitlement naming another team's container. These check the committed default, not
+    /// whatever this machine has set in the gitignored local file, which is the point: the
+    /// guard is on what ships, and turning it off locally is allowed.
+    func testProjectReferencesTheEntitlementsVariable() throws {
         let pbxproj = repositoryRoot
             .appendingPathComponent("ParkTrack.xcodeproj")
             .appendingPathComponent("project.pbxproj")
         let contents = try String(contentsOf: pbxproj, encoding: .utf8)
+        // XcodeGen quotes any value containing a `$`, so match the variable itself rather
+        // than a whole line that would break on a quoting change.
+        let applied = contents
+            .split(separator: "\n")
+            .filter { $0.contains("CODE_SIGN_ENTITLEMENTS") }
+        XCTAssertFalse(applied.isEmpty, "the generated project sets no CODE_SIGN_ENTITLEMENTS at all")
         XCTAssertTrue(
-            contents.contains("CODE_SIGN_ENTITLEMENTS = ParkTrack/ParkTrack.entitlements"),
-            "the generated project does not apply the entitlements file — check project.yml"
+            applied.allSatisfy { $0.contains("$(PARKTRACK_ENTITLEMENTS)") },
+            "the generated project does not apply the entitlements variable — check project.yml. Found: \(applied)"
         )
     }
 
@@ -92,8 +104,23 @@ final class EntitlementsTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertTrue(
-            yml.contains("CODE_SIGN_ENTITLEMENTS: ParkTrack/ParkTrack.entitlements"),
+            yml.contains("CODE_SIGN_ENTITLEMENTS: $(PARKTRACK_ENTITLEMENTS)"),
             "project.yml lost the entitlements setting, so the next xcodegen run drops it"
+        )
+    }
+
+    /// The variable has to default to the real file, or every build silently ships without
+    /// iCloud and the only sign is sample-data friends.
+    func testCommittedConfigDefaultsToTheEntitlementsFile() throws {
+        let xcconfig = try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("Config")
+                .appendingPathComponent("Signing.xcconfig"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            xcconfig.contains("PARKTRACK_ENTITLEMENTS = ParkTrack/ParkTrack.entitlements"),
+            "Signing.xcconfig no longer defaults PARKTRACK_ENTITLEMENTS to the real file"
         )
     }
 }

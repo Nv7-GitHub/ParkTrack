@@ -33,7 +33,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(PARKTRACK_BUNDLE_ID)
-        CODE_SIGN_ENTITLEMENTS: ParkTrack/ParkTrack.entitlements
+        CODE_SIGN_ENTITLEMENTS: $(PARKTRACK_ENTITLEMENTS)
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -62,6 +62,7 @@ targets:
           echo "warning: this build carries no iCloud container entitlement, so CloudKitAvailability will report unavailable."
           echo "warning: the Friends tab will show invented sample data and no park will sync between devices."
           echo "warning: enable the iCloud capability with a CloudKit container on this App ID, or ignore this if the build is only for your own phone."
+          echo "warning: if PARKTRACK_ENTITLEMENTS was deliberately left empty — an old bundle id being rebuilt to export a backup — this is expected."
       # Guards against the failure this whole arrangement exists to prevent: a missing
       # Signing.local.xcconfig letting the placeholder id through, installing a second empty
       # ParkTrack next to the real one and looking exactly like the data was wiped.

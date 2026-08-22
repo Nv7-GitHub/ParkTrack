@@ -36,6 +36,22 @@ DEVELOPMENT_TEAM =
 // must still be able to build and run the test suite with no local file at all.
 PARKTRACK_BUNDLE_ID = com.example.CHANGE-ME.parktrack
 
+// Which entitlements the app is signed with, as a variable so a build can go out without
+// any.
+//
+// The entitlement names an iCloud container, and a container belongs to one team. So a build
+// signed as a different team than the one that owns the container cannot carry this file at
+// all — it fails to provision rather than quietly doing without. That case is real and not
+// rare: rebuilding the *previous* bundle id under the *previous* team, to get a backup out of
+// an app before retiring it, is exactly the move that carries a whole install across to a new
+// developer account.
+//
+// Set to empty in Signing.local.xcconfig for such a build. The app is fully functional
+// without it: `CloudKitAvailability` reports unavailable, friends fall back to sample data,
+// and everything stays on the one device — which is all a build being used to export a backup
+// needs to do.
+PARKTRACK_ENTITLEMENTS = ParkTrack/ParkTrack.entitlements
+
 // Local overrides. `#include?` is the optional form — no error when the file is absent,
 // which is the fresh-clone case. Last assignment wins in an xcconfig, so this has to come
 // after the defaults above or it would be the one being overridden.
