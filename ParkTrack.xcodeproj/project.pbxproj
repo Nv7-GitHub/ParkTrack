@@ -46,6 +46,7 @@
 		36CB457344BF614033289891 /* HomeQuickActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E37DDC27A47FEADF156B8428 /* HomeQuickActions.swift */; };
 		37FCB085E12A6958D75BD531 /* StatsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E141DA7B137F26FE3927379 /* StatsScreen.swift */; };
 		382EBBAA94B706AADC2DE287 /* StatsRhythmSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F056B1AEEFD4232F9A33083 /* StatsRhythmSection.swift */; };
+		3BF054BA5C26E3A6DC210E96 /* MediaFootprintSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A75515285287EE1C3C846E3 /* MediaFootprintSheet.swift */; };
 		3E7C18B98793524C82446DCC /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F6ED712DA5F75C2864331D2 /* RootView.swift */; };
 		3F3D3DF2AD98CA192773EEC4 /* MapControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42CA7453282CF9FE0D1727CF /* MapControls.swift */; };
 		4359B0B1CFCD55BB0FE0E44F /* StatsTimelineSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E2EC06617EAA4575A3F342 /* StatsTimelineSection.swift */; };
@@ -87,6 +88,7 @@
 		8DD7BEA5FF8BA9BDD2A53938 /* FixMarkedVisitsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EE682B8C292FB2A0DBDBA3 /* FixMarkedVisitsSheet.swift */; };
 		8DF7125B92A7063F0C390DEC /* CacheInvalidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF9FB2F874BFC551EBC8939 /* CacheInvalidationTests.swift */; };
 		9085DC30D559FF1C81AD6328 /* RegionIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD35EE28EC7E4939C3E4B87C /* RegionIndexTests.swift */; };
+		966FE0725AA67714F2FB9B24 /* StorageRebuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5DD691FDE02515AC8388BE /* StorageRebuildTests.swift */; };
 		9B314360D14237E2DCB9FE69 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44C467B1AB618427F338BC2A /* Components.swift */; };
 		9C3BB58B6F92E2A6EB5F8D40 /* EntitlementsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64C3CA00D57585570DCE322 /* EntitlementsTests.swift */; };
 		A24F887F30FED8742AFFF73D /* StatsRecordsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B76619FE193A1D6EA25D4FD /* StatsRecordsSection.swift */; };
@@ -108,6 +110,7 @@
 		D4F6A8B01B45C4F04823EE8E /* MediaItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCD54EE8B166E95C3660D228 /* MediaItem.swift */; };
 		D53B67CFED0820996DBE1037 /* MapScanCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50969988F0761B928037635 /* MapScanCoordinator.swift */; };
 		D680971D7D80D261742A979A /* AddParkHereSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3833B26BA4F91A7A61AD3573 /* AddParkHereSheet.swift */; };
+		D72D2DDC5DCC1993DEC62121 /* StorageRebuild.swift in Sources */ = {isa = PBXBuildFile; fileRef = C62DE8DB1397E277110B78FE /* StorageRebuild.swift */; };
 		D95471ACA9D0FBBBD02CABA5 /* HomeHeroHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23BCE0E68A16EF63D53874E1 /* HomeHeroHeader.swift */; };
 		DB1AC95E391C6DDF767D80E5 /* LogVisitSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CF3A425F5E675CF8BBF8294 /* LogVisitSheet.swift */; };
 		DB2261131CD14C674153CA83 /* AdoptExclusionsRenderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2031F9409776F3B4308F9F0 /* AdoptExclusionsRenderTests.swift */; };
@@ -165,6 +168,7 @@
 		2EADE91C60B3BBF86768A026 /* MapScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapScreen.swift; sourceTree = "<group>"; };
 		2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryTests.swift; sourceTree = "<group>"; };
 		3833B26BA4F91A7A61AD3573 /* AddParkHereSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddParkHereSheet.swift; sourceTree = "<group>"; };
+		3A75515285287EE1C3C846E3 /* MediaFootprintSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFootprintSheet.swift; sourceTree = "<group>"; };
 		3CAC8D6CA251A22378A10841 /* MapAnnotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapAnnotations.swift; sourceTree = "<group>"; };
 		3F056B1AEEFD4232F9A33083 /* StatsRhythmSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsRhythmSection.swift; sourceTree = "<group>"; };
 		42CA7453282CF9FE0D1727CF /* MapControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapControls.swift; sourceTree = "<group>"; };
@@ -177,6 +181,7 @@
 		4BF720AA700D4AD5D02C9ED6 /* ScanRegionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanRegionTests.swift; sourceTree = "<group>"; };
 		4D8C2F1E3DD1D065D85BB678 /* NotAParkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotAParkTests.swift; sourceTree = "<group>"; };
 		4E141DA7B137F26FE3927379 /* StatsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsScreen.swift; sourceTree = "<group>"; };
+		4E5DD691FDE02515AC8388BE /* StorageRebuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageRebuildTests.swift; sourceTree = "<group>"; };
 		4F6ED712DA5F75C2864331D2 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		5003CD1A57BEB4A4FFBB5D04 /* StatsEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsEngineTests.swift; sourceTree = "<group>"; };
 		53E2EC06617EAA4575A3F342 /* StatsTimelineSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsTimelineSection.swift; sourceTree = "<group>"; };
@@ -232,6 +237,7 @@
 		C2031F9409776F3B4308F9F0 /* AdoptExclusionsRenderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdoptExclusionsRenderTests.swift; sourceTree = "<group>"; };
 		C3274780BF0159D9BD6A725B /* AddFriendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFriendSheet.swift; sourceTree = "<group>"; };
 		C5B45D0DECD757974113ECD2 /* FriendDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendDetailScreen.swift; sourceTree = "<group>"; };
+		C62DE8DB1397E277110B78FE /* StorageRebuild.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageRebuild.swift; sourceTree = "<group>"; };
 		C9091A4498E1E31B8482BD5E /* ParkTrack.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ParkTrack.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CB76293C6BF81CCD1E035795 /* ParkAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkAudit.swift; sourceTree = "<group>"; };
 		CE3DA6446FC0F23452D3BC0B /* StatBreakdownSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatBreakdownSheet.swift; sourceTree = "<group>"; };
@@ -327,6 +333,7 @@
 				54196F743DDC4AA5DF1E1F43 /* SmokeTests.swift */,
 				8FE11CE5D93DE3E856BDCE2A /* StatBreakdownTests.swift */,
 				5003CD1A57BEB4A4FFBB5D04 /* StatsEngineTests.swift */,
+				4E5DD691FDE02515AC8388BE /* StorageRebuildTests.swift */,
 				DBB21A8C703294492ED47C42 /* SweptParkPlacementTests.swift */,
 				009DF2D45E3AB557C8EDA855 /* ThrottleRecoveryProbe.swift */,
 				D50BEA51F0344C683F33B0DA /* TilingStrategyProbe.swift */,
@@ -439,6 +446,7 @@
 				BA0966F8C2BED50015717C12 /* DataExport.swift */,
 				B0838DAEB16AD70CCE725F1B /* ExcludedPlacesSheet.swift */,
 				01EE682B8C292FB2A0DBDBA3 /* FixMarkedVisitsSheet.swift */,
+				3A75515285287EE1C3C846E3 /* MediaFootprintSheet.swift */,
 				A94530D184B1227E16A33097 /* SettingsScreen.swift */,
 				B43BFF3EE4C265E6CCC8E841 /* SuspiciousParksSheet.swift */,
 			);
@@ -463,6 +471,7 @@
 				83E5683236CB070B1FC76925 /* SearchThrottle.swift */,
 				4B1C5C072454B25786D75336 /* ServiceHub.swift */,
 				2C8D36829360DC48255D6090 /* StatsEngine.swift */,
+				C62DE8DB1397E277110B78FE /* StorageRebuild.swift */,
 				83D3E7E8E9AF5BA01CC31590 /* ThumbnailCache.swift */,
 				A4A73608F64CFF08A7E84725 /* Social */,
 			);
@@ -743,6 +752,7 @@
 				D53B67CFED0820996DBE1037 /* MapScanCoordinator.swift in Sources */,
 				78F1F370B7B67E64E3A13072 /* MapScreen.swift in Sources */,
 				2041B60420C8DF1760F9135E /* MediaCapture.swift in Sources */,
+				3BF054BA5C26E3A6DC210E96 /* MediaFootprintSheet.swift in Sources */,
 				D4F6A8B01B45C4F04823EE8E /* MediaItem.swift in Sources */,
 				19E4AFCF7593BEFF62ECBFAA /* MockSocialBackend.swift in Sources */,
 				85C2DAEF6B8404B8E49AD548 /* Park.swift in Sources */,
@@ -781,6 +791,7 @@
 				37FCB085E12A6958D75BD531 /* StatsScreen.swift in Sources */,
 				809E64475E30D94A01FEB4DB /* StatsSupport.swift in Sources */,
 				4359B0B1CFCD55BB0FE0E44F /* StatsTimelineSection.swift in Sources */,
+				D72D2DDC5DCC1993DEC62121 /* StorageRebuild.swift in Sources */,
 				02FC3035D471300279DBA7C8 /* SuspiciousParksSheet.swift in Sources */,
 				3467E6291C63A88A9DEBC4E2 /* Theme.swift in Sources */,
 				AF4F739B326F8B42E03AF2B2 /* ThumbnailCache.swift in Sources */,
@@ -818,6 +829,7 @@
 				0D78AF78C5FCA752CF97F000 /* SmokeTests.swift in Sources */,
 				FE8DE81E1F854EA3C4DA23BE /* StatBreakdownTests.swift in Sources */,
 				527354723237AABB909AE173 /* StatsEngineTests.swift in Sources */,
+				966FE0725AA67714F2FB9B24 /* StorageRebuildTests.swift in Sources */,
 				1DED22D69FBCD998C273247E /* SweptParkPlacementTests.swift in Sources */,
 				A5F1E5B9EAC139D74742A0B4 /* ThrottleRecoveryProbe.swift in Sources */,
 				7D8AFC6EFA36E319B0ED78E1 /* TilingStrategyProbe.swift in Sources */,
@@ -921,6 +933,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos and videos from your library to a park visit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
@@ -1081,6 +1094,7 @@
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ParkTrack uses your location to find nearby parks, log visits where you are, and compute how much of the area around you you've explored.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Attach photos and videos from your library to a park visit.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIBackgroundModes = "remote-notification";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;

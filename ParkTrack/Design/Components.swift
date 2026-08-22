@@ -58,6 +58,13 @@ extension SectionHeader where Trailing == EmptyView {
 /// Big number + caption, the workhorse of the stats screens.
 struct StatTile: View {
     let value: String
+    /// Drawn smaller, beside the value, and excluded from the value's own fitting.
+    ///
+    /// A tile showing "116.8 MB" next to two showing "3244" and "125" used to shrink the
+    /// only one with a unit in it: the whole string had to fit one line, and the unit is a
+    /// third of its width. Three numbers meant to be read together came out at two
+    /// different sizes. Splitting the unit off keeps every number at the same size.
+    var unit: String?
     let label: String
     var systemImage: String?
     var tint: Color = Theme.accent
@@ -80,16 +87,27 @@ struct StatTile: View {
                         .foregroundStyle(Theme.textSecondary.opacity(0.5))
                 }
             }
-            Text(value)
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundStyle(Theme.textPrimary)
-                .contentTransition(.numericText())
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.textPrimary)
+                    .contentTransition(.numericText())
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                if let unit {
+                    Text(unit)
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+            // Always two lines' worth, whether or not this label needs both. Tiles sit in a
+            // row and are read across, so "Parks tracked" wrapping while "Visits logged"
+            // does not left the three baselines at two different heights.
             Text(label)
                 .font(.caption)
                 .foregroundStyle(Theme.textSecondary)
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
                 .fixedSize(horizontal: false, vertical: true)
         }
         // Fills its grid cell so a tile whose label wraps cannot leave its neighbour

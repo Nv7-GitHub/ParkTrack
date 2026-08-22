@@ -426,6 +426,7 @@ enum DataExport {
         try mergeScannedAreas(payload, into: context, summary: &summary)
         try mergeRegionIndexes(payload, into: context, summary: &summary)
         try mergeFriends(payload, into: context, summary: &summary)
+        try recountIndexedRegions(in: context)
 
         try context.save()
         return summary
@@ -680,8 +681,15 @@ enum DataExport {
         }
     }
 
-    /// Region indexes upsert rather than skip: an incoming record from a newer indexer
-    /// generation carries a total the local one cannot defend, so it wins.
+    /// Region indexes upsert rather than skip.
+    ///
+    /// Two ways an incoming record wins. A newer indexer generation carries a total the
+    /// local one cannot defend. And an indexed record always beats an unindexed one whatever
+    /// the generations say — a fresh install discovers a region long before it sweeps it, so
+    /// the local record is usually an empty placeholder, and letting that block a real index
+    /// would leave the place reading as never swept.
+    ///
+    /// `parkCount` is corrected afterwards regardless, by `recountIndexedRegions`.
     private static func mergeRegionIndexes(
         _ payload: BackupPayload,
         into context: ModelContext,
@@ -693,7 +701,8 @@ enum DataExport {
 
         for incoming in payload.regionIndexes {
             if let local = byIdentifier[incoming.identifier] {
-                guard incoming.indexerVersion > local.indexerVersion else { continue }
+                let localIsPlaceholder = local.indexedAt == nil && incoming.indexedAt != nil
+                guard incoming.indexerVersion > local.indexerVersion || localIsPlaceholder else { continue }
                 local.parkCount = incoming.parkCount
                 local.indexerVersion = incoming.indexerVersion
                 local.indexedAt = incoming.indexedAt
@@ -723,6 +732,38 @@ enum DataExport {
         }
     }
 
+    /// Re-totals every indexed place from what is actually in the store.
+    ///
+    /// A region's `parkCount` is the denominator behind every percentage, and it is defined
+    /// as the parks *on this device* belonging to that place — not an abstract truth about
+    /// the place. An import changes exactly that: it adds parks, and it strikes off the ones
+    /// the file rejects. So a count that arrived in the backup describes the phone the
+    /// backup came from, and is wrong here the moment either of those happens.
+    ///
+    /// `RegionIndexer` has the same recount and runs it after the tidy-up sheet, which was
+    /// the only other operation that changed park counts wholesale. This is the second such
+    /// operation. Duplicated rather than shared because reaching a service from here would
+    /// mean handing the merge a `RegionIndexer` it otherwise has no use for, and the rule
+    /// itself is two lines; the membership test is the shared part, and that lives on
+    /// `RegionIndex`.
+    private static func recountIndexedRegions(in context: ModelContext) throws {
+        let indexes = try context.fetch(FetchDescriptor<RegionIndex>()).filter { $0.indexedAt != nil }
+        guard !indexes.isEmpty else { return }
+        let parks = try context.fetch(FetchDescriptor<Park>())
+
+        for index in indexes {
+            let count = parks.count {
+                RegionIndex.place(kind: index.kind, park: $0, isNamed: index.name)
+                    || RegionIndex.identity(kind: index.kind, park: $0) == index.identifier
+            }
+            // A zero here means the parks that made this place countable are not on this
+            // device, which is not the same as the place having no parks — and publishing a
+            // total of zero would hand friends a denominator nobody can race against.
+            guard count > 0, count != index.parkCount else { continue }
+            index.parkCount = count
+        }
+    }
+
     private static func mergeFriends(
         _ payload: BackupPayload,
         into context: ModelContext,
@@ -740,6 +781,66 @@ enum DataExport {
 
     // MARK: - Footprint
 
+    /// What the media figure is actually made of.
+    ///
+    /// The number on the Data card is a walk of the app's container, which is the honest
+    /// measure of disk used but cannot say what used it. That makes it unfalsifiable in the
+    /// one situation where it matters — when it disagrees with what you think is in the app
+    /// — so this breaks it apart far enough to tell the three explanations apart: media that
+    /// belongs to your visits, media cached from friends' feeds, and files belonging to
+    /// neither.
+    ///
+    /// Counts come from row counts rather than from the blobs, deliberately. Asking a
+    /// `MediaItem` how big its data is loads that data, and totalling a hundred megabytes of
+    /// photographs to display a number would be a strange way to report on storage.
+    struct MediaFootprint {
+        /// Photos and video attached to your own visits.
+        var ownItemCount = 0
+        /// Shared visits mirrored from friends. Each may carry one attachment, and none of
+        /// it is included in a backup.
+        var friendVisitCount = 0
+        /// Videos among your own items. Only a video gets a poster frame, so this is also
+        /// the number of thumbnails — the one other blob an item can hold.
+        var ownVideoCount = 0
+        /// Files actually on disk under external storage.
+        var fileCount = 0
+        var totalBytes: Int64 = 0
+        var largestBytes: Int64 = 0
+
+        /// The files everything in the app can account for.
+        ///
+        /// One blob per item for the photo or video itself, one more for each video's poster
+        /// frame, and one per mirrored friend visit. Counting two per item instead — on the
+        /// grounds that an item *could* hold a thumbnail — was too loose to be worth
+        /// printing: it put the ceiling at twice the real figure, so a library of 60 items
+        /// holding 67 blobs could leave 13 files orphaned on disk and still be declared
+        /// fully accounted for.
+        var filesEverythingExplains: Int { ownItemCount + ownVideoCount + friendVisitCount }
+
+        var unexplainedFileCount: Int { max(0, fileCount - filesEverythingExplains) }
+        var hasUnexplainedFiles: Bool { unexplainedFileCount > 0 }
+    }
+
+    static func mediaFootprint(context: ModelContext) -> MediaFootprint {
+        var footprint = MediaFootprint()
+        footprint.ownItemCount = (try? context.fetchCount(FetchDescriptor<MediaItem>())) ?? 0
+        footprint.friendVisitCount = (try? context.fetchCount(FetchDescriptor<FriendVisit>())) ?? 0
+        // Counted with a predicate rather than by reading each item, because asking a
+        // `MediaItem` anything about its data loads the data — and totalling a hundred
+        // megabytes of photographs to print a file count would be an odd way to report on
+        // storage.
+        footprint.ownVideoCount = (try? context.fetchCount(
+            FetchDescriptor<MediaItem>(predicate: #Predicate { $0.isVideo })
+        )) ?? 0
+
+        for size in externalStorageFileSizes() {
+            footprint.fileCount += 1
+            footprint.totalBytes += size
+            footprint.largestBytes = max(footprint.largestBytes, size)
+        }
+        return footprint
+    }
+
     /// Bytes that photos and video actually occupy.
     ///
     /// `@Attribute(.externalStorage)` writes large blobs to files beside the store, so the
@@ -755,22 +856,43 @@ enum DataExport {
     }
 
     private static func externalStorageBytes() -> Int64 {
+        externalStorageFileSizes().reduce(0, +)
+    }
+
+    /// The allocated size of every externally stored blob in the container.
+    ///
+    /// Allocated rather than logical, because the question the Data card answers is how much
+    /// of the phone this is using, and a file occupies whole blocks. It does mean the total
+    /// reads a little above the sum of the bytes a backup would carry.
+    private static func externalStorageFileSizes() -> [Int64] {
         let manager = FileManager.default
         guard let support = try? manager.url(
             for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false
-        ) else { return 0 }
+        ) else { return [] }
         guard let walker = manager.enumerator(
             at: support,
             includingPropertiesForKeys: [.isRegularFileKey, .fileAllocatedSizeKey]
-        ) else { return 0 }
+        ) else { return [] }
 
-        var total: Int64 = 0
+        var sizes: [Int64] = []
         for case let url as URL in walker where url.pathComponents.contains("_EXTERNAL_DATA") {
             guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileAllocatedSizeKey]),
                   values.isRegularFile == true else { continue }
-            total += Int64(values.fileAllocatedSize ?? 0)
+            sizes.append(Int64(values.fileAllocatedSize ?? 0))
         }
-        return total
+        return sizes
+    }
+
+    /// The same string, split so a tile can draw the unit smaller than the number.
+    static func splitBytes(_ bytes: Int64) -> (value: String, unit: String) {
+        let formatted = formatBytes(bytes)
+        guard let separator = formatted.lastIndex(where: \.isWhitespace) else {
+            return (formatted, "")
+        }
+        return (
+            String(formatted[..<separator]),
+            String(formatted[formatted.index(after: separator)...])
+        )
     }
 
     static func formatBytes(_ bytes: Int64) -> String {

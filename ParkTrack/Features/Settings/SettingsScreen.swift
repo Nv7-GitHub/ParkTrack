@@ -58,6 +58,9 @@ struct SettingsScreen: View {
     @State private var pickingPlace: SavedPlaceKind?
     @State private var isConfirmingDeletion = false
     @State private var isImporting = false
+    @State private var isInspectingMedia = false
+    @State private var isConfirmingRebuild = false
+    @State private var rebuildArmedBytes: Int64?
 
     @State private var activity: String?
     @State private var status: String?
@@ -153,6 +156,30 @@ struct SettingsScreen: View {
                     deleteAllVisits()
                 }
             }
+            .sheet(isPresented: $isInspectingMedia) {
+                MediaFootprintSheet()
+            }
+            .confirmationDialog(
+                StorageRebuild.isArmed ? "Rebuild is already ready" : "Rebuild storage?",
+                isPresented: $isConfirmingRebuild,
+                titleVisibility: .visible
+            ) {
+                if StorageRebuild.isArmed {
+                    Button("Cancel the rebuild", role: .destructive) {
+                        StorageRebuild.cancel()
+                        rebuildArmedBytes = nil
+                        show(status: "Rebuild cancelled. Nothing was changed.")
+                    }
+                    Button("Leave it ready", role: .cancel) {}
+                } else {
+                    Button("Rebuild") { armRebuild() }
+                    Button("Cancel", role: .cancel) {}
+                }
+            } message: {
+                Text(StorageRebuild.isArmed
+                     ? "It happens the next time ParkTrack starts. Close it from the app switcher and open it again."
+                     : "Everything is written to a file and checked first, and nothing is deleted unless that check passes. The rebuild itself happens the next time ParkTrack starts.")
+            }
             .fileImporter(
                 isPresented: $isImporting,
                 allowedContentTypes: [BackupArchive.contentType],
@@ -162,6 +189,12 @@ struct SettingsScreen: View {
             }
         }
         .task {
+            if PersistenceController.didRebuildStorage {
+                show(status: "Storage rebuilt. Everything was written out and put back.")
+            } else if let failure = StorageRebuild.lastFailure {
+                errorMessage = failure
+                StorageRebuild.clearLastFailure()
+            }
             mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
             // Sequentially: the geocoder is rate-limited, and three lookups fired at once is
             // how you get two of them back empty.
@@ -459,13 +492,35 @@ struct SettingsScreen: View {
                 HStack(spacing: 10) {
                     StatTile(value: "\(parks.count)", label: "Parks tracked", systemImage: "tree.fill")
                     StatTile(value: "\(visitCount)", label: "Visits logged", systemImage: "figure.walk", tint: Theme.sky)
-                    StatTile(
-                        value: DataExport.formatBytes(mediaBytes),
-                        label: "Photos & video",
-                        systemImage: "photo.stack",
-                        tint: Theme.sunset
+                    Button {
+                        isInspectingMedia = true
+                    } label: {
+                        let media = DataExport.splitBytes(mediaBytes)
+                        StatTile(
+                            value: media.value,
+                            unit: media.unit,
+                            label: "Photos & video",
+                            systemImage: "photo.stack",
+                            tint: Theme.sunset,
+                            showsDisclosure: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Shows what this is made of")
+                }
+
+                Button {
+                    isConfirmingRebuild = true
+                } label: {
+                    settingsRow(
+                        title: StorageRebuild.isArmed ? "Rebuild is ready" : "Rebuild storage",
+                        detail: StorageRebuild.isArmed
+                            ? "Close and reopen ParkTrack to finish"
+                            : "Writes everything out and puts it back, discarding anything left over",
+                        systemImage: StorageRebuild.isArmed ? "checkmark.circle" : "arrow.triangle.2.circlepath"
                     )
                 }
+                .buttonStyle(.plain)
 
                 VStack(spacing: 10) {
                     Button {
@@ -827,6 +882,25 @@ struct SettingsScreen: View {
             errorMessage = "Couldn't write the backup: \(error.localizedDescription)"
         }
         isPreparingExport = false
+    }
+
+    /// Writes and verifies the safety copy, then leaves the rebuild for the next launch.
+    ///
+    /// Nothing destructive happens here — `prepare` throws rather than arming if the copy
+    /// cannot be written or does not match the store — so the worst outcome of tapping this
+    /// is a file in Documents and an error message.
+    private func armRebuild() {
+        errorMessage = nil
+        do {
+            let bytes = try StorageRebuild.prepare(
+                context: modelContext,
+                settings: settings.backupSettings
+            )
+            rebuildArmedBytes = bytes
+            show(status: "Safety copy written (\(DataExport.formatBytes(bytes))). Close and reopen ParkTrack to rebuild.")
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {

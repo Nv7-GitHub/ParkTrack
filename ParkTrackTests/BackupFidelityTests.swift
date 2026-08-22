@@ -275,6 +275,81 @@ final class BackupFidelityTests: XCTestCase {
         XCTAssertEqual(restored.name, "Seattle")
     }
 
+    /// A fresh install discovers a region before it sweeps it, leaving an empty placeholder
+    /// record. That must not block the real index arriving in the backup.
+    func testAnIndexBeatsAnUnsweptPlaceholder() throws {
+        let seattle = "city|seattle|wa"
+        for offset in 0..<3 {
+            let park = makePark("Park \(offset)", lat: 47.6 + Double(offset) / 1000)
+            park.locality = "Seattle"
+            park.administrativeArea = "WA"
+        }
+        let index = RegionIndex(
+            identifier: seattle, kind: .city, name: "Seattle", container: "WA",
+            country: "United States",
+            center: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.3),
+            radiusMeters: 20_000
+        )
+        index.parkCount = 3
+        index.indexedAt = day(2025, 3, 1)
+        index.indexerVersion = RegionIndex.currentIndexerVersion
+        source.insert(index)
+        try source.save()
+
+        // The new install has met Seattle but never swept it: same generation counter (0),
+        // no indexedAt. The old rule compared versions only and would have kept this.
+        let placeholder = RegionIndex(
+            identifier: seattle, kind: .city, name: "Seattle", container: "WA",
+            country: "United States",
+            center: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.3),
+            radiusMeters: 20_000
+        )
+        destination.insert(placeholder)
+        try destination.save()
+
+        try roundTrip()
+
+        let restored = try XCTUnwrap(try destination.fetch(FetchDescriptor<RegionIndex>()).first)
+        XCTAssertNotNil(restored.indexedAt, "an empty placeholder blocked the real index")
+        XCTAssertTrue(restored.isIndexed)
+        XCTAssertEqual(restored.parkCount, 3)
+    }
+
+    /// A region's total is the parks on *this* device, so it has to be re-totalled after an
+    /// import moves parks around — including after the import strikes some off.
+    func testTotalsAreRecountedAgainstWhatActuallyLanded() throws {
+        let seattle = "city|seattle|wa"
+        for offset in 0..<4 {
+            let park = makePark("Park \(offset)", lat: 47.6 + Double(offset) / 1000)
+            park.locality = "Seattle"
+            park.administrativeArea = "WA"
+        }
+        // One of those four is also rejected, so only three should survive the import.
+        let doomed = try XCTUnwrap(try source.fetch(FetchDescriptor<Park>()).first { $0.name == "Park 3" })
+        source.insert(ExcludedPlace(park: doomed))
+
+        let index = RegionIndex(
+            identifier: seattle, kind: .city, name: "Seattle", container: "WA",
+            country: "United States",
+            center: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.3),
+            radiusMeters: 20_000
+        )
+        index.parkCount = 4          // true when the backup was written
+        index.indexedAt = day(2025, 3, 1)
+        index.indexerVersion = RegionIndex.currentIndexerVersion
+        source.insert(index)
+        try source.save()
+
+        try roundTrip()
+
+        XCTAssertEqual(try restoredParks().count, 3, "the rejected park was restored anyway")
+        let restored = try XCTUnwrap(try destination.fetch(FetchDescriptor<RegionIndex>()).first)
+        XCTAssertEqual(
+            restored.parkCount, 3,
+            "the denominator still claims a park the import deliberately struck off"
+        )
+    }
+
     /// Friends come back as identity only — their feed re-pulls rather than restoring stale.
     func testFriendsSurviveAsIdentityOnly() throws {
         let friend = Friend(friendCode: "XYZ789", displayName: "Sam")
@@ -580,6 +655,52 @@ final class BackupFidelityTests: XCTestCase {
         XCTAssertEqual(try destination.fetch(FetchDescriptor<ExcludedPlace>()).count, 1)
         XCTAssertEqual(try destination.fetch(FetchDescriptor<ScannedArea>()).count, 1)
         XCTAssertEqual(try destination.fetch(FetchDescriptor<Friend>()).count, 1)
+    }
+
+    /// Importing the same file twice must not double the photos on disk.
+    ///
+    /// Media is the expensive thing to get wrong: a duplicated row means a duplicated blob
+    /// in external storage, and a library of a hundred megabytes becomes two hundred with
+    /// nothing on screen to show for it. Split out from the general idempotence test, which
+    /// counted rows in every store except this one.
+    func testReimportDoesNotDuplicateMedia() throws {
+        let park = makePark("Gas Works Park")
+        let visit = Visit(date: day(2025, 7, 1), park: park)
+        source.insert(visit)
+        for index in 0..<3 {
+            let item = MediaItem(
+                data: Data(repeating: UInt8(index + 1), count: 2048),
+                isVideo: false,
+                thumbnailData: Data(repeating: UInt8(index + 100), count: 256)
+            )
+            item.visit = visit
+            source.insert(item)
+        }
+        try source.save()
+
+        let parks = try source.fetch(FetchDescriptor<Park>())
+        let payload = DataExport.makeBackup(parks: parks, settings: settings())
+        let url = scratch.appendingPathComponent("twice-media.\(BackupArchive.fileExtension)")
+        try DataExport.writeArchive(payload: payload, parks: parks, to: url)
+
+        let first = try DataExport.importArchive(at: url, into: destination)
+        XCTAssertEqual(first.summary.mediaAdded, 3)
+
+        let afterFirst = try destination.fetch(FetchDescriptor<MediaItem>())
+        let bytesAfterFirst = afterFirst.reduce(0) { $0 + ($1.data?.count ?? 0) + ($1.thumbnailData?.count ?? 0) }
+
+        let second = try DataExport.importArchive(at: url, into: destination)
+        XCTAssertEqual(second.summary.mediaAdded, 0, "a second import added media again")
+
+        let afterSecond = try destination.fetch(FetchDescriptor<MediaItem>())
+        XCTAssertEqual(afterSecond.count, 3, "importing twice duplicated the photos")
+        XCTAssertEqual(
+            afterSecond.reduce(0) { $0 + ($1.data?.count ?? 0) + ($1.thumbnailData?.count ?? 0) },
+            bytesAfterFirst,
+            "importing twice changed how many bytes of media are stored"
+        )
+        XCTAssertEqual(try destination.fetch(FetchDescriptor<Visit>()).count, 1)
+        XCTAssertEqual(Set(afterSecond.map(\.identifier)).count, 3, "media identifiers stopped being unique")
     }
 
     func testRandomFileIsRejected() throws {
