@@ -137,14 +137,15 @@ struct BackupMergeSummary: Equatable {
     var visitsAdded = 0
     var mediaAdded = 0
     var exclusionsAdded = 0
+    var parksStruckOff = 0
     var scannedAreasAdded = 0
     var regionIndexesAdded = 0
     var friendsAdded = 0
 
     var isEmpty: Bool {
         parksAdded == 0 && parksUpdated == 0 && visitsAdded == 0 && mediaAdded == 0
-            && exclusionsAdded == 0 && scannedAreasAdded == 0 && regionIndexesAdded == 0
-            && friendsAdded == 0
+            && exclusionsAdded == 0 && parksStruckOff == 0 && scannedAreasAdded == 0
+            && regionIndexesAdded == 0 && friendsAdded == 0
     }
 
     var sentence: String {
@@ -154,6 +155,7 @@ struct BackupMergeSummary: Equatable {
         if visitsAdded > 0 { parts.append("\(visitsAdded) new \(visitsAdded == 1 ? "visit" : "visits")") }
         if mediaAdded > 0 { parts.append("\(mediaAdded) \(mediaAdded == 1 ? "photo or video" : "photos and videos")") }
         if exclusionsAdded > 0 { parts.append("\(exclusionsAdded) struck off") }
+        if parksStruckOff > 0 { parts.append("removed \(parksStruckOff) that aren't parks") }
         if regionIndexesAdded > 0 { parts.append("\(regionIndexesAdded) indexed \(regionIndexesAdded == 1 ? "place" : "places")") }
         if scannedAreasAdded > 0 { parts.append("\(scannedAreasAdded) scanned \(scannedAreasAdded == 1 ? "area" : "areas")") }
         if friendsAdded > 0 { parts.append("\(friendsAdded) \(friendsAdded == 1 ? "friend" : "friends")") }
@@ -416,8 +418,11 @@ enum DataExport {
     ) throws -> BackupMergeSummary {
         var summary = BackupMergeSummary()
 
-        try mergeParks(payload, into: context, media: media, summary: &summary)
+        // Exclusions first, and not merely for tidiness. They decide which parks may exist
+        // at all, so anything that runs before them is working from an incomplete answer —
+        // see `mergeExclusions` and the guard at the top of the park loop.
         try mergeExclusions(payload, into: context, summary: &summary)
+        try mergeParks(payload, into: context, media: media, summary: &summary)
         try mergeScannedAreas(payload, into: context, summary: &summary)
         try mergeRegionIndexes(payload, into: context, summary: &summary)
         try mergeFriends(payload, into: context, summary: &summary)
@@ -443,6 +448,9 @@ enum DataExport {
         var knownVisitIDs = Set(try context.fetch(FetchDescriptor<Visit>()).map(\.identifier))
         var knownMediaIDs = Set(try context.fetch(FetchDescriptor<MediaItem>()).map(\.identifier))
 
+        // Rejections have already been merged, so this is the complete list.
+        let excluded = ExclusionIndex(try context.fetch(FetchDescriptor<ExcludedPlace>()))
+
         for incoming in payload.parks {
             let key = incoming.identifier.isEmpty
                 ? Park.identity(
@@ -450,6 +458,26 @@ enum DataExport {
                     coordinate: CLLocationCoordinate2D(latitude: incoming.latitude, longitude: incoming.longitude)
                 )
                 : incoming.identifier
+
+            // A backup can name the same place in both lists — a park recorded before it was
+            // struck off, or re-found afterwards a metre away and so under a second
+            // identifier. Creating it would restore something the same file says is not a
+            // park, which is what left places showing up in the results and in the "not a
+            // park" list at once.
+            //
+            // Unless it carries visits. Then the contradiction is resolved the other way:
+            // dropping it would throw away logged visits and their photos to honour a
+            // rejection that was probably never meant to cover this, and a park can always
+            // be struck off again by hand.
+            if incoming.visits.isEmpty,
+               parksByIdentifier[key] == nil,
+               excluded.covers(
+                identifier: key,
+                name: incoming.name,
+                coordinate: CLLocationCoordinate2D(latitude: incoming.latitude, longitude: incoming.longitude)
+               ) {
+                continue
+            }
 
             let park: Park
             var didChangePark = false
@@ -558,6 +586,23 @@ enum DataExport {
 
     // MARK: Everything else
 
+    /// Restores the rejection list, then makes the catalogue agree with it.
+    ///
+    /// The second half is the part that matters, and it exists because of a real order of
+    /// events. A fresh install starts sweeping the moment it opens, and a sweep run before
+    /// any backup has been imported knows of no rejections at all — so it files every place
+    /// the user had struck off, exactly as the map describes them. Importing then adds the
+    /// rejections on top, and the result is a place sitting in the "not a park" list and in
+    /// the search results at the same time.
+    ///
+    /// So an arriving rejection reaches back over what is already there. Reconciliation runs
+    /// against the whole list rather than only the new arrivals, which means re-importing a
+    /// backup repairs a catalogue that has already gone wrong this way.
+    ///
+    /// A park with visits on it is never removed. A rejection cascades to visits and their
+    /// photos, and a rejected place should not have had visits in the first place — so a
+    /// match here is a contradiction in the data rather than an instruction, and the reading
+    /// that cannot destroy anything wins.
     private static func mergeExclusions(
         _ payload: BackupPayload,
         into context: ModelContext,
@@ -575,6 +620,15 @@ enum DataExport {
             context.insert(place)
             known.insert(incoming.identifier)
             summary.exclusionsAdded += 1
+        }
+
+        let index = ExclusionIndex(try context.fetch(FetchDescriptor<ExcludedPlace>()))
+        guard !index.isEmpty else { return }
+
+        for park in try context.fetch(FetchDescriptor<Park>()) where park.visitCount == 0 {
+            guard index.covers(park) else { continue }
+            context.delete(park)
+            summary.parksStruckOff += 1
         }
     }
 

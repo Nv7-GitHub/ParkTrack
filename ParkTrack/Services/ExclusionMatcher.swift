@@ -288,3 +288,47 @@ enum RegionFairness {
         max(0, rawTotal - count(union, inside: region))
     }
 }
+
+/// A rejection list you can ask about a park quickly.
+///
+/// `ExclusionMatcher.isAlreadyExcluded` walks the whole list per question, which is fine for
+/// the handful of rows on a friend's profile and far too slow for an import, where every
+/// park in a catalogue is asked about every rejection. Bucketing by name first turns that
+/// from thousands-times-hundreds into a dictionary lookup and a distance check against the
+/// one or two places that share a name.
+struct ExclusionIndex {
+    private let identifiers: Set<String>
+    private let byName: [String: [ExclusionPoint]]
+
+    init(_ points: [ExclusionPoint]) {
+        identifiers = Set(points.map(\.identifier))
+        byName = Dictionary(grouping: points) { ExclusionMatcher.normalizedName($0.name) }
+    }
+
+    init(_ places: [ExcludedPlace]) {
+        self.init(places.map(ExclusionPoint.init))
+    }
+
+    var isEmpty: Bool { identifiers.isEmpty && byName.isEmpty }
+
+    /// Whether this place has been struck off — by identifier, or by being close enough to
+    /// something of the same name that was.
+    ///
+    /// The proximity arm is not belt-and-braces. `Park.identity` rounds to a ~11 m grid, so
+    /// the same place recorded twice — once when it was rejected, once when a later sweep
+    /// re-found it a metre away — carries two different identifiers about 9% of the time.
+    /// See `ParkIdentityProbe`.
+    func covers(identifier: String, name: String, coordinate: CLLocationCoordinate2D) -> Bool {
+        if identifiers.contains(identifier) { return true }
+        guard let sharing = byName[ExclusionMatcher.normalizedName(name)] else { return false }
+        let here = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        return sharing.contains { point in
+            CLLocation(latitude: point.latitude, longitude: point.longitude)
+                .distance(from: here) <= ExclusionMatcher.proximityMetres
+        }
+    }
+
+    func covers(_ park: Park) -> Bool {
+        covers(identifier: park.identifier, name: park.name, coordinate: park.coordinate)
+    }
+}

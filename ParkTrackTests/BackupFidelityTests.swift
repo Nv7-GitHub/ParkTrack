@@ -376,6 +376,173 @@ final class BackupFidelityTests: XCTestCase {
         XCTAssertNotEqual(exclusions.first?.identifier, keptIdentifier)
     }
 
+    // MARK: - A restore must not put back what the file says isn't a park
+
+    /// A backup naming the same place in both lists must not resurrect it.
+    func testABackupCarryingBothAParkAndItsExclusionDoesNotRestoreIt() throws {
+        let park = makePark("Some Lawn", lat: 47.61, lon: -122.31)
+        source.insert(ExcludedPlace(park: park))
+        try source.save()
+
+        let result = try roundTrip()
+
+        XCTAssertTrue(try restoredParks().isEmpty, "the import restored a place the same file rejects")
+        XCTAssertEqual(try destination.fetch(FetchDescriptor<ExcludedPlace>()).count, 1)
+        XCTAssertEqual(result.summary.parksAdded, 0)
+    }
+
+    /// The order that actually bit: a fresh install sweeps before anyone imports anything,
+    /// so the catalogue is already full of places the backup is about to reject.
+    func testImportStrikesOffWhatAnEarlierSweepAlreadyFiled() throws {
+        // The backup knows only that this place is not a park.
+        let rejected = makePark("Some Lawn", lat: 47.61, lon: -122.31)
+        let identifier = rejected.identifier
+        source.insert(ExcludedPlace(park: rejected))
+        source.delete(rejected)
+        makePark("Discovery Park", lat: 47.65, lon: -122.41)
+        try source.save()
+
+        // Meanwhile the new install has swept and filed it, knowing of no rejections.
+        let swept = Park(
+            identifier: identifier,
+            name: "Some Lawn",
+            latitude: 47.61,
+            longitude: -122.31
+        )
+        destination.insert(swept)
+        try destination.save()
+
+        let result = try roundTrip()
+
+        let names = try restoredParks().map(\.name)
+        XCTAssertFalse(names.contains("Some Lawn"), "a swept-in park survived the rejection that arrived with the backup")
+        XCTAssertTrue(names.contains("Discovery Park"), "reconciliation removed something it had no business touching")
+        XCTAssertEqual(result.summary.parksStruckOff, 1)
+    }
+
+    /// And it has to work when the two identifiers disagree, which `ParkIdentityProbe`
+    /// measures happening for about 9% of one-metre re-finds.
+    func testStrikingOffSurvivesGridDrift() throws {
+        source.insert(ExcludedPlace(
+            identifier: Park.identity(
+                name: "Some Lawn",
+                coordinate: CLLocationCoordinate2D(latitude: 42.354949, longitude: -71.0656)
+            ),
+            name: "Some Lawn",
+            latitude: 42.354949,
+            longitude: -71.0656
+        ))
+        try source.save()
+
+        let drifted = Park(
+            identifier: Park.identity(
+                name: "Some Lawn",
+                coordinate: CLLocationCoordinate2D(latitude: 42.354951, longitude: -71.0656)
+            ),
+            name: "Some Lawn",
+            latitude: 42.354951,
+            longitude: -71.0656
+        )
+        XCTAssertNotEqual(
+            drifted.identifier,
+            try source.fetch(FetchDescriptor<ExcludedPlace>()).first?.identifier,
+            "this test is pointless if the identifiers agree"
+        )
+        destination.insert(drifted)
+        try destination.save()
+
+        try roundTrip()
+        XCTAssertTrue(try restoredParks().isEmpty, "grid drift let a rejected place survive the import")
+    }
+
+    /// A namesake far away is a different place and must be left alone.
+    func testStrikingOffDoesNotReachADistantNamesake() throws {
+        source.insert(ExcludedPlace(
+            identifier: "boston common|42.355|-71.0656",
+            name: "Boston Common",
+            latitude: 42.3550,
+            longitude: -71.0656
+        ))
+        try source.save()
+
+        let elsewhere = Park(
+            identifier: Park.identity(
+                name: "Boston Common",
+                coordinate: CLLocationCoordinate2D(latitude: 47.6, longitude: -122.3)
+            ),
+            name: "Boston Common",
+            latitude: 47.6,
+            longitude: -122.3
+        )
+        destination.insert(elsewhere)
+        try destination.save()
+
+        try roundTrip()
+        XCTAssertEqual(try restoredParks().count, 1, "a rejection in Boston removed a park in Seattle")
+    }
+
+    /// Never at the cost of visits: a contradiction in the data is resolved the way that
+    /// cannot destroy anything.
+    func testAVisitedParkIsNeverStruckOffByAnImport() throws {
+        source.insert(ExcludedPlace(
+            identifier: Park.identity(
+                name: "Some Lawn",
+                coordinate: CLLocationCoordinate2D(latitude: 47.61, longitude: -122.31)
+            ),
+            name: "Some Lawn",
+            latitude: 47.61,
+            longitude: -122.31
+        ))
+        try source.save()
+
+        let visited = Park(
+            identifier: Park.identity(
+                name: "Some Lawn",
+                coordinate: CLLocationCoordinate2D(latitude: 47.61, longitude: -122.31)
+            ),
+            name: "Some Lawn",
+            latitude: 47.61,
+            longitude: -122.31
+        )
+        destination.insert(visited)
+        let visit = Visit(date: day(2025, 5, 1), park: visited)
+        destination.insert(visit)
+        let photo = MediaItem(data: Data(repeating: 4, count: 128), isVideo: false)
+        photo.visit = visit
+        destination.insert(photo)
+        try destination.save()
+
+        try roundTrip()
+
+        XCTAssertEqual(try restoredParks().count, 1, "an import deleted a park the user had visited")
+        XCTAssertEqual(try destination.fetch(FetchDescriptor<Visit>()).count, 1)
+        XCTAssertEqual(try destination.fetch(FetchDescriptor<MediaItem>()).count, 1)
+    }
+
+    /// Re-importing the same file is how someone already in the broken state gets out of it.
+    func testReimportingRepairsACatalogueThatAlreadyWentWrong() throws {
+        let rejected = makePark("Some Lawn", lat: 47.61, lon: -122.31)
+        let identifier = rejected.identifier
+        source.insert(ExcludedPlace(park: rejected))
+        source.delete(rejected)
+        try source.save()
+
+        // The state the bug left behind: the rejection imported, the park swept in anyway.
+        destination.insert(ExcludedPlace(
+            identifier: identifier, name: "Some Lawn", latitude: 47.61, longitude: -122.31
+        ))
+        destination.insert(Park(
+            identifier: identifier, name: "Some Lawn", latitude: 47.61, longitude: -122.31
+        ))
+        try destination.save()
+
+        let result = try roundTrip()
+
+        XCTAssertTrue(try restoredParks().isEmpty, "re-importing did not repair the catalogue")
+        XCTAssertEqual(result.summary.parksStruckOff, 1)
+        XCTAssertEqual(result.summary.exclusionsAdded, 0, "the rejection was already there")
+    }
+
     // MARK: - Idempotence and bad input
 
     /// Importing the same file twice must change nothing the second time.
