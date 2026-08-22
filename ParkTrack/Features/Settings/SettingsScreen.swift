@@ -57,10 +57,9 @@ struct SettingsScreen: View {
 
     @State private var pickingPlace: SavedPlaceKind?
     @State private var isConfirmingDeletion = false
+    @State private var isConfirmingTotalDeletion = false
     @State private var isImporting = false
     @State private var isInspectingMedia = false
-    @State private var isConfirmingRebuild = false
-    @State private var rebuildArmedBytes: Int64?
 
     @State private var activity: String?
     @State private var status: String?
@@ -96,11 +95,20 @@ struct SettingsScreen: View {
     }
 
     private var suspiciousCount: Int { auditCounts.suspicious }
-    private var excludedCount: Int { (try? modelContext.fetchCount(FetchDescriptor<ExcludedPlace>())) ?? 0 }
 
-    /// Counted by the store rather than by fetching and materialising every visit, which is
-    /// all the old `@Query` was for.
-    private var visitCount: Int { modelContext.visitCount() }
+    /// Held rather than computed, because a computed property here is a trip to the store on
+    /// every single evaluation of the body — and SwiftUI evaluates a body far more often
+    /// than the data changes. Two counts, a scroll's worth of evaluations, and a store with
+    /// thousands of rows in it was enough to make the screen stutter under a finger.
+    /// Refreshed by `refreshCounts` wherever something actually changes them.
+    @State private var excludedCount = 0
+    @State private var visitCount = 0
+
+    private func refreshCounts() {
+        excludedCount = (try? modelContext.fetchCount(FetchDescriptor<ExcludedPlace>())) ?? 0
+        visitCount = modelContext.visitCount()
+        mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
+    }
 
     var body: some View {
         @Bindable var settings = settings
@@ -152,57 +160,43 @@ struct SettingsScreen: View {
                 }
             }
             .sheet(isPresented: $isConfirmingDeletion) {
-                SettingsDeleteConfirmation(visitCount: visits.count) {
+                SettingsDeleteConfirmation(
+                    title: "Delete \(visits.count) \(visits.count == 1 ? "visit" : "visits")?",
+                    bodyText: "Every visit, along with its notes, ratings and attached photos and video, will be removed from this device and from iCloud if sync is on. The parks themselves stay, but they'll all count as unvisited again. This can't be undone.",
+                    confirmTitle: "Delete all visits"
+                ) {
                     deleteAllVisits()
                 }
             }
             .sheet(isPresented: $isInspectingMedia) {
                 MediaFootprintSheet()
             }
-            .confirmationDialog(
-                StorageRebuild.isArmed ? "Rebuild is already ready" : "Rebuild storage?",
-                isPresented: $isConfirmingRebuild,
-                titleVisibility: .visible
-            ) {
-                if StorageRebuild.isArmed {
-                    Button("Cancel the rebuild", role: .destructive) {
-                        StorageRebuild.cancel()
-                        rebuildArmedBytes = nil
-                        show(status: "Rebuild cancelled. Nothing was changed.")
-                    }
-                    Button("Leave it ready", role: .cancel) {}
-                } else {
-                    Button("Rebuild") { armRebuild() }
-                    Button("Cancel", role: .cancel) {}
+            .sheet(isPresented: $isConfirmingTotalDeletion) {
+                SettingsDeleteConfirmation(
+                    title: "Delete everything?",
+                    bodyText: "Every park, visit, photo, video, struck-off place, scanned area, indexed region and friend goes, along with your saved places and your name. Nothing is left on this device.\n\nIf iCloud sync is on, the deletion travels to iCloud too — and to your other devices. Give it a minute to finish before reinstalling, or what you deleted will come back down.",
+                    confirmTitle: "Delete everything"
+                ) {
+                    Task { await deleteEverything() }
                 }
-            } message: {
-                Text(StorageRebuild.isArmed
-                     ? "It happens the next time ParkTrack starts. Close it from the app switcher and open it again."
-                     : "Everything is written to a file and checked first, and nothing is deleted unless that check passes. The rebuild itself happens the next time ParkTrack starts.")
             }
             .fileImporter(
                 isPresented: $isImporting,
                 allowedContentTypes: [BackupArchive.contentType],
                 allowsMultipleSelection: false
             ) { result in
-                handleImport(result)
+                Task { await handleImport(result) }
             }
         }
         .task {
-            if PersistenceController.didRebuildStorage {
-                show(status: "Storage rebuilt. Everything was written out and put back.")
-            } else if let failure = StorageRebuild.lastFailure {
-                errorMessage = failure
-                StorageRebuild.clearLastFailure()
-            }
-            mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
+            refreshCounts()
             // Sequentially: the geocoder is rate-limited, and three lookups fired at once is
             // how you get two of them back empty.
             for kind in settings.savedPlaces {
                 await resolvePlaceName(for: kind)
             }
         }
-        .onChange(of: parks.count) { invalidateExport() }
+        .onChange(of: parks.count) { invalidateExport(); refreshCounts() }
         .onChange(of: visits.count) { invalidateExport() }
     }
 
@@ -509,19 +503,6 @@ struct SettingsScreen: View {
                     .accessibilityHint("Shows what this is made of")
                 }
 
-                Button {
-                    isConfirmingRebuild = true
-                } label: {
-                    settingsRow(
-                        title: StorageRebuild.isArmed ? "Rebuild is ready" : "Rebuild storage",
-                        detail: StorageRebuild.isArmed
-                            ? "Close and reopen ParkTrack to finish"
-                            : "Writes everything out and puts it back, discarding anything left over",
-                        systemImage: StorageRebuild.isArmed ? "checkmark.circle" : "arrow.triangle.2.circlepath"
-                    )
-                }
-                .buttonStyle(.plain)
-
                 VStack(spacing: 10) {
                     Button {
                         Task { await rescanArea() }
@@ -768,7 +749,7 @@ struct SettingsScreen: View {
             modelContext.delete(visit)
         }
         try? modelContext.save()
-        mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
+        refreshCounts()
         invalidateExport()
         show(status: "All visits deleted.")
     }
@@ -804,7 +785,7 @@ struct SettingsScreen: View {
                     }
                     .buttonStyle(.plain)
                 } else {
-                    Button(action: prepareExport) {
+                    Button { Task { await prepareExport() } } label: {
                         settingsRow(
                             title: "Create a backup",
                             detail: isPreparingExport ? "Writing the file…" : backupContentsSummary,
@@ -815,6 +796,18 @@ struct SettingsScreen: View {
                     .disabled(isPreparingExport)
                     .opacity(isPreparingExport ? 0.5 : 1)
                 }
+
+                Button {
+                    isConfirmingTotalDeletion = true
+                } label: {
+                    settingsRow(
+                        title: "Delete everything",
+                        detail: "Empties this device so a backup can be imported into a clean app",
+                        systemImage: "trash",
+                        tint: .red
+                    )
+                }
+                .buttonStyle(.plain)
 
                 Button {
                     isImporting = true
@@ -854,10 +847,15 @@ struct SettingsScreen: View {
 
     /// Writing a backup is no longer cheap — with media it can run to gigabytes — so it
     /// happens on request rather than eagerly in the background on every edit.
-    private func prepareExport() {
+    private func prepareExport() async {
         guard !isPreparingExport else { return }
         isPreparingExport = true
+        activity = "Writing the backup…"
         errorMessage = nil
+        defer { activity = nil }
+        // One turn of the run loop so the spinner is on screen before the write begins;
+        // without it the first thing the user sees is the app locking up for a few seconds.
+        await Task.yield()
 
         let payload = DataExport.makeBackup(
             parks: parks,
@@ -884,27 +882,76 @@ struct SettingsScreen: View {
         isPreparingExport = false
     }
 
-    /// Writes and verifies the safety copy, then leaves the rebuild for the next launch.
+    /// Empties every store, so a backup can be imported into an app with nothing in it.
     ///
-    /// Nothing destructive happens here — `prepare` throws rather than arming if the copy
-    /// cannot be written or does not match the store — so the worst outcome of tapping this
-    /// is a file in Documents and an error message.
-    private func armRebuild() {
+    /// Deletes object by object rather than with `delete(model:)`, which is slower and
+    /// correct where the batch form is neither. A batch delete goes straight to the store
+    /// and never tells the context: `@Query` keeps handing back rows that no longer exist,
+    /// so the screen went on reporting the old counts until the app was relaunched — and,
+    /// worse, the externally stored blobs were never reaped, leaving megabytes of photos on
+    /// disk belonging to nothing.
+    ///
+    /// Only the roots are deleted. Visits hang off parks and media off visits, friends'
+    /// feeds off friends, all with cascade rules, so deleting the two roots takes the rest
+    /// with them properly. Anything orphaned by an earlier bug would not be reachable that
+    /// way, so a sweep afterwards catches the leftovers.
+    ///
+    /// Preferences go too, and the display name in particular has to: `AppSettings.apply`
+    /// only restores a friend code while the local name is blank, so leaving a name here
+    /// would mean the next import kept this install's randomly generated code and lost the
+    /// one other people have saved.
+    private func deleteEverything() async {
+        activity = "Deleting everything…"
         errorMessage = nil
-        do {
-            let bytes = try StorageRebuild.prepare(
-                context: modelContext,
-                settings: settings.backupSettings
-            )
-            rebuildArmedBytes = bytes
-            show(status: "Safety copy written (\(DataExport.formatBytes(bytes))). Close and reopen ParkTrack to rebuild.")
-        } catch {
-            errorMessage = error.localizedDescription
+        defer { activity = nil }
+        await Task.yield()
+
+        func purge<T: PersistentModel>(_ type: T.Type) async {
+            let rows = (try? modelContext.fetch(FetchDescriptor<T>())) ?? []
+            for (index, row) in rows.enumerated() {
+                modelContext.delete(row)
+                // A catalogue of a few thousand takes long enough that the spinner would
+                // otherwise be a still image.
+                if index % 200 == 0 { await Task.yield() }
+            }
         }
+
+        await purge(Park.self)          // cascades to Visit, and Visit to MediaItem
+        await purge(Friend.self)        // cascades to their visits, standings and rejections
+        await purge(ExcludedPlace.self)
+        await purge(ScannedArea.self)
+        await purge(RegionIndex.self)
+
+        // Anything a cascade could not reach, because it was already orphaned.
+        await purge(Visit.self)
+        await purge(MediaItem.self)
+        await purge(FriendVisit.self)
+        await purge(FriendRegionProgress.self)
+        await purge(FriendExclusion.self)
+
+        do {
+            try modelContext.save()
+        } catch {
+            errorMessage = "Couldn't delete everything: \(error.localizedDescription)"
+            return
+        }
+
+        settings.displayName = ""
+        for kind in SavedPlaceKind.allCases {
+            settings.setCoordinate(nil, for: kind)
+        }
+
+        refreshCounts()
+        invalidateExport()
+        auditRevision += 1
+        show(status: "Everything deleted. Import a backup to restore it.")
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
+    private func handleImport(_ result: Result<[URL], Error>) async {
         errorMessage = nil
+        activity = "Importing…"
+        defer { activity = nil }
+        await Task.yield()
         do {
             guard let url = try result.get().first else { return }
 
@@ -917,7 +964,7 @@ struct SettingsScreen: View {
             // store — without this the file would carry school and work and then drop them.
             settings.apply(result.settings)
 
-            mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
+            refreshCounts()
             invalidateExport()
             auditRevision += 1
             show(status: result.summary.sentence)
@@ -1209,7 +1256,9 @@ struct SettingsPlaceLocationPicker: View {
 struct SettingsDeleteConfirmation: View {
     @Environment(\.dismiss) private var dismiss
 
-    let visitCount: Int
+    var title: String
+    var bodyText: String
+    var confirmTitle: String
     let onConfirm: () -> Void
 
     private static let phrase = "DELETE"
@@ -1231,11 +1280,11 @@ struct SettingsDeleteConfirmation: View {
                                 .font(.system(size: 30))
                                 .foregroundStyle(.red)
 
-                            Text("Delete \(visitCount) \(visitCount == 1 ? "visit" : "visits")?")
+                            Text(title)
                                 .font(.title3.weight(.semibold))
                                 .foregroundStyle(Theme.textPrimary)
 
-                            Text("Every visit, along with its notes, ratings and attached photos and video, will be removed from this device and from iCloud if sync is on. The parks themselves stay, but they'll all count as unvisited again. This can't be undone.")
+                            Text(bodyText)
                                 .font(.subheadline)
                                 .foregroundStyle(Theme.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -1271,7 +1320,7 @@ struct SettingsDeleteConfirmation: View {
                                 onConfirm()
                                 dismiss()
                             } label: {
-                                Text("Delete all visits")
+                                Text(confirmTitle)
                                     .font(.headline)
                                     .frame(maxWidth: .infinity)
                             }

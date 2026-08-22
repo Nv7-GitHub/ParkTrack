@@ -884,15 +884,21 @@ enum DataExport {
     }
 
     /// The same string, split so a tile can draw the unit smaller than the number.
+    ///
+    /// Three or fewer significant figures on the number itself. A tile is about four
+    /// characters wide before it starts shrinking the text to fit, and "233.6" is five — so
+    /// a decimal place that nobody reads was enough to make one figure in a row of three
+    /// render smaller than its neighbours.
     static func splitBytes(_ bytes: Int64) -> (value: String, unit: String) {
         let formatted = formatBytes(bytes)
         guard let separator = formatted.lastIndex(where: \.isWhitespace) else {
             return (formatted, "")
         }
-        return (
-            String(formatted[..<separator]),
-            String(formatted[formatted.index(after: separator)...])
-        )
+        var value = String(formatted[..<separator])
+        if let number = Double(value.replacingOccurrences(of: ",", with: "")), number >= 100 {
+            value = String(Int(number.rounded()))
+        }
+        return (value, String(formatted[formatted.index(after: separator)...]))
     }
 
     static func formatBytes(_ bytes: Int64) -> String {

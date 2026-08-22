@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  A partial Info.plist, merged into the one Xcode generates.
+
+	  Everything else the app declares is a `INFOPLIST_KEY_*` build setting in project.yml,
+	  which is tidier and keeps the values next to the rest of the target. This one key
+	  cannot be: `INFOPLIST_KEY_UIBackgroundModes` is accepted by the build system, written
+	  into the project, and then ignored by the generator — it is not among the keys that
+	  generator understands. The setting was there and the key was not in the built plist,
+	  with nothing anywhere to say so.
+
+	  Without it CloudKit mirroring logs "BUG IN CLIENT OF CLOUDKIT: CloudKit push
+	  notifications require the 'remote-notification' background mode in your info plist" and
+	  falls back to syncing only while the app is in the foreground.
+
+	  GENERATE_INFOPLIST_FILE stays on: Xcode treats this as the base and merges the generated
+	  keys on top, so the usage descriptions and the rest still come from project.yml.
+	-->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

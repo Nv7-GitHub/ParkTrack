@@ -125,6 +125,62 @@ final class EntitlementsTests: XCTestCase {
     }
 }
 
+/// The background mode CloudKit mirroring needs, which cannot be a build setting.
+///
+/// `INFOPLIST_KEY_UIBackgroundModes` is accepted by the build system, written into the
+/// project file, and then ignored by the Info.plist generator — so the setting was present,
+/// the key was absent from the built app, and nothing anywhere reported a problem. The only
+/// symptom was a line in the device log. It lives in a real partial plist now, and this
+/// guards the arrangement rather than the value: a merge conflict or a tidy-up that folds
+/// the file back into build settings would put it straight back to silently doing nothing.
+final class BackgroundModeTests: XCTestCase {
+
+    private var repositoryRoot: URL {
+        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+    }
+
+    func testInfoPlistDeclaresRemoteNotification() throws {
+        let url = repositoryRoot
+            .appendingPathComponent("ParkTrack")
+            .appendingPathComponent("Info.plist")
+        let data = try Data(contentsOf: url)
+        let plist = try XCTUnwrap(
+            try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+            "Info.plist is not a plist dictionary"
+        )
+        let modes = try XCTUnwrap(
+            plist["UIBackgroundModes"] as? [String],
+            "no UIBackgroundModes — CloudKit mirroring will log a client bug and sync only in the foreground"
+        )
+        XCTAssertTrue(modes.contains("remote-notification"), "background modes are \(modes)")
+    }
+
+    /// And that the project still points at the file, since the build setting alone is a
+    /// no-op and would look identical in a diff.
+    func testProjectUsesTheInfoPlistFile() throws {
+        let yml = try String(
+            contentsOf: repositoryRoot.appendingPathComponent("project.yml"),
+            encoding: .utf8
+        )
+        // Settings only. Matching raw text caught the comment that explains why the setting
+        // is not used, which is a test failing on its own documentation — the sort of false
+        // alarm that teaches people to ignore a red suite.
+        let settings = yml
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.hasPrefix("#") }
+
+        XCTAssertTrue(
+            settings.contains { $0 == "INFOPLIST_FILE: ParkTrack/Info.plist" },
+            "project.yml stopped using the partial Info.plist, so UIBackgroundModes is gone from the build"
+        )
+        XCTAssertFalse(
+            settings.contains { $0.hasPrefix("INFOPLIST_KEY_UIBackgroundModes") },
+            "INFOPLIST_KEY_UIBackgroundModes is back as a setting; it is silently ignored by the generator"
+        )
+    }
+}
+
 /// The claim the About screen makes about syncing has to match what the build can do.
 final class CloudSyncClaimTests: XCTestCase {
 
