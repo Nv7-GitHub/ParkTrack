@@ -39,6 +39,9 @@ struct FriendsScreen: View {
     @State private var pane: Pane = .leaderboard
     @State private var metric: LeaderboardMetric = .parks
     @State private var isAddingFriend = false
+    /// Asked of CloudKit on appear, because the answer is asynchronous and can change
+    /// while the app is open — someone signing in mid-session should stop being told to.
+    @State private var cloudStatus: CloudKitAvailability.Status = .live
     @State private var hasPublished = false
 
     private var social: SocialService? { services.social }
@@ -49,6 +52,8 @@ struct FriendsScreen: View {
                 VStack(spacing: Theme.sectionSpacing) {
                     if social?.backendKind == .mock {
                         FriendsSampleDataBanner()
+                    } else if cloudStatus == .notSignedIn {
+                        FriendsSignedOutBanner()
                     }
 
                     if trimmedDisplayName.isEmpty {
@@ -104,6 +109,7 @@ struct FriendsScreen: View {
             .tabBarBottomInset()
             .background(Theme.background)
             .refreshable { await syncEverything() }
+            .task { cloudStatus = await CloudKitAvailability.refreshAccountStatus() }
             .navigationTitle("Friends")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -291,6 +297,35 @@ private struct FriendsSharingBanner: View {
                 ? "Uploading about \(DataExport.formatBytes(bytes)). You can keep using the app."
                 : "You can keep using the app."
         }
+    }
+}
+
+/// The other reason friends aren't working, and the one a person can fix themselves.
+///
+/// Kept apart from the sample-data banner because the two have nothing in common. This
+/// build can reach iCloud; this phone has nobody signed in. Saying "isn't configured in
+/// this build" to someone in that position sends them to ask the developer about a
+/// problem that lives in their own Settings app.
+private struct FriendsSignedOutBanner: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "icloud.slash.fill")
+                .font(.subheadline)
+                .foregroundStyle(Theme.sky)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Sign in to iCloud to use friends")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Friend codes travel through iCloud. Open Settings and sign in, and sharing will start working.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Theme.sky.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.tightCornerRadius, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
 

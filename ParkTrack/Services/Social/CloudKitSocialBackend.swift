@@ -26,13 +26,43 @@ enum CloudKitAvailability {
         var isLive: Bool { self == .live }
     }
 
-    static var status: Status {
+    /// The account half of the answer, as CloudKit last reported it.
+    ///
+    /// Optimistic before anyone has asked. `accountStatus` is asynchronous and the screens
+    /// want an answer while they are rendering, so the gap is filled by assuming an account
+    /// exists — the honest direction to be wrong in, because a real request then fails with
+    /// a real message instead of the app quietly deciding for itself that sharing is off.
+    @MainActor private static var accountLooksUsable = true
+
+    @MainActor static var status: Status {
         guard hasICloudEntitlement else { return .notEntitled }
-        guard FileManager.default.ubiquityIdentityToken != nil else { return .notSignedIn }
-        return .live
+        return accountLooksUsable ? .live : .notSignedIn
     }
 
-    static var isUsable: Bool { status.isLive }
+    /// Asks CloudKit itself whether there is an account, and caches the answer.
+    ///
+    /// This used to be `FileManager.ubiquityIdentityToken`, which is a different question:
+    /// that token is iCloud *Drive's* identity, and it is nil on a phone that is signed into
+    /// iCloud perfectly well but has iCloud Drive turned off — or has it on and simply has
+    /// not been asked about this app. CloudKit needs neither. The result was a build that
+    /// worked on one tester's phone and served invented friends on the next one, under a
+    /// banner blaming the build, for a difference in a Settings toggle that has nothing to
+    /// do with any of this.
+    ///
+    /// `.couldNotDetermine` and `.temporarilyUnavailable` are treated as usable: both are
+    /// transient, and a request made anyway fails with a message that says so.
+    @discardableResult
+    @MainActor static func refreshAccountStatus() async -> Status {
+        guard hasICloudEntitlement else { return .notEntitled }
+        let account = try? await CKContainer.default().accountStatus()
+        switch account {
+        case .noAccount, .restricted:
+            accountLooksUsable = false
+        default:
+            accountLooksUsable = true
+        }
+        return status
+    }
 
     /// Whether this build carries the iCloud container entitlement.
     ///

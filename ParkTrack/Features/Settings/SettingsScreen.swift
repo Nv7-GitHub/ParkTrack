@@ -102,6 +102,7 @@ struct SettingsScreen: View {
     /// than the data changes. Two counts, a scroll's worth of evaluations, and a store with
     /// thousands of rows in it was enough to make the screen stutter under a finger.
     /// Refreshed by `refreshCounts` wherever something actually changes them.
+    @State private var cloudStatus: CloudKitAvailability.Status = .live
     @State private var excludedCount = 0
     @State private var visitCount = 0
 
@@ -191,6 +192,9 @@ struct SettingsScreen: View {
         }
         .task {
             refreshCounts()
+            // Asked of CloudKit rather than assumed, so the About rows below describe this
+            // phone's actual account rather than an optimistic default.
+            cloudStatus = await CloudKitAvailability.refreshAccountStatus()
             // Sequentially: the geocoder is rate-limited, and three lookups fired at once is
             // how you get two of them back empty.
             for kind in settings.savedPlaces {
@@ -1013,14 +1017,14 @@ struct SettingsScreen: View {
     /// are safely backed up when they are on one phone and nowhere else.
     private var cloudSyncValue: String {
         guard PersistenceController.isCloudSyncActive else { return "Off" }
-        return CloudKitAvailability.status == .notSignedIn ? "Paused" : "On"
+        return cloudStatus == .notSignedIn ? "Paused" : "On"
     }
 
     private var cloudSyncDetail: String {
         guard PersistenceController.isCloudSyncActive else {
             return "This build isn't signed for iCloud, so everything stays on this device."
         }
-        return CloudKitAvailability.status == .notSignedIn
+        return cloudStatus == .notSignedIn
             ? "Sign in to iCloud in Settings and your parks, visits and media will start syncing."
             : "Parks, visits and media sync to your other devices."
     }
@@ -1028,7 +1032,7 @@ struct SettingsScreen: View {
     /// Says which of the two quite different reasons sharing is off, so a tester reporting
     /// "friends don't work" carries the answer with them.
     private var friendSyncValue: String {
-        switch CloudKitAvailability.status {
+        switch cloudStatus {
         case .live: "Live"
         case .notEntitled: "Sample data"
         case .notSignedIn: "Not signed in"
@@ -1036,7 +1040,7 @@ struct SettingsScreen: View {
     }
 
     private var friendSyncDetail: String {
-        switch CloudKitAvailability.status {
+        switch cloudStatus {
         case .live:
             "Friend codes reach real people through iCloud."
         case .notEntitled:

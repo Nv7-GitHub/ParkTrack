@@ -171,10 +171,18 @@ final class SocialService {
         self.backendKind = backend is MockSocialBackend ? .mock : .cloudKit
     }
 
-    /// CloudKit only when the build is genuinely entitled and signed into iCloud;
-    /// the mock otherwise, so the simulator still has a populated Friends tab.
+    /// CloudKit whenever the build is genuinely entitled; the mock otherwise, so the
+    /// simulator still has a populated Friends tab.
+    ///
+    /// Deliberately not gated on being signed into iCloud as well. The mock answers a
+    /// question about the *build* — there is no container to talk to, so invented friends
+    /// are the only thing to show. A missing account is a question about the phone, it is
+    /// fixable from Settings in ten seconds, and every backend call already turns
+    /// `notAuthenticated` into a sentence saying exactly that. Swapping in fake friends
+    /// instead threw that sentence away and replaced it with a banner blaming the build,
+    /// which is both wrong and unactionable.
     static func makeDefault(modelContext: ModelContext) -> SocialService {
-        if CloudKitAvailability.isUsable {
+        if CloudKitAvailability.hasICloudEntitlement {
             return SocialService(backend: CloudKitSocialBackend(), modelContext: modelContext)
         }
         return SocialService(

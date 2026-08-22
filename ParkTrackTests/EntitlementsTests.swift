@@ -248,3 +248,79 @@ final class BackgroundModeTests: XCTestCase {
 // mid-suite. An intermittent test is worse than none — it teaches everyone to re-run a red
 // suite rather than read it. The gating itself is one line in `makeContainer`, guarded by
 // the entitlement checks above.
+
+/// How the app decides whether it can reach CloudKit.
+///
+/// The regression these guard was invisible to every check that existed: the entitlement
+/// was correct, the build was correct, and the same TestFlight build showed real friends on
+/// one phone and invented ones on another. `CloudKitAvailability` was reading
+/// `FileManager.ubiquityIdentityToken` — iCloud *Drive's* identity, which is nil on a phone
+/// signed into iCloud with iCloud Drive switched off — and treating that as "this build
+/// can't reach iCloud", under a banner saying so.
+@MainActor
+final class CloudKitAvailabilityTests: XCTestCase {
+
+    private var sourceURL: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ParkTrack")
+            .appendingPathComponent("Services")
+            .appendingPathComponent("Social")
+            .appendingPathComponent("CloudKitSocialBackend.swift")
+    }
+
+    /// Read from source rather than exercised, because the difference only shows on a device
+    /// with an account: the simulator is unentitled, so the account half never runs here.
+    func testAvailabilityDoesNotAskICloudDriveAboutCloudKit() throws {
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let code = source
+            .split(separator: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+        XCTAssertFalse(
+            code.contains("ubiquityIdentityToken"),
+            "availability is back to reading iCloud Drive's identity token; CloudKit works "
+                + "without iCloud Drive, so this reports 'not signed in' on phones that are"
+        )
+        XCTAssertTrue(
+            code.contains("accountStatus()"),
+            "nothing asks CKContainer whether there is an account"
+        )
+    }
+
+    /// The simulator carries no provisioning profile, so it is unentitled by definition —
+    /// which makes it the one case that can be checked anywhere.
+    func testSimulatorReportsNotEntitledWithoutTouchingCloudKit() async {
+        XCTAssertFalse(CloudKitAvailability.hasICloudEntitlement)
+        XCTAssertEqual(CloudKitAvailability.status, .notEntitled)
+        // Would trap rather than fail if the entitlement guard were dropped:
+        // `CKContainer.default()` is not survivable on an unentitled build.
+        let refreshed = await CloudKitAvailability.refreshAccountStatus()
+        XCTAssertEqual(refreshed, .notEntitled)
+    }
+
+    /// Being signed out is a fact about the phone, not the build, and must not swap the
+    /// backend: CloudKit's own `notAuthenticated` message already says what to do.
+    func testMockIsReservedForUnentitledBuilds() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("ParkTrack")
+                .appendingPathComponent("Services")
+                .appendingPathComponent("Social")
+                .appendingPathComponent("SocialService.swift"),
+            encoding: .utf8
+        )
+        let makeDefault = try XCTUnwrap(
+            source.range(of: "static func makeDefault").map { source[$0.lowerBound...].prefix(400) },
+            "makeDefault is gone"
+        )
+        XCTAssertTrue(
+            makeDefault.contains("CloudKitAvailability.hasICloudEntitlement"),
+            "makeDefault no longer keys on the entitlement alone; a signed-out phone will be "
+                + "handed sample data instead of an error it can act on"
+        )
+    }
+}
