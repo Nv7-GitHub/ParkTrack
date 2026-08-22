@@ -32,6 +32,7 @@ struct FriendsScreen: View {
     @Query(sort: \Friend.addedAt) private var friends: [Friend]
     @Query private var parks: [Park]
     @Query private var indexes: [RegionIndex]
+    @Query private var myExclusions: [ExcludedPlace]
     @State private var recordsCache = DerivedCache<Records>()
     @State private var streaksCache = DerivedCache<Streaks>()
 
@@ -190,7 +191,16 @@ struct FriendsScreen: View {
             citiesCount: records.distinctCities,
             currentStreakWeeks: streaks.currentWeeks,
             parksThisMonth: records.parksThisMonth,
-            regions: myRegionProgress()
+            regions: myRegionProgress(),
+            excludedPlaces: myExclusions.map {
+                ExcludedPlacePayload(
+                    identifier: $0.identifier,
+                    name: $0.name,
+                    latitude: $0.latitude,
+                    longitude: $0.longitude,
+                    excludedAt: $0.excludedAt
+                )
+            }
         )
         await social.publishMyData(parks: parks, profile: profile)
     }
@@ -202,12 +212,19 @@ struct FriendsScreen: View {
         indexes.filter(\.isIndexed).compactMap { region in
             let members = parks.filter { RegionIndex.identity(kind: region.kind, park: $0) == region.identifier }
             guard !members.isEmpty else { return nil }
+            // The raw total, before anyone's rejections. Each side subtracts the union of
+            // both sides' rejections locally, which it can only do if what arrives here is
+            // the figure before subtraction — `parkCount` is already net of this user's own.
             return RegionProgressPayload(
                 identifier: region.identifier,
                 name: region.displayName,
                 kind: region.kind.rawValue,
                 visited: members.count(where: \.isVisited),
-                total: max(region.parkCount, members.count)
+                total: RegionFairness.rawTotal(
+                    for: region,
+                    localCount: members.count,
+                    myExclusions: myExclusions.map(ExclusionPoint.init)
+                )
             )
         }
     }

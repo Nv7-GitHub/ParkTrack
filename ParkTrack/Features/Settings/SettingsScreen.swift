@@ -64,6 +64,9 @@ struct SettingsScreen: View {
     @State private var errorMessage: String?
 
     @State private var exportURL: URL?
+    @State private var isPreparingExport = false
+    @State private var includeMediaInBackup = true
+    @State private var exportBytes: Int64 = 0
 
     private var discovery: ParkDiscoveryService? { services.discovery }
 
@@ -152,7 +155,7 @@ struct SettingsScreen: View {
             }
             .fileImporter(
                 isPresented: $isImporting,
-                allowedContentTypes: [.json],
+                allowedContentTypes: [BackupArchive.contentType],
                 allowsMultipleSelection: false
             ) { result in
                 handleImport(result)
@@ -160,15 +163,14 @@ struct SettingsScreen: View {
         }
         .task {
             mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
-            refreshExportFile()
             // Sequentially: the geocoder is rate-limited, and three lookups fired at once is
             // how you get two of them back empty.
             for kind in settings.savedPlaces {
                 await resolvePlaceName(for: kind)
             }
         }
-        .onChange(of: parks.count) { refreshExportFile() }
-        .onChange(of: visits.count) { refreshExportFile() }
+        .onChange(of: parks.count) { invalidateExport() }
+        .onChange(of: visits.count) { invalidateExport() }
     }
 
     // MARK: - Profile
@@ -712,7 +714,7 @@ struct SettingsScreen: View {
         }
         try? modelContext.save()
         mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
-        refreshExportFile()
+        invalidateExport()
         show(status: "All visits deleted.")
     }
 
@@ -721,24 +723,42 @@ struct SettingsScreen: View {
     private func backupCard() -> some View {
         Card {
             VStack(alignment: .leading, spacing: 16) {
-                SectionHeader("Backup", subtitle: "A plain JSON file you keep")
+                SectionHeader("Backup", subtitle: "One file with everything in it")
+
+                Toggle(isOn: $includeMediaInBackup) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Include photos and video")
+                            .font(.subheadline.weight(.medium))
+                        Text(mediaBytes > 0
+                             ? "Adds about \(DataExport.formatBytes(mediaBytes))"
+                             : "Nothing attached yet")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .tint(Theme.fern)
+                .onChange(of: includeMediaInBackup) { invalidateExport() }
 
                 if let exportURL {
                     ShareLink(item: exportURL) {
                         settingsRow(
-                            title: "Export everything",
-                            detail: "\(Format.parkCount(parks.count)), \(visits.count) \(visits.count == 1 ? "visit" : "visits"), notes, ratings and wishlist",
+                            title: "Share backup",
+                            detail: "Ready — \(DataExport.formatBytes(exportBytes))",
                             systemImage: "square.and.arrow.up"
                         )
                     }
                     .buttonStyle(.plain)
                 } else {
-                    settingsRow(
-                        title: "Export everything",
-                        detail: "Preparing the file…",
-                        systemImage: "square.and.arrow.up"
-                    )
-                    .opacity(0.5)
+                    Button(action: prepareExport) {
+                        settingsRow(
+                            title: "Create a backup",
+                            detail: isPreparingExport ? "Writing the file…" : backupContentsSummary,
+                            systemImage: "square.and.arrow.up"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isPreparingExport)
+                    .opacity(isPreparingExport ? 0.5 : 1)
                 }
 
                 Button {
@@ -752,7 +772,7 @@ struct SettingsScreen: View {
                 }
                 .buttonStyle(.plain)
 
-                Text("Photos and video aren't included — they'd make the file enormous. Turn on iCloud sync to carry media between devices.")
+                Text("A backup carries your parks and visits, photos and video, the places you've struck off, everywhere you've scanned or indexed, your saved places and your friends' codes. Friends' own feeds aren't included — those come back on the next sync.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -760,16 +780,53 @@ struct SettingsScreen: View {
         }
     }
 
-    private func refreshExportFile() {
+    /// What the file will hold, said plainly enough to be worth reading before a long write.
+    private var backupContentsSummary: String {
+        var parts = ["\(Format.parkCount(parks.count))", "\(visits.count) \(visits.count == 1 ? "visit" : "visits")"]
+        if includeMediaInBackup, mediaBytes > 0 {
+            parts.append(DataExport.formatBytes(mediaBytes) + " of media")
+        }
+        return parts.formatted(.list(type: .and))
+    }
+
+    /// Dropped whenever the store changes underneath it, so a stale file can never be
+    /// shared as though it were current.
+    private func invalidateExport() {
+        if let exportURL { try? FileManager.default.removeItem(at: exportURL) }
+        exportURL = nil
+        exportBytes = 0
+    }
+
+    /// Writing a backup is no longer cheap — with media it can run to gigabytes — so it
+    /// happens on request rather than eagerly in the background on every edit.
+    private func prepareExport() {
+        guard !isPreparingExport else { return }
+        isPreparingExport = true
+        errorMessage = nil
+
         let payload = DataExport.makeBackup(
             parks: parks,
-            displayName: settings.displayName,
-            friendCode: settings.friendCode,
-            home: settings.homeCoordinate,
-            homeLabel: settings.homeLabel,
-            customRadiusMiles: settings.customRadiusMiles
+            excludedPlaces: (try? modelContext.fetch(FetchDescriptor<ExcludedPlace>())) ?? [],
+            scannedAreas: (try? modelContext.fetch(FetchDescriptor<ScannedArea>())) ?? [],
+            regionIndexes: (try? modelContext.fetch(FetchDescriptor<RegionIndex>())) ?? [],
+            friends: (try? modelContext.fetch(FetchDescriptor<Friend>())) ?? [],
+            settings: settings.backupSettings,
+            includeMedia: includeMediaInBackup
         )
-        exportURL = try? DataExport.writeTemporaryFile(payload)
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent(DataExport.defaultFileName())
+
+        do {
+            try? FileManager.default.removeItem(at: url)
+            try DataExport.writeArchive(payload: payload, parks: parks, to: url)
+            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            exportBytes = Int64(size)
+            exportURL = url
+        } catch {
+            errorMessage = "Couldn't write the backup: \(error.localizedDescription)"
+        }
+        isPreparingExport = false
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
@@ -780,12 +837,16 @@ struct SettingsScreen: View {
             let needsScope = url.startAccessingSecurityScopedResource()
             defer { if needsScope { url.stopAccessingSecurityScopedResource() } }
 
-            guard let data = try? Data(contentsOf: url) else { throw BackupError.unreadableFile }
-            let payload = try DataExport.decode(data)
-            let summary = try DataExport.merge(payload, into: modelContext)
+            let result = try DataExport.importArchive(at: url, into: modelContext)
 
-            refreshExportFile()
-            show(status: summary.sentence)
+            // Preferences live in UserDefaults, so they are restored separately from the
+            // store — without this the file would carry school and work and then drop them.
+            settings.apply(result.settings)
+
+            mediaBytes = DataExport.mediaBytesOnDisk(context: modelContext)
+            invalidateExport()
+            auditRevision += 1
+            show(status: result.summary.sentence)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -803,21 +864,55 @@ struct SettingsScreen: View {
 
                     aboutRow(
                         title: "iCloud sync",
-                        value: PersistenceController.isCloudSyncActive ? "On" : "Off",
-                        detail: PersistenceController.isCloudSyncActive
-                            ? "Parks, visits and media sync to your other devices."
-                            : "This build isn't signed for iCloud, so everything stays on this device."
+                        value: cloudSyncValue,
+                        detail: cloudSyncDetail
                     )
 
                     aboutRow(
                         title: "Friend sync",
-                        value: CloudKitAvailability.isUsable ? "Live" : "Sample data",
-                        detail: CloudKitAvailability.isUsable
-                            ? "Friend codes reach real people through iCloud."
-                            : "Friends are simulated locally so the tab is explorable. Nothing you share leaves this device."
+                        value: friendSyncValue,
+                        detail: friendSyncDetail
                     )
                 }
             }
+        }
+    }
+
+    /// A mirrored store still syncs nothing without an account, so "on" is not the same
+    /// claim as "working" — and saying the wrong one is how a person concludes their photos
+    /// are safely backed up when they are on one phone and nowhere else.
+    private var cloudSyncValue: String {
+        guard PersistenceController.isCloudSyncActive else { return "Off" }
+        return CloudKitAvailability.status == .notSignedIn ? "Paused" : "On"
+    }
+
+    private var cloudSyncDetail: String {
+        guard PersistenceController.isCloudSyncActive else {
+            return "This build isn't signed for iCloud, so everything stays on this device."
+        }
+        return CloudKitAvailability.status == .notSignedIn
+            ? "Sign in to iCloud in Settings and your parks, visits and media will start syncing."
+            : "Parks, visits and media sync to your other devices."
+    }
+
+    /// Says which of the two quite different reasons sharing is off, so a tester reporting
+    /// "friends don't work" carries the answer with them.
+    private var friendSyncValue: String {
+        switch CloudKitAvailability.status {
+        case .live: "Live"
+        case .notEntitled: "Sample data"
+        case .notSignedIn: "Not signed in"
+        }
+    }
+
+    private var friendSyncDetail: String {
+        switch CloudKitAvailability.status {
+        case .live:
+            "Friend codes reach real people through iCloud."
+        case .notEntitled:
+            "This build can't reach iCloud at all, so friends are simulated locally. Nothing you share leaves this device."
+        case .notSignedIn:
+            "Sign in to iCloud in Settings to share with friends. Until then friends are simulated locally."
         }
     }
 

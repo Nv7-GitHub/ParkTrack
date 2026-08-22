@@ -12,6 +12,7 @@ struct RegionRaceView: View {
     let myName: String
 
     @Query(sort: \RegionIndex.name) private var indexes: [RegionIndex]
+    @Query private var myExclusions: [ExcludedPlace]
     @State private var selection: String?
 
     private var races: [RegionIndex] { indexes.filter(\.isIndexed) }
@@ -29,9 +30,29 @@ struct RegionRaceView: View {
         var fraction: Double { total > 0 ? Double(visited) / Double(total) : 0 }
     }
 
+    /// Everyone in this race counts against one denominator: the raw indexed total, less
+    /// every place anyone racing has struck off.
+    ///
+    /// Without the subtraction the two sides are not comparable. A rejection removes a park
+    /// from the rejecter's catalogue but not from anyone else's total, so the person who has
+    /// tidied their data is silently measured against a different number than the person who
+    /// has not. See `RegionFairness`.
     private func standings(for region: RegionIndex) -> [Standing] {
         let mine = parks.filter { RegionIndex.identity(kind: region.kind, park: $0) == region.identifier }
-        let total = max(region.parkCount, mine.count)
+        let mineExcluded = myExclusions.map(ExclusionPoint.init)
+        let racers = friends.filter { ($0.regions ?? []).contains { $0.regionIdentifier == region.identifier } }
+
+        let union = racers.reduce(mineExcluded) { combined, friend in
+            RegionFairness.union(combined, (friend.exclusions ?? []).map(ExclusionPoint.init))
+        }
+
+        let raw = max(
+            RegionFairness.rawTotal(for: region, localCount: mine.count, myExclusions: mineExcluded),
+            racers.compactMap { friend in
+                (friend.regions ?? []).first { $0.regionIdentifier == region.identifier }?.total
+            }.max() ?? 0
+        )
+        let total = RegionFairness.fairTotal(rawTotal: raw, region: region, union: union)
 
         var rows = [Standing(
             id: "me",
@@ -41,13 +62,13 @@ struct RegionRaceView: View {
             isMe: true
         )]
 
-        for friend in friends {
+        for friend in racers {
             guard let progress = (friend.regions ?? []).first(where: { $0.regionIdentifier == region.identifier }) else { continue }
             rows.append(Standing(
                 id: friend.friendCode,
                 name: friend.displayName,
                 visited: progress.visited,
-                total: max(progress.total, total),
+                total: total,
                 isMe: false
             ))
         }

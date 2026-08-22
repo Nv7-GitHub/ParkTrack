@@ -9,9 +9,30 @@ import CloudKit
 /// (simulator, unsigned build, unparsable profile) counts as unavailable, which is
 /// the safe answer: the mock backend still gives a working Friends tab.
 enum CloudKitAvailability {
-    static var isUsable: Bool {
-        hasICloudEntitlement && FileManager.default.ubiquityIdentityToken != nil
+    /// Why sharing is or isn't live.
+    ///
+    /// Worth separating, because the two ways of being unavailable have nothing in common.
+    /// A missing entitlement is a mistake in the build and every single person running it is
+    /// affected; a missing iCloud account is one person's Settings app. Reporting both as
+    /// "unavailable" turns a five-minute answer into an afternoon of guessing which one a
+    /// tester has hit.
+    enum Status: Equatable {
+        case live
+        /// The build itself cannot reach CloudKit. Nobody running it can share anything.
+        case notEntitled
+        /// The build is fine; this device has no iCloud account signed in.
+        case notSignedIn
+
+        var isLive: Bool { self == .live }
     }
+
+    static var status: Status {
+        guard hasICloudEntitlement else { return .notEntitled }
+        guard FileManager.default.ubiquityIdentityToken != nil else { return .notSignedIn }
+        return .live
+    }
+
+    static var isUsable: Bool { status.isLive }
 
     static let hasICloudEntitlement: Bool = {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
@@ -63,7 +84,9 @@ struct CloudKitSocialBackend: SocialBackend {
                 totalVisits: record["totalVisits"] as? Int ?? 0,
                 citiesCount: record["citiesCount"] as? Int ?? 0,
                 currentStreakWeeks: record["currentStreakWeeks"] as? Int ?? 0,
-                parksThisMonth: record["parksThisMonth"] as? Int ?? 0
+                parksThisMonth: record["parksThisMonth"] as? Int ?? 0,
+                regions: Self.decodeList(record["regions"], as: RegionProgressPayload.self),
+                excludedPlaces: Self.decodeList(record["excludedPlaces"], as: ExcludedPlacePayload.self)
             )
         } catch {
             throw Self.socialError(from: error)
@@ -137,7 +160,28 @@ struct CloudKitSocialBackend: SocialBackend {
         record["citiesCount"] = profile.citiesCount
         record["currentStreakWeeks"] = profile.currentStreakWeeks
         record["parksThisMonth"] = profile.parksThisMonth
+        // Lists travel as JSON in a bytes field. CloudKit has no record type for an array
+        // of structs, and splitting these into child records would mean a second query per
+        // friend to render one row. Both lists are tens of entries at most.
+        record["regions"] = Self.encodeList(profile.regions)
+        record["excludedPlaces"] = Self.encodeList(profile.excludedPlaces)
         return record
+    }
+
+    // MARK: - List fields
+
+    private static func encodeList<T: Encodable>(_ value: [T]) -> Data? {
+        guard !value.isEmpty else { return nil }
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(value)
+    }
+
+    private static func decodeList<Element: Decodable>(_ field: Any?, as type: Element.Type) -> [Element] {
+        guard let data = field as? Data else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([Element].self, from: data)) ?? []
     }
 
     private static func record(

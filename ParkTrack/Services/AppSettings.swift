@@ -145,3 +145,69 @@ final class AppSettings {
         return String((0..<6).map { _ in alphabet.randomElement()! })
     }
 }
+
+// MARK: - Backup
+
+extension AppSettings {
+    /// The preferences a backup carries. Everything here lives in `UserDefaults` rather
+    /// than the store, so a restore that only merged SwiftData would silently drop it —
+    /// which is what used to happen to school and work.
+    var backupSettings: BackupSettings {
+        BackupSettings(
+            displayName: displayName,
+            friendCode: friendCode,
+            placeCoordinates: placeCoordinates,
+            placeLabels: placeLabels,
+            customRadiusMiles: customRadiusMiles,
+            hasCompletedOnboarding: hasCompletedOnboarding
+        )
+    }
+
+    /// Restores preferences from a backup, filling blanks rather than overwriting.
+    ///
+    /// The same rule the park merge follows, and for the same reason: importing a backup
+    /// into an install that has already been used must not throw away what the user has
+    /// since typed. A place already set locally stays where it is; one that is missing is
+    /// taken from the file.
+    ///
+    /// `friendCode` is the exception worth naming. A fresh install invents a random code in
+    /// its initialiser, so by the time an import runs there is always a local one — and
+    /// keeping it would leave every friend who saved the old code unable to find the user.
+    /// The backup's code therefore wins whenever the user has not yet been given a name,
+    /// which is the reliable marker of an install that has not really been used.
+    @discardableResult
+    func apply(_ settings: BackupSettings) -> Bool {
+        var changed = false
+        let isFreshInstall = displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        if isFreshInstall, !settings.displayName.isEmpty {
+            displayName = settings.displayName
+            changed = true
+        }
+        if isFreshInstall, !settings.friendCode.isEmpty, settings.friendCode != friendCode {
+            friendCode = settings.friendCode
+            changed = true
+        }
+
+        for kind in SavedPlaceKind.allCases where coordinate(for: kind) == nil {
+            guard let pair = settings.placeCoordinates[kind.rawValue], pair.count == 2 else { continue }
+            let coordinate = CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1])
+            guard CLLocationCoordinate2DIsValid(coordinate) else { continue }
+            setCoordinate(coordinate, for: kind)
+            if let label = settings.placeLabels[kind.rawValue], !label.isEmpty {
+                setLabel(label, for: kind)
+            }
+            changed = true
+        }
+
+        if isFreshInstall, settings.customRadiusMiles > 0 {
+            customRadiusMiles = settings.customRadiusMiles
+            changed = true
+        }
+        if settings.hasCompletedOnboarding, !hasCompletedOnboarding {
+            hasCompletedOnboarding = true
+            changed = true
+        }
+        return changed
+    }
+}

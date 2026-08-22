@@ -48,13 +48,46 @@ final class MockSocialBackend: SocialBackend, @unchecked Sendable {
                 totalVisits: generated.count + index + 2,
                 citiesCount: 2 + index,
                 currentStreakWeeks: 3 + index * 2,
-                parksThisMonth: 2 + index
+                parksThisMonth: 2 + index,
+                excludedPlaces: Self.makeExclusions(index: index, origin: origin, today: today)
             )
         }
 
         self.profiles = profiles
         self.visitsByCode = visits
         self.sampleCodes = Self.samples.map(\.code)
+    }
+
+    /// A couple of invented rejections per friend, so the adoption screen has something to
+    /// show in the simulator. Offsets are small and anchored like everything else here, and
+    /// the second friend's pair deliberately land on the same name a few dozen metres apart
+    /// — that is the ambiguous case the matcher refuses to guess at, and it should be
+    /// reachable without waiting for it to happen in the wild.
+    private static func makeExclusions(
+        index: Int,
+        origin: CLLocationCoordinate2D,
+        today: Date
+    ) -> [ExcludedPlacePayload] {
+        let names = [
+            ["Riverside Parcel", "Old Depot Lot"],
+            ["Commons Green", "Commons Green"],
+            ["Hillside Verge"]
+        ][index % 3]
+
+        return names.enumerated().map { offset, name in
+            let latitude = origin.latitude + 0.006 * Double(index + 1) + 0.0004 * Double(offset)
+            let longitude = origin.longitude - 0.005 * Double(index + 1)
+            return ExcludedPlacePayload(
+                identifier: Park.identity(
+                    name: name,
+                    coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+                ),
+                name: name,
+                latitude: latitude,
+                longitude: longitude,
+                excludedAt: today.addingTimeInterval(-86_400 * Double(offset + 1))
+            )
+        }
     }
 
     // MARK: - SocialBackend

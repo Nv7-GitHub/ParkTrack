@@ -24,6 +24,11 @@ final class Friend {
     @Relationship(deleteRule: .cascade, inverse: \FriendRegionProgress.friend)
     var regions: [FriendRegionProgress]? = []
 
+    /// Places this friend says are not parks. Mirrored so the race can subtract them
+    /// without a network round trip, and so the adoption screen has something to list.
+    @Relationship(deleteRule: .cascade, inverse: \FriendExclusion.friend)
+    var exclusions: [FriendExclusion]? = []
+
     init(friendCode: String, displayName: String) {
         self.friendCode = friendCode
         self.displayName = displayName

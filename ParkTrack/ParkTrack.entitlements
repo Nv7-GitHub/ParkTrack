@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  What turns the friends features and iCloud sync from make-believe into real.
+
+	  `CloudKitAvailability` reads exactly this key back out of the embedded provisioning
+	  profile at launch, and hands the app the mock backend when it is missing — so without
+	  this file the Friends tab shows three invented people and every park stays on one
+	  phone, with no error anywhere to say why.
+
+	  The container is derived from the bundle id rather than written out, so the two can
+	  never drift apart — including across a change of signing team, where the bundle id
+	  changes too and a hardcoded container would quietly point at the old one. Entitlements
+	  go through build-setting expansion, so this resolves to `iCloud.` plus whatever
+	  `PARKTRACK_BUNDLE_ID` is. A container of exactly that name has to exist under the
+	  signing team, or the build fails to provision.
+	-->
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.$(PARKTRACK_BUNDLE_ID)</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+</dict>
+</plist>

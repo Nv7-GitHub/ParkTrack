@@ -22,10 +22,15 @@ targets:
     type: application
     platform: iOS
     sources:
+      # The entitlements file is build configuration, not a resource to be copied into the
+      # bundle — XcodeGen would otherwise sweep it up along with the Swift files.
       - path: ParkTrack
+        excludes:
+          - "ParkTrack.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(PARKTRACK_BUNDLE_ID)
+        CODE_SIGN_ENTITLEMENTS: ParkTrack/ParkTrack.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -36,10 +41,27 @@ targets:
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-    # Guards against the failure this whole arrangement exists to prevent: a missing
-    # Signing.local.xcconfig letting the placeholder id through, installing a second empty
-    # ParkTrack next to the real one and looking exactly like the data was wiped.
     postBuildScripts:
+      # The friends features degrade silently rather than failing: with no iCloud entitlement
+      # `CloudKitAvailability` reports unavailable and the app quietly serves three invented
+      # friends instead. That is the correct behaviour for a simulator or an unsigned build,
+      # and completely wrong for something about to be uploaded — so a device build says so
+      # out loud. A warning rather than an error, because building onto your own phone
+      # without the paid membership is a legitimate thing to do.
+      - name: Verify iCloud entitlement
+        basedOnDependencyAnalysis: false
+        script: |
+          [ "$PLATFORM_NAME" = "iphoneos" ] || exit 0
+          entitlements=$(codesign -d --entitlements - --xml "$CODESIGNING_FOLDER_PATH" 2>/dev/null || true)
+          case "$entitlements" in
+            *icloud-container-identifiers*) exit 0 ;;
+          esac
+          echo "warning: this build carries no iCloud container entitlement, so CloudKitAvailability will report unavailable."
+          echo "warning: the Friends tab will show invented sample data and no park will sync between devices."
+          echo "warning: enable the iCloud capability with a CloudKit container on this App ID, or ignore this if the build is only for your own phone."
+      # Guards against the failure this whole arrangement exists to prevent: a missing
+      # Signing.local.xcconfig letting the placeholder id through, installing a second empty
+      # ParkTrack next to the real one and looking exactly like the data was wiped.
       - name: Verify signing identity
         basedOnDependencyAnalysis: false
         script: |

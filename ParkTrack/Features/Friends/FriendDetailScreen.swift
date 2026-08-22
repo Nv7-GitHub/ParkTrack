@@ -12,6 +12,7 @@ struct FriendDetailScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingRemove = false
+    @State private var isAdoptingExclusions = false
 
     private var visits: [FriendVisit] {
         (friend.visits ?? []).sorted { $0.date > $1.date }
@@ -26,6 +27,7 @@ struct FriendDetailScreen: View {
                     mapCard(region: region)
                 }
                 visitList
+                notAParkCard
                 removeButton
             }
             .padding(.horizontal, 16)
@@ -47,6 +49,43 @@ struct FriendDetailScreen: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Their stats and shared visits are deleted from this device. You can add them again any time with their code.")
+        }
+    }
+
+    private var notAParkCard: some View {
+        Group {
+            let count = (friend.exclusions ?? []).count
+            if count > 0 {
+                Card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionHeader(
+                            "Not a park",
+                            subtitle: "\(count) \(count == 1 ? "place" : "places") \(friend.displayName) has struck off"
+                        )
+                        Text("Already subtracted from both your totals so the race is fair. You can also borrow them for your own catalogue.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button {
+                            isAdoptingExclusions = true
+                        } label: {
+                            HStack {
+                                Text("Review and borrow")
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundStyle(Theme.fern)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $isAdoptingExclusions) {
+            AdoptExclusionsSheet(friend: friend)
         }
     }
 

@@ -17,6 +17,23 @@ struct FriendProfilePayload: Codable {
     /// from whoever indexed the region — without that the comparison would just reflect who
     /// had wandered across more ground.
     var regions: [RegionProgressPayload] = []
+    /// Places this person has struck off.
+    ///
+    /// Published so a race can subtract the union of both sides' rejections and leave the
+    /// two percentages describing the same thing. Two people who have rejected different
+    /// places are otherwise counting against different totals without either of them being
+    /// told. Nothing is applied to anybody's catalogue on the strength of this — adopting a
+    /// friend's rejections is a separate, deliberate act.
+    var excludedPlaces: [ExcludedPlacePayload] = []
+}
+
+/// One place a person says is not a park, as it travels between friends.
+struct ExcludedPlacePayload: Codable {
+    let identifier: String
+    let name: String
+    let latitude: Double
+    let longitude: Double
+    let excludedAt: Date
 }
 
 struct RegionProgressPayload: Codable {
@@ -270,6 +287,39 @@ final class SocialService {
         friend.currentStreakWeeks = profile.currentStreakWeeks
         friend.parksThisMonth = profile.parksThisMonth
         applyRegions(profile.regions, to: friend)
+        applyExclusions(profile.excludedPlaces, to: friend)
+    }
+
+    /// Upsert by identifier, so a friend who changes their mind about a place and readmits
+    /// it stops it being offered here too.
+    private func applyExclusions(_ payloads: [ExcludedPlacePayload], to friend: Friend) {
+        var existing: [String: FriendExclusion] = [:]
+        for exclusion in friend.exclusions ?? [] {
+            existing[exclusion.identifier] = exclusion
+        }
+
+        for payload in payloads {
+            if let current = existing.removeValue(forKey: payload.identifier) {
+                current.name = payload.name
+                current.latitude = payload.latitude
+                current.longitude = payload.longitude
+                current.excludedAt = payload.excludedAt
+            } else {
+                let exclusion = FriendExclusion(
+                    identifier: payload.identifier,
+                    name: payload.name,
+                    latitude: payload.latitude,
+                    longitude: payload.longitude,
+                    excludedAt: payload.excludedAt
+                )
+                exclusion.friend = friend
+                modelContext.insert(exclusion)
+            }
+        }
+
+        for stale in existing.values {
+            modelContext.delete(stale)
+        }
     }
 
     /// Upsert by region identifier so a friend's standing in a place is replaced, not
