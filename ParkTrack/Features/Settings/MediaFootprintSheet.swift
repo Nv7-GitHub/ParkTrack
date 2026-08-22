@@ -47,15 +47,11 @@ struct MediaFootprintSheet: View {
     private var total: some View {
         Card {
             VStack(alignment: .leading, spacing: 4) {
-                let split = DataExport.splitBytes(footprint.totalBytes)
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(split.value)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text(split.unit)
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.textSecondary)
-                }
+                Text(DataExport.preciseBytes(footprint.totalBytes))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.textPrimary)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
                 Text("stored on this device")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
@@ -85,7 +81,7 @@ struct MediaFootprintSheet: View {
                 row(
                     title: "Largest single file",
                     detail: "A video, usually.",
-                    value: DataExport.formatBytes(footprint.largestBytes),
+                    value: DataExport.preciseBytes(footprint.largestBytes),
                     systemImage: "arrow.up.right.square",
                     tint: Theme.bark
                 )

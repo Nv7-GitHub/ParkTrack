@@ -901,6 +901,21 @@ enum DataExport {
         return (value, String(formatted[formatted.index(after: separator)...]))
     }
 
+    /// Two decimal places, for somewhere with room to show them.
+    ///
+    /// The tile rounds because it is four characters wide; a breakdown exists precisely to be
+    /// more exact than the figure that sent you to it, and "112 MB" twice over answers
+    /// nothing.
+    static func preciseBytes(_ bytes: Int64) -> String {
+        let units: [(name: String, scale: Double)] = [
+            ("GB", 1_000_000_000), ("MB", 1_000_000), ("kB", 1_000)
+        ]
+        for unit in units where Double(bytes) >= unit.scale {
+            return String(format: "%.2f %@", Double(bytes) / unit.scale, unit.name)
+        }
+        return "\(bytes) bytes"
+    }
+
     static func formatBytes(_ bytes: Int64) -> String {
         bytes.formatted(.byteCount(style: .file, allowedUnits: .all, spellsOutZero: false))
     }

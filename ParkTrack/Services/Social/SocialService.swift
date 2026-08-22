@@ -2,6 +2,10 @@ import Foundation
 import CoreLocation
 import SwiftData
 import Observation
+#if canImport(UIKit)
+import UIKit
+import ImageIO
+#endif
 
 /// The public shape of a person, as friends see it. Deliberately tiny: friends get
 /// summary numbers, never the underlying parks database.
@@ -412,6 +416,19 @@ final class SocialService {
     /// Above this, a video ships as its poster frame instead of the video itself.
     private static let maxAttachmentBytes = 5 * 1_024 * 1_024
 
+    /// The longest edge a shared photo is reduced to before it leaves the device.
+    ///
+    /// A feed draws these a few hundred points across at most, so the original is orders of
+    /// magnitude more than anyone sees. Sharing it anyway cost three times over: the upload,
+    /// the copy CloudKit stages on this device to make that upload, and the download for
+    /// every friend who scrolls past. A library of a hundred megabytes was publishing most
+    /// of itself the moment the Friends tab appeared.
+    ///
+    /// It is also the more careful thing to do. These go to the public database, where the
+    /// only key is a six-character code, and a full-resolution original carries rather more
+    /// than a picture of a park — including, in its metadata, where it was taken.
+    private static let sharedImageMaxPixels = 1_400
+
     private func visitPayloads(from parks: [Park]) -> [FriendVisitPayload] {
         var payloads: [FriendVisitPayload] = []
         for park in parks {
@@ -444,10 +461,8 @@ final class SocialService {
     private func attachment(for visit: Visit) -> (data: Data?, isVideo: Bool) {
         let media = visit.sortedMedia
 
-        if let photo = media.first(where: { !$0.isVideo }),
-           let data = photo.data,
-           data.count <= Self.maxAttachmentBytes {
-            return (data, false)
+        if let photo = media.first(where: { !$0.isVideo }), let data = photo.data {
+            return (Self.feedSized(data) ?? (data.count <= Self.maxAttachmentBytes ? data : nil), false)
         }
 
         if let video = media.first(where: { $0.isVideo }) {
@@ -460,6 +475,27 @@ final class SocialService {
         }
 
         return (nil, false)
+    }
+
+    /// Re-encodes a photo at feed size, dropping its metadata with it.
+    ///
+    /// Returns nil if the image cannot be read, which leaves the caller to decide whether the
+    /// original is small enough to send as it is.
+    private static func feedSized(_ data: Data) -> Data? {
+        #if canImport(UIKit)
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: sharedImageMaxPixels
+        ]
+        guard let scaled = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: scaled).jpegData(compressionQuality: 0.8)
+        #else
+        return nil
+        #endif
     }
 
     // MARK: - Identity
