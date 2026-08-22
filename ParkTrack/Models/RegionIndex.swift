@@ -65,6 +65,14 @@ final class RegionIndex {
     /// So the wording has to be true of both, and must not promise that another pass helps.
     var isApproximate: Bool = false
 
+    /// Hidden from the friends race by hand.
+    ///
+    /// An index is worth keeping even once you have stopped caring about the place — it cost
+    /// a sweep to build, the count is still true, and the Stats tab still has a use for it.
+    /// What you stop wanting is the place cluttering a list of races. So this hides rather
+    /// than deletes, and is reversible from the same place it is set.
+    var isHiddenFromRaces: Bool = false
+
     /// Set while a sweep is running so the UI can show progress and refuse to start twice.
     var isIndexing: Bool = false
     var lastError: String?

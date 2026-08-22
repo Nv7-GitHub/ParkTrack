@@ -13,49 +13,51 @@ struct RegionRaceView: View {
     let myName: String
 
     @Environment(AppSettings.self) private var settings
+    @Environment(LocationProvider.self) private var location
 
     @Query(sort: \RegionIndex.name) private var indexes: [RegionIndex]
     @Query private var myExclusions: [ExcludedPlace]
-    @State private var selection: String?
 
-    /// Indexed places, with the ones you actually live in first.
+    /// Remembered across launches. Which race you are following is a standing interest, not
+    /// something to re-pick every time the app opens.
+    @AppStorage("friends.raceRegion") private var selection: String = ""
+    @State private var isShowingHidden = false
+
+    /// Indexed places, nearest first.
     ///
-    /// Alphabetical alone buries the race you care about. The place your home, school or
-    /// work sits in is the one you are really competing over — everywhere else is somewhere
-    /// you happened to pass through — and an alphabetical list puts it wherever its name
-    /// falls, which for most people is the middle.
-    ///
-    /// Only your own saved places can be honoured here. A friend publishes their standings,
-    /// not where they live, and that is the right way round: a friend code is handed out
-    /// freely and nothing behind one should say where somebody sleeps.
+    /// Distance from wherever you are, rather than alphabetically. The race you want is
+    /// almost always the one you are standing in, and a name-ordered list puts it wherever
+    /// its initial happens to fall. Falling back to home when there is no fix, and to the
+    /// existing name order when there is neither, so the list is never arbitrary.
     private var races: [RegionIndex] {
-        let indexed = indexes.filter(\.isIndexed)
-        let anchors = SavedPlaceKind.allCases.compactMap { settings.coordinate(for: $0) }
-        guard !anchors.isEmpty else { return indexed }
+        let visible = indexes.filter { $0.isIndexed && (isShowingHidden || !$0.isHiddenFromRaces) }
+        guard let origin = raceOrigin else { return visible }
 
-        return indexed.enumerated()
-            .sorted { left, right in
-                let leftIsHome = holds(anAnchorIn: anchors, left.element)
-                let rightIsHome = holds(anAnchorIn: anchors, right.element)
-                if leftIsHome != rightIsHome { return leftIsHome }
-                // `indexes` is already name-sorted, so falling back to its order keeps the
-                // rest alphabetical without sorting the strings a second time.
-                return left.offset < right.offset
-            }
-            .map(\.element)
+        return visible
+            .map { (region: $0, metres: origin.distance(from: $0.centre)) }
+            .sorted { $0.metres < $1.metres }
+            .map(\.region)
     }
 
-    /// Whether one of the places you measure from falls inside this region.
-    private func holds(anAnchorIn anchors: [CLLocationCoordinate2D], _ region: RegionIndex) -> Bool {
-        let centre = CLLocation(latitude: region.centerLatitude, longitude: region.centerLongitude)
-        return anchors.contains { anchor in
-            CLLocation(latitude: anchor.latitude, longitude: anchor.longitude)
-                .distance(from: centre) <= region.radiusMeters
-        }
+    private var raceOrigin: CLLocation? {
+        if let current = location.currentLocation { return current }
+        return settings.homeCoordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
+    }
+
+    private var hiddenCount: Int {
+        indexes.count { $0.isIndexed && $0.isHiddenFromRaces }
     }
 
     private var active: RegionIndex? {
         races.first { $0.identifier == selection } ?? races.first
+    }
+
+    private func setHidden(_ hidden: Bool, for region: RegionIndex) {
+        withAnimation(.smooth(duration: 0.25)) {
+            region.isHiddenFromRaces = hidden
+            if hidden, selection == region.identifier { selection = "" }
+            if !hidden { isShowingHidden = false }
+        }
     }
 
     private struct Standing: Identifiable {
@@ -153,9 +155,38 @@ struct RegionRaceView: View {
                                             )
                                         }
                                         .buttonStyle(.plain)
+                                        .opacity(region.isHiddenFromRaces ? 0.45 : 1)
+                                        .contextMenu {
+                                            if region.isHiddenFromRaces {
+                                                Button {
+                                                    setHidden(false, for: region)
+                                                } label: {
+                                                    Label("Show in races", systemImage: "eye")
+                                                }
+                                            } else {
+                                                Button(role: .destructive) {
+                                                    setHidden(true, for: region)
+                                                } label: {
+                                                    Label("Hide from races", systemImage: "eye.slash")
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
+                        }
+
+                        if hiddenCount > 0 {
+                            Button {
+                                withAnimation(.smooth(duration: 0.25)) { isShowingHidden.toggle() }
+                            } label: {
+                                Text(isShowingHidden
+                                     ? "Hide the \(hiddenCount) you put away"
+                                     : "\(hiddenCount) hidden — show")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(Theme.fern)
+                            }
+                            .buttonStyle(.plain)
                         }
 
                         Text("\(active.displayName) · \(active.parkCount) parks")
@@ -198,5 +229,11 @@ struct RegionRaceView: View {
                 }
             }
         }
+    }
+}
+
+private extension RegionIndex {
+    var centre: CLLocation {
+        CLLocation(latitude: centerLatitude, longitude: centerLongitude)
     }
 }
