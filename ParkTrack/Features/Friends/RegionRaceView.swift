@@ -21,7 +21,7 @@ struct RegionRaceView: View {
     /// Remembered across launches. Which race you are following is a standing interest, not
     /// something to re-pick every time the app opens.
     @AppStorage("friends.raceRegion") private var selection: String = ""
-    @State private var isShowingHidden = false
+    @State private var isManagingVisibility = false
 
     /// Indexed places, nearest first.
     ///
@@ -30,7 +30,7 @@ struct RegionRaceView: View {
     /// its initial happens to fall. Falling back to home when there is no fix, and to the
     /// existing name order when there is neither, so the list is never arbitrary.
     private var races: [RegionIndex] {
-        let visible = indexes.filter { $0.isIndexed && (isShowingHidden || !$0.isHiddenFromRaces) }
+        let visible = indexes.filter { $0.isIndexed && !$0.isHiddenFromRaces }
         guard let origin = raceOrigin else { return visible }
 
         return visible
@@ -44,20 +44,8 @@ struct RegionRaceView: View {
         return settings.homeCoordinate.map { CLLocation(latitude: $0.latitude, longitude: $0.longitude) }
     }
 
-    private var hiddenCount: Int {
-        indexes.count { $0.isIndexed && $0.isHiddenFromRaces }
-    }
-
     private var active: RegionIndex? {
         races.first { $0.identifier == selection } ?? races.first
-    }
-
-    private func setHidden(_ hidden: Bool, for region: RegionIndex) {
-        withAnimation(.smooth(duration: 0.25)) {
-            region.isHiddenFromRaces = hidden
-            if hidden, selection == region.identifier { selection = "" }
-            if !hidden { isShowingHidden = false }
-        }
     }
 
     private struct Standing: Identifiable {
@@ -120,9 +108,21 @@ struct RegionRaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(
-                "Race a place",
+                title: "Race a place",
                 subtitle: "Everyone counted against the same indexed total"
-            )
+            ) {
+                if indexes.contains(where: \.isIndexed) {
+                    Button {
+                        isManagingVisibility = true
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Theme.fern)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Choose which places to race")
+                }
+            }
 
             if races.isEmpty {
                 Card {
@@ -155,38 +155,9 @@ struct RegionRaceView: View {
                                             )
                                         }
                                         .buttonStyle(.plain)
-                                        .opacity(region.isHiddenFromRaces ? 0.45 : 1)
-                                        .contextMenu {
-                                            if region.isHiddenFromRaces {
-                                                Button {
-                                                    setHidden(false, for: region)
-                                                } label: {
-                                                    Label("Show in races", systemImage: "eye")
-                                                }
-                                            } else {
-                                                Button(role: .destructive) {
-                                                    setHidden(true, for: region)
-                                                } label: {
-                                                    Label("Hide from races", systemImage: "eye.slash")
-                                                }
-                                            }
-                                        }
                                     }
                                 }
                             }
-                        }
-
-                        if hiddenCount > 0 {
-                            Button {
-                                withAnimation(.smooth(duration: 0.25)) { isShowingHidden.toggle() }
-                            } label: {
-                                Text(isShowingHidden
-                                     ? "Hide the \(hiddenCount) you put away"
-                                     : "\(hiddenCount) hidden — show")
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(Theme.fern)
-                            }
-                            .buttonStyle(.plain)
                         }
 
                         Text("\(active.displayName) · \(active.parkCount) parks")
@@ -228,6 +199,9 @@ struct RegionRaceView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $isManagingVisibility) {
+            RaceVisibilitySheet(origin: raceOrigin)
         }
     }
 }
