@@ -64,10 +64,18 @@ struct MediaFootprintSheet: View {
             VStack(spacing: 12) {
                 row(
                     title: "Your photos and video",
-                    detail: "Attached to visits you logged. This is what a backup carries.",
-                    value: "\(footprint.ownItemCount)",
+                    detail: "\(footprint.ownItemCount) attached to visits you logged. This is what a backup carries.",
+                    value: DataExport.preciseBytes(footprint.ownBytes),
                     systemImage: "photo.stack",
                     tint: Theme.fern
+                )
+                Divider().overlay(Theme.separator)
+                row(
+                    title: "iCloud working copies",
+                    detail: "Sharing a photo means handing iCloud its own copy to upload from, and those stay behind. Not in a backup, and not freed by deleting anything here — only by reinstalling.",
+                    value: DataExport.preciseBytes(footprint.overheadBytes),
+                    systemImage: "arrow.up.circle",
+                    tint: Theme.sunset
                 )
                 Divider().overlay(Theme.separator)
                 row(

@@ -14,6 +14,14 @@ final class MediaItem {
     /// Poster frame for videos, so lists don't have to decode video to draw a thumbnail.
     @Attribute(.externalStorage) var thumbnailData: Data?
 
+    /// How many bytes this item's blobs occupy, recorded when they are set.
+    ///
+    /// Kept so storage can be attributed without reading it. Asking a `MediaItem` how large
+    /// its data is loads that data, and totalling a library to draw one figure would mean
+    /// pulling a hundred megabytes of photographs through memory. Zero on rows written
+    /// before this existed, which the footprint fills in as it goes.
+    var byteCount: Int = 0
+
     var visit: Visit?
 
     init(data: Data?, isVideo: Bool, thumbnailData: Data? = nil) {
@@ -21,6 +29,7 @@ final class MediaItem {
         self.data = data
         self.isVideo = isVideo
         self.thumbnailData = thumbnailData
+        self.byteCount = (data?.count ?? 0) + (thumbnailData?.count ?? 0)
         self.createdAt = Date()
     }
 }

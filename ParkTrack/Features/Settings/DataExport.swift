@@ -530,6 +530,7 @@ enum DataExport {
 
                     let item = MediaItem(data: data, isVideo: incomingMedia.isVideo, thumbnailData: thumbnail)
                     item.identifier = incomingMedia.identifier
+                    item.byteCount = (data?.count ?? 0) + (thumbnail?.count ?? 0)
                     item.createdAt = incomingMedia.createdAt
                     item.visit = visit
                     context.insert(item)
@@ -802,6 +803,8 @@ enum DataExport {
         /// Videos among your own items. Only a video gets a poster frame, so this is also
         /// the number of thumbnails — the one other blob an item can hold.
         var ownVideoCount = 0
+        /// Bytes belonging to your own photos and video.
+        var ownBytes: Int64 = 0
         /// Files actually on disk under external storage.
         var fileCount = 0
         var totalBytes: Int64 = 0
@@ -819,6 +822,15 @@ enum DataExport {
 
         var unexplainedFileCount: Int { max(0, fileCount - filesEverythingExplains) }
         var hasUnexplainedFiles: Bool { unexplainedFileCount > 0 }
+
+        /// Everything on disk that is not one of your own attachments.
+        ///
+        /// Almost entirely iCloud's working copies: sharing a photo means handing CloudKit
+        /// its own file to upload from, and those outlive the upload. Friends' cached feed
+        /// lands here too. Neither is in a backup and neither is recoverable by deleting
+        /// anything in the app, which is why it is worth naming rather than folding into a
+        /// single figure that then looks wrong.
+        var overheadBytes: Int64 { max(0, totalBytes - ownBytes) }
     }
 
     static func mediaFootprint(context: ModelContext) -> MediaFootprint {
@@ -832,6 +844,20 @@ enum DataExport {
         footprint.ownVideoCount = (try? context.fetchCount(
             FetchDescriptor<MediaItem>(predicate: #Predicate { $0.isVideo })
         )) ?? 0
+
+        // Backfilled for rows written before `byteCount` existed. Reading the blob is the
+        // only way to learn its size, so it is done once and remembered.
+        if let items = try? context.fetch(FetchDescriptor<MediaItem>()) {
+            var didBackfill = false
+            for item in items where item.byteCount == 0 {
+                let measured = (item.data?.count ?? 0) + (item.thumbnailData?.count ?? 0)
+                guard measured > 0 else { continue }
+                item.byteCount = measured
+                didBackfill = true
+            }
+            if didBackfill { try? context.save() }
+            footprint.ownBytes = items.reduce(Int64(0)) { $0 + Int64($1.byteCount) }
+        }
 
         for size in externalStorageFileSizes() {
             footprint.fileCount += 1

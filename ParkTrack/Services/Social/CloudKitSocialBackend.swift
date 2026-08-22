@@ -66,7 +66,11 @@ struct CloudKitSocialBackend: SocialBackend {
 
     /// CloudKit rejects oversized batches, and a feed pull that big isn't worth it.
     private static let visitFetchLimit = 200
-    private static let saveBatchSize = 150
+    /// Small on purpose. 150 was one request for any realistic library, so a progress
+    /// callback fired once, at the end — a bar that sat empty and then vanished. It also
+    /// meant a single request carrying every attachment at once, which is not a shape
+    /// CloudKit enjoys.
+    private static let saveBatchSize = 15
 
     private var database: CKDatabase {
         CKContainer.default().publicCloudDatabase
@@ -120,7 +124,11 @@ struct CloudKitSocialBackend: SocialBackend {
 
     // MARK: - Publishing
 
-    func publish(profile: FriendProfilePayload, visits: [FriendVisitPayload]) async throws {
+    func publish(
+        profile: FriendProfilePayload,
+        visits: [FriendVisitPayload],
+        progress: @Sendable @MainActor (Double) -> Void
+    ) async throws {
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("parktrack-publish-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -133,13 +141,15 @@ struct CloudKitSocialBackend: SocialBackend {
 
         do {
             for batch in stride(from: 0, to: records.count, by: Self.saveBatchSize) {
-                let slice = Array(records[batch..<min(batch + Self.saveBatchSize, records.count)])
+                let end = min(batch + Self.saveBatchSize, records.count)
                 _ = try await database.modifyRecords(
-                    saving: slice,
+                    saving: Array(records[batch..<end]),
                     deleting: [],
                     savePolicy: .allKeys,
                     atomically: false
                 )
+                let done = Double(end) / Double(records.count)
+                await MainActor.run { progress(done) }
             }
         } catch {
             throw Self.socialError(from: error)

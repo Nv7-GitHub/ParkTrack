@@ -55,6 +55,10 @@ struct FriendsScreen: View {
                         FriendsDisplayNameCard(settings: settings)
                     }
 
+                    if let social, let phase = social.publishPhase, let fraction = social.publishProgress {
+                        FriendsSharingBanner(phase: phase, fraction: fraction, bytes: social.publishBytes)
+                    }
+
                     Picker("Section", selection: $pane) {
                         ForEach(Pane.allCases) { option in
                             Text(option.title).tag(option)
@@ -234,6 +238,56 @@ struct FriendsScreen: View {
 ///
 /// The mock backend exists so the tab is explorable without CloudKit; letting it pass
 /// for the real thing would be a lie the user can't check.
+/// Shown while the user's own visits are going up.
+///
+/// Sharing a library for the first time is minutes of uploading, and until now the tab gave
+/// no sign it was happening — so the app looked idle while it was doing the largest piece of
+/// work it ever does, and anyone who quit or deleted during it lost whatever had not landed.
+private struct FriendsSharingBanner: View {
+    let phase: SocialService.PublishPhase
+    let fraction: Double
+    let bytes: Int64
+
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: phase == .preparing ? "wand.and.sparkles" : "arrow.up.circle.fill")
+                        .foregroundStyle(Theme.sky)
+                    Text(phase.label)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer(minLength: 8)
+                    Text("\(Int((fraction * 100).rounded()))%")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Theme.textSecondary)
+                }
+
+                ProgressView(value: min(max(fraction, 0), 1))
+                    .tint(Theme.sky)
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
+    }
+
+    private var detail: String {
+        switch phase {
+        case .preparing:
+            "Making feed-sized copies so a photo costs a friend kilobytes rather than megabytes."
+        case .uploading:
+            bytes > 0
+                ? "Uploading about \(DataExport.formatBytes(bytes)). You can keep using the app."
+                : "You can keep using the app."
+        }
+    }
+}
+
 private struct FriendsSampleDataBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {

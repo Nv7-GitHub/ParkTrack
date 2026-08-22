@@ -135,8 +135,17 @@ final class MockSocialBackend: SocialBackend, @unchecked Sendable {
 
     /// Nothing to publish to — sample friends can't see the user. Succeeding quietly
     /// keeps the share flow testable without pretending data left the device.
-    func publish(profile: FriendProfilePayload, visits: [FriendVisitPayload]) async throws {
-        await Self.simulateLatency()
+    func publish(
+        profile: FriendProfilePayload,
+        visits: [FriendVisitPayload],
+        progress: @Sendable @MainActor (Double) -> Void
+    ) async throws {
+        // Reported in steps rather than in one jump, so the progress view this drives is
+        // actually exercised somewhere it can be looked at.
+        for step in 1...4 {
+            await Self.simulateLatency()
+            await MainActor.run { progress(Double(step) / 4) }
+        }
     }
 
     // MARK: - Sample data

@@ -75,7 +75,14 @@ protocol SocialBackend: Sendable {
     func updateIndexedRegions(_ regions: [RegionProgressPayload]) async
     func fetchProfile(code: String) async throws -> FriendProfilePayload
     func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload]
-    func publish(profile: FriendProfilePayload, visits: [FriendVisitPayload]) async throws
+    /// `progress` is called as batches land, from 0 to 1, so a screen can say how far in it
+    /// is. A first share of a whole library is minutes of uploading, and an app that shows
+    /// nothing for minutes looks broken rather than busy.
+    func publish(
+        profile: FriendProfilePayload,
+        visits: [FriendVisitPayload],
+        progress: @Sendable @MainActor (Double) -> Void
+    ) async throws
 }
 
 /// Errors phrased for a person, not a log file. Anything a backend throws ends up
@@ -132,7 +139,29 @@ final class SocialService {
 
     let backendKind: BackendKind
 
+    /// Sharing is two pieces of work, and they take about as long as each other.
+    ///
+    /// Reported apart because reporting them together was worse than reporting nothing: the
+    /// bar sat at zero through the whole of the first phase — which is CPU-bound and silent
+    /// — and then jumped to done. It looked broken, and it was describing the wrong work.
+    enum PublishPhase: Equatable {
+        case preparing
+        case uploading
+
+        var label: String {
+            switch self {
+            case .preparing: "Preparing photos"
+            case .uploading: "Sharing your visits"
+            }
+        }
+    }
+
     private(set) var isSyncing = false
+    private(set) var publishPhase: PublishPhase?
+    /// 0 to 1 within the current phase, nil when nothing is being shared.
+    private(set) var publishProgress: Double?
+    /// Roughly how much is going up, so the screen can say more than a percentage.
+    private(set) var publishBytes: Int64 = 0
     private(set) var lastError: String?
     private(set) var lastSyncedAt: Date?
 
@@ -261,9 +290,26 @@ final class SocialService {
         defer { isSyncing = false }
         lastError = nil
 
-        let payloads = visitPayloads(from: parks)
+        defer {
+            publishPhase = nil
+            publishProgress = nil
+            publishBytes = 0
+        }
+
+        publishPhase = .preparing
+        publishProgress = 0
+        let payloads = await visitPayloads(from: parks) { [weak self] fraction in
+            self?.publishProgress = fraction
+        }
+
+        publishPhase = .uploading
+        publishProgress = 0
+        publishBytes = payloads.reduce(Int64(0)) { $0 + Int64($1.mediaData?.count ?? 0) }
+
         do {
-            try await backend.publish(profile: profile, visits: payloads)
+            try await backend.publish(profile: profile, visits: payloads) { [weak self] fraction in
+                self?.publishProgress = fraction
+            }
             lastSyncedAt = Date()
         } catch {
             lastError = message(for: error)
@@ -429,26 +475,38 @@ final class SocialService {
     /// than a picture of a park — including, in its metadata, where it was taken.
     private static let sharedImageMaxPixels = 1_400
 
-    private func visitPayloads(from parks: [Park]) -> [FriendVisitPayload] {
+    /// Builds what will be shared, re-encoding each photo off the main thread.
+    ///
+    /// One attachment at a time rather than all of them: the originals are the largest thing
+    /// the app owns, and gathering a whole library before starting would pull every
+    /// photograph through memory at once. Reading a blob has to happen here, on the actor
+    /// that owns the store, but the decode-scale-encode after it does not — and that is the
+    /// part that costs tenths of a second each and used to freeze the tab.
+    private func visitPayloads(
+        from parks: [Park],
+        progress: @MainActor (Double) -> Void
+    ) async -> [FriendVisitPayload] {
+        let candidates = parks.flatMap { park in (park.visits ?? []).map { (park, $0) } }
         var payloads: [FriendVisitPayload] = []
-        for park in parks {
-            for visit in park.visits ?? [] {
-                let shared = attachment(for: visit)
-                payloads.append(
-                    FriendVisitPayload(
-                        identifier: visit.identifier.uuidString,
-                        parkName: park.name,
-                        latitude: park.latitude,
-                        longitude: park.longitude,
-                        regionLabel: park.regionLabel,
-                        date: visit.date,
-                        note: visit.notes,
-                        rating: visit.rating,
-                        mediaData: shared.data,
-                        mediaIsVideo: shared.isVideo
-                    )
+
+        for (index, pair) in candidates.enumerated() {
+            let (park, visit) = pair
+            let shared = await attachment(for: visit)
+            payloads.append(
+                FriendVisitPayload(
+                    identifier: visit.identifier.uuidString,
+                    parkName: park.name,
+                    latitude: park.latitude,
+                    longitude: park.longitude,
+                    regionLabel: park.regionLabel,
+                    date: visit.date,
+                    note: visit.notes,
+                    rating: visit.rating,
+                    mediaData: shared.data,
+                    mediaIsVideo: shared.isVideo
                 )
-            }
+            )
+            progress(Double(index + 1) / Double(max(candidates.count, 1)))
         }
         return payloads
             .sorted { $0.date > $1.date }
@@ -458,11 +516,14 @@ final class SocialService {
 
     /// Photos win over video because they're already small; a heavy video degrades to
     /// its thumbnail rather than being dropped, so the feed still shows something.
-    private func attachment(for visit: Visit) -> (data: Data?, isVideo: Bool) {
+    private func attachment(for visit: Visit) async -> (data: Data?, isVideo: Bool) {
         let media = visit.sortedMedia
 
         if let photo = media.first(where: { !$0.isVideo }), let data = photo.data {
-            return (Self.feedSized(data) ?? (data.count <= Self.maxAttachmentBytes ? data : nil), false)
+            let scaled = await Task.detached(priority: .userInitiated) {
+                Self.feedSized(data)
+            }.value
+            return (scaled ?? (data.count <= Self.maxAttachmentBytes ? data : nil), false)
         }
 
         if let video = media.first(where: { $0.isVideo }) {
@@ -481,7 +542,7 @@ final class SocialService {
     ///
     /// Returns nil if the image cannot be read, which leaves the caller to decide whether the
     /// original is small enough to send as it is.
-    private static func feedSized(_ data: Data) -> Data? {
+    private nonisolated static func feedSized(_ data: Data) -> Data? {
         #if canImport(UIKit)
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let options: [CFString: Any] = [
