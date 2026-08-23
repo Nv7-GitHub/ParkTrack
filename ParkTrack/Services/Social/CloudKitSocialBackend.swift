@@ -159,10 +159,25 @@ struct CloudKitSocialBackend: SocialBackend {
         }
     }
 
+    /// `since` is when we last pulled from this friend, and it is matched against when each
+    /// record was last *written* — not against the day of the visit it describes.
+    ///
+    /// Those are different clocks, and using the visit's own date meant anything logged for
+    /// a day earlier than your last refresh could never arrive. A park a friend marked
+    /// visited carries the moment they tapped it, and publishing happens later — the next
+    /// time they open the Friends tab, which after a format bump is a re-upload of their
+    /// whole library and takes minutes. Refresh once during that window and their new visit
+    /// is already behind your cursor, permanently. The same held for any trip logged for
+    /// last Tuesday, and for every corrected copy of a visit already published, since a
+    /// correction does not move the day it happened.
+    ///
+    /// Needs `modifiedTimestamp` marked queryable on the `FriendVisit` record type. Without
+    /// it the query fails outright rather than quietly returning less, which is the right
+    /// way round for something this easy to miss.
     func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload] {
         let predicate: NSPredicate
         if let since {
-            predicate = NSPredicate(format: "code == %@ AND date > %@", code, since as NSDate)
+            predicate = NSPredicate(format: "code == %@ AND modificationDate > %@", code, since as NSDate)
         } else {
             predicate = NSPredicate(format: "code == %@", code)
         }

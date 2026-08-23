@@ -90,6 +90,48 @@ final class FriendUndatedVisitTests: XCTestCase {
     }
 }
 
+/// What the incremental pull measures against.
+///
+/// Read from source because the predicate is a string handed to CloudKit: there is no local
+/// object to assert against, and the failure it guards was invisible in every test and every
+/// simulator — a visit simply never arrived on the other phone, with no error anywhere.
+///
+/// The bug: `since` is when we last pulled, and it was matched against the *visit's* date,
+/// which is when the friend was at the park. Anything logged for an earlier day — every
+/// marked-visited park, every backdated trip, every correction to something already
+/// published — sat behind the cursor from the moment it was written and could never be
+/// fetched again.
+final class FriendVisitCursorTests: XCTestCase {
+
+    func testIncrementalPullAsksWhenTheRecordWasWrittenNotWhenTheVisitHappened() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("ParkTrack")
+                .appendingPathComponent("Services")
+                .appendingPathComponent("Social")
+                .appendingPathComponent("CloudKitSocialBackend.swift"),
+            encoding: .utf8
+        )
+        let predicates = source
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.hasPrefix("predicate = NSPredicate") }
+
+        XCTAssertFalse(predicates.isEmpty, "the visit query's predicates are gone")
+        XCTAssertFalse(
+            predicates.contains { $0.contains("date > ") && !$0.contains("modificationDate > ") },
+            "the pull filters on the visit's own date again, so anything a friend logs for an "
+                + "earlier day than your last refresh will never arrive: \(predicates)"
+        )
+        XCTAssertTrue(
+            predicates.contains { $0.contains("modificationDate > ") },
+            "nothing filters on when the record was written, so every refresh pulls everything"
+        )
+    }
+}
+
 /// The upgrade that repairs what is already out there.
 ///
 /// Both halves are needed and neither is obvious. Publishing skips visits whose signature

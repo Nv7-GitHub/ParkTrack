@@ -675,7 +675,12 @@ final class SocialService {
     ///
     /// Version 1: `isUndated`, so a park a friend merely marked stops reading as a trip
     /// logged the moment they tapped.
-    static let mirrorFormatVersion = 1
+    ///
+    /// Version 2: the incremental cursor moved from the visit's own date to when the record
+    /// was written. Everything a friend published while their visit's date already sat
+    /// behind our cursor was never fetched and never would be — the new cursor does not
+    /// reach back on its own, because those records were last written before this too.
+    static let mirrorFormatVersion = 2
     private static let mirrorFormatKey = "social.mirrorFormatVersion"
 
     /// True exactly once per version bump, per install. Records the claim immediately, so a
