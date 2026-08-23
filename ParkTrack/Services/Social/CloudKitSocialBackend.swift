@@ -292,6 +292,7 @@ struct CloudKitSocialBackend: SocialBackend {
         record["note"] = visit.note
         record["rating"] = visit.rating
         record["mediaIsVideo"] = visit.mediaIsVideo ? 1 : 0
+        record["isUndated"] = visit.isUndated ? 1 : 0
 
         if let data = visit.mediaData {
             let url = scratch.appendingPathComponent("\(visit.identifier).bin")
@@ -317,7 +318,11 @@ struct CloudKitSocialBackend: SocialBackend {
             note: record["note"] as? String ?? "",
             rating: record["rating"] as? Int ?? 0,
             mediaData: mediaData,
-            mediaIsVideo: (record["mediaIsVideo"] as? Int ?? 0) == 1
+            mediaIsVideo: (record["mediaIsVideo"] as? Int ?? 0) == 1,
+            // Absent from anything published before the field existed, and from any
+            // environment where the schema has not been deployed yet. Both read as dated,
+            // which is exactly how those visits behaved before.
+            isUndated: (record["isUndated"] as? Int ?? 0) == 1
         )
     }
 

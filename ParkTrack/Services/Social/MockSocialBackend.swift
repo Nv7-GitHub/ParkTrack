@@ -217,7 +217,11 @@ final class MockSocialBackend: SocialBackend, @unchecked Sendable {
                 note: notes[seed % notes.count],
                 rating: 3 + (seed % 3),
                 mediaData: media,
-                mediaIsVideo: false
+                mediaIsVideo: false,
+                // Every third one, so the simulator shows what a friend's marked-visited
+                // park looks like and where it sorts. There is no other way to see it
+                // without two signed devices and a backlog between them.
+                isUndated: seed % 3 == 0
             )
         }
     }

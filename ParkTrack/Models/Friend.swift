@@ -47,6 +47,14 @@ final class FriendVisit {
     var date: Date = Date()
     var note: String = ""
     var rating: Int = 0
+    /// True when the friend marked the park visited rather than logging a trip.
+    ///
+    /// `date` still carries the moment they tapped, because it is what incremental sync
+    /// queries on — but it is not a claim about when they were there, so nothing sorts or
+    /// labels by it once this is set. Defaults to false, which is what a payload from a
+    /// build that predates the flag decodes as, and how every visit already mirrored here
+    /// keeps behaving.
+    var isUndated: Bool = false
     @Attribute(.externalStorage) var mediaData: Data?
     var mediaIsVideo: Bool = false
 
@@ -70,6 +78,20 @@ final class FriendVisit {
 extension FriendVisit {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+extension Array where Element == FriendVisit {
+    /// Newest first, with the marked-visited ones after everything that has a date.
+    ///
+    /// The same ordering `Visit.orderedByRecency()` gives the user's own log, for the same
+    /// reason: a park someone merely marked carries the moment they tapped, so sorting on
+    /// the date alone put a backlog cleared this afternoon above trips that actually
+    /// happened this week. Among themselves the marked ones keep that timestamp, which is
+    /// the only ordering there is for them.
+    func orderedByRecency() -> [FriendVisit] {
+        filter { !$0.isUndated }.sorted { $0.date > $1.date }
+            + filter(\.isUndated).sorted { $0.date > $1.date }
     }
 }
 

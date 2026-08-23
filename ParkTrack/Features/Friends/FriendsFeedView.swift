@@ -15,13 +15,25 @@ struct FriendsFeedView: View {
         var id: Date { date }
     }
 
+    private var allVisits: [FriendVisit] {
+        friends.flatMap { $0.visits ?? [] }
+    }
+
+    /// Only the trips. A park someone merely marked carries the moment they tapped it, so
+    /// grouping it by that date filed a backlog cleared this afternoon under "Today" — at
+    /// the very top of the feed, above everything that actually happened. Those go in one
+    /// group of their own, after every real day.
     private var days: [Day] {
         let calendar = Calendar.current
-        let all = friends.flatMap { $0.visits ?? [] }
-        let grouped = Dictionary(grouping: all) { calendar.startOfDay(for: $0.date) }
+        let dated = allVisits.filter { !$0.isUndated }
+        let grouped = Dictionary(grouping: dated) { calendar.startOfDay(for: $0.date) }
         return grouped.keys.sorted(by: >).map { day in
             Day(date: day, visits: (grouped[day] ?? []).sorted { $0.date > $1.date })
         }
+    }
+
+    private var markedVisits: [FriendVisit] {
+        allVisits.filter(\.isUndated).sorted { $0.date > $1.date }
     }
 
     private var subtitle: String {
@@ -44,7 +56,7 @@ struct FriendsFeedView: View {
                         action: onAddFriend
                     )
                 }
-            } else if days.isEmpty {
+            } else if days.isEmpty, markedVisits.isEmpty {
                 Card {
                     EmptyStateView(
                         systemImage: "leaf",
@@ -55,20 +67,34 @@ struct FriendsFeedView: View {
             } else {
                 ForEach(days) { day in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(Self.dayLabel(day.date))
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .textCase(.uppercase)
-                            .padding(.leading, 4)
-                            .accessibilityAddTraits(.isHeader)
+                        dayHeader(Self.dayLabel(day.date))
 
                         ForEach(day.visits) { visit in
                             FriendVisitRow(visit: visit)
                         }
                     }
                 }
+
+                if !markedVisits.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        dayHeader("No date")
+
+                        ForEach(markedVisits) { visit in
+                            FriendVisitRow(visit: visit)
+                        }
+                    }
+                }
             }
         }
+    }
+
+    private func dayHeader(_ label: String) -> some View {
+        Text(label)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Theme.textSecondary)
+            .textCase(.uppercase)
+            .padding(.leading, 4)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private static func dayLabel(_ date: Date) -> String {

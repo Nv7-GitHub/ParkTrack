@@ -14,9 +14,17 @@ struct FriendDetailScreen: View {
     @State private var isConfirmingRemove = false
     @State private var isAdoptingExclusions = false
 
+    /// Trips first, newest first, then whatever they merely marked. See
+    /// `Array<FriendVisit>.orderedByRecency()`.
     private var visits: [FriendVisit] {
-        (friend.visits ?? []).sorted { $0.date > $1.date }
+        (friend.visits ?? []).orderedByRecency()
     }
+
+    /// The handful the profile shows before the header's arrow takes over. Five, as on
+    /// Home: enough to see what someone has been up to, short enough that everything below
+    /// — the places they've struck off, removing them — stays a flick away rather than a
+    /// scroll through a hundred cards.
+    private static let previewCount = 5
 
     var body: some View {
         ScrollView {
@@ -164,7 +172,17 @@ struct FriendDetailScreen: View {
 
     private var visitList: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader("Their visits")
+            // Only worth pushing into once there is more than this section already shows.
+            if visits.count > Self.previewCount {
+                SectionHeaderLink(
+                    title: "Their visits",
+                    subtitle: "All \(visits.count), newest first",
+                    value: FriendVisitsRoute(friend: friend)
+                )
+            } else {
+                SectionHeader("Their visits")
+            }
+
             if visits.isEmpty {
                 Card {
                     EmptyStateView(
@@ -174,7 +192,7 @@ struct FriendDetailScreen: View {
                     )
                 }
             } else {
-                ForEach(visits) { visit in
+                ForEach(visits.prefix(Self.previewCount)) { visit in
                     FriendVisitRow(visit: visit, showsFriendName: false)
                 }
             }

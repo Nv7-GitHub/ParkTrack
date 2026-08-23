@@ -59,6 +59,8 @@
 		527354723237AABB909AE173 /* StatsEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5003CD1A57BEB4A4FFBB5D04 /* StatsEngineTests.swift */; };
 		5420C8D07AA5BDC815201571 /* RegionProgressSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82022E6745194387AC3C835 /* RegionProgressSheet.swift */; };
 		56F9172A0CB705F355C0BDA0 /* PersistenceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BD30510A3D319A31882FDD4 /* PersistenceController.swift */; };
+		59FD8087CEB93A70D60C4140 /* FriendUndatedVisitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4D8649BF357807ED3059B4D /* FriendUndatedVisitTests.swift */; };
+		5A52A20CB129170029CF16ED /* FriendVisitListScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988D877660E3CF63D85E1A2F /* FriendVisitListScreen.swift */; };
 		5B65E79BD9211B5164905397 /* UndatedVisitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EE0225C9F76D2C09A8C27AE /* UndatedVisitTests.swift */; };
 		5C570D1CF16A7318A09FFBC3 /* HomeMapPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93BB5941EA6EA3D0E69FD0A2 /* HomeMapPickerSheet.swift */; };
 		5C7F0E898C5A2C74BC9C104A /* LiveMapKitProbeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F7E4894A3B5F68E6FA55F7 /* LiveMapKitProbeTests.swift */; };
@@ -210,6 +212,7 @@
 		9242CF3ECC608C3DD1ED789C /* ChartAlignmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartAlignmentTests.swift; sourceTree = "<group>"; };
 		93BB5941EA6EA3D0E69FD0A2 /* HomeMapPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeMapPickerSheet.swift; sourceTree = "<group>"; };
 		951199E3976402CE7E762306 /* HomeRecentVisits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeRecentVisits.swift; sourceTree = "<group>"; };
+		988D877660E3CF63D85E1A2F /* FriendVisitListScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendVisitListScreen.swift; sourceTree = "<group>"; };
 		997999F0F575A142910327F4 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		9FF9FB2F874BFC551EBC8939 /* CacheInvalidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheInvalidationTests.swift; sourceTree = "<group>"; };
 		A12A05B6F8608CCA262FA480 /* SavedPlace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedPlace.swift; sourceTree = "<group>"; };
@@ -242,6 +245,7 @@
 		CB76293C6BF81CCD1E035795 /* ParkAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkAudit.swift; sourceTree = "<group>"; };
 		CE3DA6446FC0F23452D3BC0B /* StatBreakdownSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatBreakdownSheet.swift; sourceTree = "<group>"; };
 		D1AC6F85ADB93D5BA266D6D6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D4D8649BF357807ED3059B4D /* FriendUndatedVisitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendUndatedVisitTests.swift; sourceTree = "<group>"; };
 		D50BEA51F0344C683F33B0DA /* TilingStrategyProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingStrategyProbe.swift; sourceTree = "<group>"; };
 		D71DBCFC0F44B633C7621FF4 /* Park.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Park.swift; sourceTree = "<group>"; };
 		D891B5279709EEB3FC5E43AD /* StatsCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsCache.swift; sourceTree = "<group>"; };
@@ -319,6 +323,7 @@
 				2F800685EDE483CB8F9E6BB0 /* DiscoveryTests.swift */,
 				F64C3CA00D57585570DCE322 /* EntitlementsTests.swift */,
 				59374625B5F27641DE9A9B82 /* ExclusionSharingTests.swift */,
+				D4D8649BF357807ED3059B4D /* FriendUndatedVisitTests.swift */,
 				B9603E558AF361ACC9F4D3AB /* IndexResumeTests.swift */,
 				B488E6D67963341C01D7B121 /* IndexSweepTests.swift */,
 				49F7E4894A3B5F68E6FA55F7 /* LiveMapKitProbeTests.swift */,
@@ -421,6 +426,7 @@
 				050E2E8415F00895760977C7 /* FriendsFeedView.swift */,
 				1547326E14C2B2CEE3D34C52 /* FriendsLeaderboardView.swift */,
 				906113B637ACE062E0A628B1 /* FriendsScreen.swift */,
+				988D877660E3CF63D85E1A2F /* FriendVisitListScreen.swift */,
 				B93A9B73CF891B5DD4931472 /* FriendVisitRow.swift */,
 				06B4A401BA073AA297CFB943 /* RaceVisibilitySheet.swift */,
 				0D945D12F1BD90E3E9A34286 /* RegionRaceView.swift */,
@@ -732,6 +738,7 @@
 				AD24ACCD324AFE239175A88A /* FriendDetailScreen.swift in Sources */,
 				7A7DC21F803291D4382B5BC4 /* FriendExclusion.swift in Sources */,
 				27324185771C0B2889C15800 /* FriendMediaViewer.swift in Sources */,
+				5A52A20CB129170029CF16ED /* FriendVisitListScreen.swift in Sources */,
 				5F0C07160A2E5C99BE1CCB0C /* FriendVisitRow.swift in Sources */,
 				2F0EF006F74A5B4E4AC968B5 /* FriendsFeedView.swift in Sources */,
 				7AB656604969E389BA6B8B43 /* FriendsLeaderboardView.swift in Sources */,
@@ -816,6 +823,7 @@
 				16030B0B3C22F71DD428417F /* DiscoveryTests.swift in Sources */,
 				9C3BB58B6F92E2A6EB5F8D40 /* EntitlementsTests.swift in Sources */,
 				E06687D50D505DB3D30630EE /* ExclusionSharingTests.swift in Sources */,
+				59FD8087CEB93A70D60C4140 /* FriendUndatedVisitTests.swift in Sources */,
 				08BD2793F3FABA11EE4E8E0D /* IndexResumeTests.swift in Sources */,
 				3040F4E72A6258238E3B6F4B /* IndexSweepTests.swift in Sources */,
 				5C7F0E898C5A2C74BC9C104A /* LiveMapKitProbeTests.swift in Sources */,
@@ -897,7 +905,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1051,7 +1059,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;

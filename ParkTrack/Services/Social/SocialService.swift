@@ -65,6 +65,14 @@ struct FriendVisitPayload: Codable {
     let rating: Int
     let mediaData: Data?
     let mediaIsVideo: Bool
+    /// The friend marked this park visited rather than logging a trip on a day.
+    ///
+    /// Carried separately rather than by leaving `date` empty, because `date` is the cursor
+    /// incremental sync queries on — `date > lastSynced`. A visit published with no date, or
+    /// a sentinel one, would sit permanently below every friend's cursor and never arrive.
+    /// So the timestamp stays, meaning only "when this row was made", and this says whether
+    /// to believe it. Defaults to false, which is how a build that predates the field reads.
+    var isUndated: Bool = false
 }
 
 /// Where shared data actually lives. Two implementations ship: CloudKit for signed
@@ -260,6 +268,14 @@ final class SocialService {
     func refreshAll() async {
         await shareIndexedRegions()
         guard !isSyncing else { return }
+        if Self.claimMirrorUpgrade() {
+            // Everything already mirrored was fetched before the format changed, and the
+            // corrected copies carry the same dates they always did — so an incremental
+            // pull, which asks for `date > lastSynced`, would never see them. Forgetting
+            // when we last heard from each friend makes the next pull a full one.
+            for friend in allFriends() { friend.lastSyncedAt = nil }
+            save()
+        }
         let friends = allFriends()
         guard !friends.isEmpty else { return }
 
@@ -479,6 +495,7 @@ final class SocialService {
             visit.date = payload.date
             visit.note = payload.note
             visit.rating = payload.rating
+            visit.isUndated = payload.isUndated
             visit.mediaData = payload.mediaData
             visit.mediaIsVideo = payload.mediaIsVideo
         }
@@ -538,7 +555,8 @@ final class SocialService {
                     note: visit.notes,
                     rating: visit.rating,
                     mediaData: shared.data,
-                    mediaIsVideo: shared.isVideo
+                    mediaIsVideo: shared.isVideo,
+                    isUndated: visit.isUndated
                 )
             )
             progress(Double(index + 1) / Double(max(candidates.count, 1)))
@@ -606,11 +624,40 @@ final class SocialService {
     /// Only visits whose fingerprint has changed are rebuilt and sent. In the ordinary case
     /// — open the app, nothing logged since — that is none of them, and the whole expensive
     /// half is skipped.
+    /// The receiving half of a wire-format upgrade, to `signaturesVersion`'s sending half.
+    ///
+    /// Bumping this makes the next refresh re-pull every friend from scratch once. Needed
+    /// whenever a field is added that changes how visits already mirrored here should be
+    /// read: their dates do not move, so nothing about them clears a friend's incremental
+    /// cursor, and the fixed copies would otherwise never be asked for.
+    ///
+    /// Version 1: `isUndated`, so a park a friend merely marked stops reading as a trip
+    /// logged the moment they tapped.
+    static let mirrorFormatVersion = 1
+    private static let mirrorFormatKey = "social.mirrorFormatVersion"
+
+    /// True exactly once per version bump, per install. Records the claim immediately, so a
+    /// refresh that fails partway does not queue a full re-pull for every launch afterwards
+    /// — the next ordinary sync catches whatever the failed one missed.
+    static func claimMirrorUpgrade(defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.integer(forKey: mirrorFormatKey) != mirrorFormatVersion else { return false }
+        defaults.set(mirrorFormatVersion, forKey: mirrorFormatKey)
+        return true
+    }
+
     private static let signaturesKey = "social.publishedVisitSignatures"
     private static let signaturesCodeKey = "social.publishedUnderCode"
     private static let signaturesVersionKey = "social.publishedFormatVersion"
 
     /// Bump to make every install re-share everything once.
+    ///
+    /// Version 3 exists because visits published before it carry no `isUndated`, so a park
+    /// the user only marked as visited reads on a friend's phone as a trip logged the
+    /// moment it was tapped. Nothing about those visits changes locally, so no signature
+    /// moves and nothing would ever be offered again — the whole backlog would stay wrong
+    /// on the far end for good. Disbelieving the record once re-sends everything with the
+    /// flag on it. `SocialService.mirrorFormatVersion` is the receiving half of the same
+    /// upgrade; both fire on their own the first time the new build runs.
     ///
     /// Version 2 exists because version 1 could record a lie. Publishing did not inspect the
     /// per-record results CloudKit returns when saving non-atomically, so a batch that
@@ -618,7 +665,7 @@ final class SocialService {
     /// as sent, and those visits would never be offered again. Installs carrying that
     /// verdict cannot tell it apart from the truth, so the only repair is to disbelieve all
     /// of it once.
-    private static let signaturesVersion = 2
+    private static let signaturesVersion = 3
 
     /// What has been shared, and under which friend code.
     ///
@@ -653,6 +700,7 @@ final class SocialService {
             String(format: "%.5f,%.5f", park.latitude, park.longitude),
             park.regionLabel ?? "",
             String(visit.date.timeIntervalSince1970),
+            visit.isUndated ? "undated" : "dated",
             visit.notes,
             String(visit.rating),
             media

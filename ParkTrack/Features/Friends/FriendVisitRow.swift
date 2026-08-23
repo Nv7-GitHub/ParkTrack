@@ -41,7 +41,7 @@ struct FriendVisitRow: View {
                         if let region = visit.regionLabel, !region.isEmpty {
                             Pill(text: region, systemImage: "mappin.and.ellipse")
                         }
-                        Text(Format.relative(visit.date))
+                        Text(dateLabel)
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
                     }
@@ -83,12 +83,19 @@ struct FriendVisitRow: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
+    /// A marked-visited park carries the moment its owner tapped, which is not a claim
+    /// about when they were there — so the row says what actually happened rather than
+    /// rendering that timestamp as "2 hours ago". Same wording as the user's own log.
+    private var dateLabel: String {
+        visit.isUndated ? "Marked visited" : Format.relative(visit.date)
+    }
+
     private var accessibilitySummary: String {
         var parts: [String] = []
         if showsFriendName, let friendName { parts.append(friendName) }
         parts.append(visit.parkName)
         if let region = visit.regionLabel, !region.isEmpty { parts.append(region) }
-        parts.append(Format.relative(visit.date))
+        parts.append(visit.isUndated ? "marked visited, no date" : Format.relative(visit.date))
         return parts.joined(separator: ", ")
     }
 

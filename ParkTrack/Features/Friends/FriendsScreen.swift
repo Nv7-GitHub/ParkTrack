@@ -125,6 +125,9 @@ struct FriendsScreen: View {
             .navigationDestination(for: Friend.self) { friend in
                 FriendDetailScreen(friend: friend, social: social)
             }
+            .navigationDestination(for: FriendVisitsRoute.self) { route in
+                FriendVisitListScreen(friend: route.friend)
+            }
             .sheet(isPresented: $isAddingFriend) {
                 if let social {
                     AddFriendSheet(social: social, myCode: settings.friendCode)
