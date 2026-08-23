@@ -17,6 +17,7 @@ final class SocialPublishTests: XCTestCase {
         /// What the far end is pretending to hold, for deletion reconciliation.
         var remoteIdentifiers: Set<String>?
         var enumerationSupported = true
+        var failNextPublish = false
 
         var publishedIdentifiers: [String] { publishedBatches.flatMap { $0 } }
 
@@ -51,6 +52,10 @@ final class SocialPublishTests: XCTestCase {
             progress: @Sendable @MainActor (Double) -> Void
         ) async throws {
             publishedBatches.append(visits.map(\.identifier))
+            if failNextPublish {
+                failNextPublish = false
+                throw SocialError.failed("no")
+            }
         }
     }
 
@@ -102,13 +107,14 @@ final class SocialPublishTests: XCTestCase {
         (try? context.fetch(FetchDescriptor<Park>())) ?? []
     }
 
-    /// A library bigger than one publish can carry has to finish over the next ones.
+    /// A whole library goes, however long it is.
     ///
-    /// The bug: every visit in the library was recorded as published, including the ones
-    /// dropped past the cap before anything was uploaded. They then looked identical to
-    /// visits that had genuinely landed, so nothing ever offered them again — a backlog
-    /// larger than the cap published its first slice and abandoned the rest for good.
-    func testVisitsBeyondTheCapAreSentByTheNextPublishRatherThanAbandoned() async {
+    /// There used to be a cap of two hundred per publish, and — worse — every visit in the
+    /// library was recorded as published whether or not it had been sent. The ones dropped
+    /// past the cap then looked identical to visits that had genuinely landed, so nothing
+    /// ever offered them again: a longer history shared its first slice and abandoned the
+    /// rest for good. 201 because that is one more than the cap that used to be here.
+    func testAnEntireLibraryIsPublishedHoweverLongItIs() async {
         for index in 0..<201 { makeVisitedPark(index) }
         try? context.save()
 
@@ -116,16 +122,32 @@ final class SocialPublishTests: XCTestCase {
         let service = SocialService(backend: backend, modelContext: context)
 
         await service.publishMyData(parks: allParks(), profile: profile)
-        let first = backend.publishedIdentifiers
-        XCTAssertEqual(first.count, 200, "the cap moved; this test is calibrated to it")
-
-        await service.publishMyData(parks: allParks(), profile: profile)
-        let second = Set(backend.publishedIdentifiers).subtracting(first)
 
         XCTAssertEqual(
-            second.count, 1,
-            "the visit past the cap was recorded as published without ever being sent, so it "
-                + "would never be offered again"
+            Set(backend.publishedIdentifiers).count, 201,
+            "some of the library was held back, and nothing records which"
+        )
+    }
+
+    /// The guarantee that made the old cap survivable, and the one that keeps any future
+    /// truncation — a failure partway, a batch rejected — from costing a visit permanently.
+    func testOnlyVisitsThatWereSentAreRecordedAsPublished() async {
+        for index in 0..<3 { makeVisitedPark(index) }
+        try? context.save()
+
+        let backend = RecordingBackend()
+        backend.failNextPublish = true
+        let service = SocialService(backend: backend, modelContext: context)
+
+        await service.publishMyData(parks: allParks(), profile: profile)
+        XCTAssertNotNil(service.lastError, "a failed publish reported success")
+
+        await service.publishMyData(parks: allParks(), profile: profile)
+
+        XCTAssertEqual(
+            Set(backend.publishedBatches.last ?? []).count, 3,
+            "a publish that failed still counted its visits as shared, so they would never be "
+                + "offered again"
         )
     }
 

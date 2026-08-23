@@ -423,12 +423,12 @@ final class SocialService {
 
             // What actually went, rather than everything that exists.
             //
-            // This used to record `current` wholesale — every visit in the library, including
-            // the ones `visitPayloads` had just dropped on the far side of `maxPublishedVisits`.
-            // They were then indistinguishable from visits that had genuinely landed and were
-            // never offered again, so a library larger than the cap silently published its
-            // first two hundred and abandoned the rest. Recording only what was sent means the
-            // next publish picks up where this one stopped.
+            // Publishing sends everything changed now, so in the ordinary case these are the
+            // same set — but only by coincidence, and recording the wrong one is how a visit
+            // becomes permanently unshared. `current` describes the library; a payload
+            // describes something that actually left the phone. Recording the library meant a
+            // visit that never went looked identical to one that had, and nothing offered it
+            // again — which is what a cap here used to cause, every time.
             var recorded = known.filter { current[$0.key] != nil }
             for payload in payloads {
                 recorded[payload.identifier] = current[payload.identifier]
@@ -619,7 +619,6 @@ final class SocialService {
 
     // MARK: - Payload building
 
-    private static let maxPublishedVisits = 200
     /// Above this, a video ships as its poster frame instead of the video itself.
     private static let maxAttachmentBytes = 5 * 1_024 * 1_024
 
@@ -649,7 +648,7 @@ final class SocialService {
     ) async -> [FriendVisitPayload] {
         var payloads: [FriendVisitPayload] = []
 
-        for (index, pair) in candidates.prefix(Self.maxPublishedVisits).enumerated() {
+        for (index, pair) in candidates.enumerated() {
             let (park, visit) = pair
             let shared = await attachment(for: visit)
             payloads.append(

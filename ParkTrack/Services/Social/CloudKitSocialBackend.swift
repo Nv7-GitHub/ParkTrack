@@ -126,15 +126,15 @@ struct CloudKitSocialBackend: SocialBackend {
         static let visit = "FriendVisit"
     }
 
-    /// CloudKit rejects oversized batches, and a feed pull that big isn't worth it.
-    private static let visitFetchLimit = 1_000
-    /// One page. Small enough that a page carrying attachments is a reasonable request.
+    /// One page, not a ceiling. Pulling continues until CloudKit says there is no more.
+    ///
+    /// There used to be a ceiling as well, and it could only ever be wrong: whatever number
+    /// it held, the person whose history was longer than it had the remainder silently
+    /// dropped, while the cursor moved on as though everything had arrived. Paging costs one
+    /// extra request per hundred records and cannot do that.
     private static let visitPageSize = 100
     /// Identifier pages carry no bodies, so they can be far larger.
     private static let identifierPageSize = 400
-    /// Past this, reconciling deletions costs more than it is worth and the answer is
-    /// reported as unknown rather than partial.
-    private static let identifierCeiling = 5_000
     /// Small on purpose. 150 was one request for any realistic library, so a progress
     /// callback fired once, at the end — a bar that sat empty and then vanished. It also
     /// meant a single request carrying every attachment at once, which is not a shape
@@ -214,7 +214,7 @@ struct CloudKitSocialBackend: SocialBackend {
                     payloads.append(Self.payload(from: record))
                 }
                 cursor = page.queryCursor
-            } while cursor != nil && payloads.count < Self.visitFetchLimit
+            } while cursor != nil
 
             return payloads
         } catch {
@@ -225,9 +225,9 @@ struct CloudKitSocialBackend: SocialBackend {
     /// Identifiers only — no notes, no attachments — so reconciling what a friend has
     /// deleted costs a query rather than their whole feed.
     ///
-    /// Returns nil when the answer would be partial, because the caller deletes anything
-    /// missing from the set it gets. A truncated list read as authoritative would wipe most
-    /// of a friend's history off the phone.
+    /// Reads every page before answering. Nil is reserved for a backend that cannot
+    /// enumerate at all, because the caller deletes anything missing from the set it gets —
+    /// a partial list read as authoritative would wipe most of a friend's history.
     func visitIdentifiers(code: String) async throws -> Set<String>? {
         let query = CKQuery(recordType: RecordType.visit, predicate: NSPredicate(format: "code == %@", code))
 
@@ -255,7 +255,6 @@ struct CloudKitSocialBackend: SocialBackend {
                     identifiers.insert(record["identifier"] as? String ?? recordID.recordName)
                 }
                 cursor = page.queryCursor
-                if identifiers.count > Self.identifierCeiling { return nil }
             } while cursor != nil
 
             return identifiers
