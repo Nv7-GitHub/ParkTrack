@@ -72,6 +72,38 @@ final class EntitlementsTests: XCTestCase {
         )
     }
 
+    /// Which database the app talks to, and that it is still a variable.
+    ///
+    /// Hardcoding `Development` here would be invisible in every simulator test and in every
+    /// build run from Xcode, and would then ship an App Store binary pointed at a sandbox
+    /// nobody's friends are in. The committed default is Production for that reason; a
+    /// sandbox is opted into per machine.
+    func testDeclaresTheCloudKitEnvironmentAsASetting() throws {
+        let environment = try XCTUnwrap(
+            entitlements()["com.apple.developer.icloud-container-environment"] as? String,
+            "no icloud-container-environment key — an Xcode build silently reads the Development database"
+        )
+        XCTAssertEqual(
+            environment, "$(PARKTRACK_ICLOUD_ENV)",
+            "the environment was hardcoded; it should read the build setting so one machine can "
+                + "opt into a sandbox without committing it for everyone"
+        )
+    }
+
+    func testCommittedConfigDefaultsToProduction() throws {
+        let xcconfig = try String(
+            contentsOf: repositoryRoot
+                .appendingPathComponent("Config")
+                .appendingPathComponent("Signing.xcconfig"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            xcconfig.contains("PARKTRACK_ICLOUD_ENV = Production"),
+            "the committed default is no longer Production, so a release could go out reading "
+                + "a database with nobody in it"
+        )
+    }
+
     /// The build setting that actually applies the file. Without it the entitlements sit in
     /// the repository doing nothing at all.
     ///

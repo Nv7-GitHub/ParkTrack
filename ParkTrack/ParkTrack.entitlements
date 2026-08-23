@@ -21,6 +21,14 @@
 	<array>
 		<string>iCloud.$(PARKTRACK_BUNDLE_ID)</string>
 	</array>
+	<!--
+	  Which of the container's two databases this build reads and writes. Resolved from
+	  `PARKTRACK_ICLOUD_ENV` in Config/Signing.xcconfig, which defaults to Production and
+	  explains why. Builds that leave this machine are Production whatever this says; the
+	  point of the key is to stop a build run from Xcode being the odd one out.
+	-->
+	<key>com.apple.developer.icloud-container-environment</key>
+	<string>$(PARKTRACK_ICLOUD_ENV)</string>
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudKit</string>

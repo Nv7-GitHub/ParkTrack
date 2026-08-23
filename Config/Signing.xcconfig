@@ -52,6 +52,25 @@ PARKTRACK_BUNDLE_ID = com.example.CHANGE-ME.parktrack
 // needs to do.
 PARKTRACK_ENTITLEMENTS = ParkTrack/ParkTrack.entitlements
 
+// Which CloudKit environment the app talks to: `Development` or `Production`.
+//
+// The two are separate databases with separate schemas and no data between them. Xcode
+// signs a device build for Development by default, and TestFlight and the App Store always
+// get Production regardless of what is written here — so without this, a build run from
+// Xcode looks at an empty database while the phone next to it is full of real friends, and
+// the only way to reproduce anything a tester reports is to upload a build and wait.
+//
+// Production is therefore the default: it is what every build that reaches anyone else
+// uses anyway, and it makes an Xcode build and a TestFlight build the same app looking at
+// the same data. Set this to `Development` in Signing.local.xcconfig when you want a
+// sandbox to break — a schema change worth trying before deploying it, or anything
+// destructive aimed at records other people can see.
+//
+// If automatic signing refuses ("provisioning profile doesn't support the
+// com.apple.developer.icloud-container-environment entitlement"), the App ID has no
+// production profile yet; archiving once, or a visit to the portal, creates it.
+PARKTRACK_ICLOUD_ENV = Production
+
 // Local overrides. `#include?` is the optional form — no error when the file is absent,
 // which is the fresh-clone case. Last assignment wins in an xcconfig, so this has to come
 // after the defaults above or it would be the one being overridden.
