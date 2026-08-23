@@ -404,7 +404,9 @@ private struct FriendsDisplayNameCard: View {
 }
 
 /// Whatever the sync last failed at, in the words the service gave us.
-private struct FriendsErrorNote: View {
+/// Also used by a friend's profile, where the same failure otherwise renders as an empty
+/// state claiming they have shared nothing.
+struct FriendsErrorNote: View {
     let message: String
 
     var body: some View {

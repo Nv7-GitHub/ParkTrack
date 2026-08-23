@@ -184,12 +184,20 @@ struct FriendDetailScreen: View {
             }
 
             if visits.isEmpty {
-                Card {
-                    EmptyStateView(
-                        systemImage: "leaf",
-                        title: "Nothing shared yet",
-                        message: "\(friend.displayName) hasn't shared any visits. Pull to refresh on the Friends tab to check again."
-                    )
+                // An empty list is two very different situations, and saying the wrong one
+                // sends people to ask a friend why they aren't sharing when the truth is
+                // that the last sync failed. The error itself lives on the Friends tab,
+                // which is not where anybody is looking when they open a profile.
+                if let error = social?.lastError, !error.isEmpty {
+                    FriendsErrorNote(message: error)
+                } else {
+                    Card {
+                        EmptyStateView(
+                            systemImage: "leaf",
+                            title: "Nothing shared yet",
+                            message: "\(friend.displayName) hasn't shared any visits. Pull to refresh on the Friends tab to check again."
+                        )
+                    }
                 }
             } else {
                 ForEach(visits.prefix(Self.previewCount)) { visit in
