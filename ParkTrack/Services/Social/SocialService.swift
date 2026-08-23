@@ -50,6 +50,16 @@ struct RegionProgressPayload: Codable {
 
 extension SocialBackend {
     func updateIndexedRegions(_ regions: [RegionProgressPayload]) async {}
+
+    /// Backends that cannot remove anything simply never do. The mock is one: nothing it
+    /// serves outlives the process.
+    func deleteVisits(identifiers: [String]) async throws {}
+
+    /// `nil` means "cannot answer", which is not the same as "none" — and the difference
+    /// matters, because the caller deletes its local copy of anything missing from this
+    /// set. A backend that cannot enumerate, or a pull that came back truncated, must
+    /// return nil rather than a partial answer that would read as a mass deletion.
+    func visitIdentifiers(code: String) async throws -> Set<String>? { nil }
 }
 
 /// One shared visit. Carries at most a single media attachment so a friend's whole
@@ -83,6 +93,10 @@ protocol SocialBackend: Sendable {
     func updateIndexedRegions(_ regions: [RegionProgressPayload]) async
     func fetchProfile(code: String) async throws -> FriendProfilePayload
     func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload]
+    /// Every identifier this person currently has published, for reconciling deletions.
+    func visitIdentifiers(code: String) async throws -> Set<String>?
+    /// Withdraws visits the user has deleted, so they stop reaching anybody.
+    func deleteVisits(identifiers: [String]) async throws
     /// `progress` is called as batches land, from 0 to 1, so a screen can say how far in it
     /// is. A first share of a whole library is minutes of uploading, and an app that shows
     /// nothing for minutes looks broken rather than busy.
@@ -325,8 +339,12 @@ final class SocialService {
             do {
                 let profile = try await backend.fetchProfile(code: friend.friendCode)
                 apply(profile, to: friend)
-                let visits = try await backend.fetchVisits(code: friend.friendCode, since: friend.lastSyncedAt)
+                let visits = try await backend.fetchVisits(
+                    code: friend.friendCode,
+                    since: Self.cursor(from: friend.lastSyncedAt)
+                )
                 merge(visits, into: friend)
+                try await reconcileDeletions(for: friend)
                 friend.lastSyncedAt = Date()
             } catch {
                 failures.append("\(friend.displayName): \(message(for: error))")
@@ -391,14 +409,31 @@ final class SocialService {
         publishProgress = 0
         publishBytes = payloads.reduce(Int64(0)) { $0 + Int64($1.mediaData?.count ?? 0) }
 
+        // Visits the user has deleted since the last publish. Withdrawn rather than left,
+        // because a record nobody can delete is a photo you cannot take back.
+        let withdrawn = known.keys.filter { current[$0] == nil }
+
         do {
             try await backend.publish(profile: profile, visits: payloads) { [weak self] fraction in
                 self?.publishProgress = fraction
             }
-            // Only once it has actually landed. A failed upload that recorded success here
-            // would leave those visits permanently unshared, since nothing would ever think
-            // to send them again.
-            recordPublished(current, under: profile.code)
+            if !withdrawn.isEmpty {
+                try await backend.deleteVisits(identifiers: withdrawn)
+            }
+
+            // What actually went, rather than everything that exists.
+            //
+            // This used to record `current` wholesale — every visit in the library, including
+            // the ones `visitPayloads` had just dropped on the far side of `maxPublishedVisits`.
+            // They were then indistinguishable from visits that had genuinely landed and were
+            // never offered again, so a library larger than the cap silently published its
+            // first two hundred and abandoned the rest. Recording only what was sent means the
+            // next publish picks up where this one stopped.
+            var recorded = known.filter { current[$0.key] != nil }
+            for payload in payloads {
+                recorded[payload.identifier] = current[payload.identifier]
+            }
+            recordPublished(recorded, under: profile.code)
             lastSyncedAt = Date()
         } catch {
             // Forgetting rather than leaving what was there. A publish that failed partway
@@ -411,6 +446,37 @@ final class SocialService {
     }
 
     // MARK: - Local mirror
+
+    /// How far back a pull reaches beyond the last one, to cover the gap between two
+    /// clocks that were never synchronised.
+    ///
+    /// `lastSyncedAt` is stamped from this phone; a record's modification date comes from
+    /// CloudKit's servers. A phone running a few minutes fast would step its cursor past
+    /// records that had not been written yet, and never ask for them again. The margin also
+    /// covers records written while a pull was in progress. Merging is an upsert, so the
+    /// cost of asking twice is a few duplicate records on the wire and nothing else.
+    private static let cursorSkew: TimeInterval = 15 * 60
+
+    static func cursor(from lastSynced: Date?) -> Date? {
+        lastSynced?.addingTimeInterval(-cursorSkew)
+    }
+
+    /// Removes local copies of visits the friend has since deleted.
+    ///
+    /// Deletions cannot arrive through an incremental pull: a record that is gone matches no
+    /// query, so nothing distinguishes it from one that simply has not changed. Asking for
+    /// the full set of identifiers is cheap — no attachments, no bodies — and it is the only
+    /// way a visit somebody withdrew ever leaves the phones that already mirrored it.
+    ///
+    /// A nil answer means the backend could not enumerate, or the enumeration was truncated.
+    /// Nothing is deleted in that case: a partial list read as authoritative would erase most
+    /// of a friend's history.
+    private func reconcileDeletions(for friend: Friend) async throws {
+        guard let published = try await backend.visitIdentifiers(code: friend.friendCode) else { return }
+        for visit in friend.visits ?? [] where !published.contains(visit.identifier) {
+            modelContext.delete(visit)
+        }
+    }
 
     private func allFriends() -> [Friend] {
         let descriptor = FetchDescriptor<Friend>(sortBy: [SortDescriptor(\.addedAt)])

@@ -127,7 +127,14 @@ struct CloudKitSocialBackend: SocialBackend {
     }
 
     /// CloudKit rejects oversized batches, and a feed pull that big isn't worth it.
-    private static let visitFetchLimit = 200
+    private static let visitFetchLimit = 1_000
+    /// One page. Small enough that a page carrying attachments is a reasonable request.
+    private static let visitPageSize = 100
+    /// Identifier pages carry no bodies, so they can be far larger.
+    private static let identifierPageSize = 400
+    /// Past this, reconciling deletions costs more than it is worth and the answer is
+    /// reported as unknown rather than partial.
+    private static let identifierCeiling = 5_000
     /// Small on purpose. 150 was one request for any realistic library, so a progress
     /// callback fired once, at the end — a bar that sat empty and then vanished. It also
     /// meant a single request carrying every attachment at once, which is not a shape
@@ -186,13 +193,88 @@ struct CloudKitSocialBackend: SocialBackend {
         query.sortDescriptors = [NSSortDescriptor(key: "date", ascending: false)]
 
         do {
-            let (matches, _) = try await database.records(
-                matching: query,
-                resultsLimit: Self.visitFetchLimit
-            )
-            return matches.compactMap { _, result in
-                guard let record = try? result.get() else { return nil }
-                return Self.payload(from: record)
+            var payloads: [FriendVisitPayload] = []
+            var cursor: CKQueryOperation.Cursor?
+
+            // Paged rather than one capped request.
+            //
+            // The cursor used to be discarded, so a pull was the first two hundred records
+            // and nothing else — and the caller then stepped its sync cursor forward as
+            // though it had everything, which put the remainder permanently out of reach.
+            // Anyone sharing a real backlog had most of it silently dropped on arrival.
+            repeat {
+                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?)
+                if let cursor {
+                    page = try await database.records(continuingMatchFrom: cursor, resultsLimit: Self.visitPageSize)
+                } else {
+                    page = try await database.records(matching: query, resultsLimit: Self.visitPageSize)
+                }
+                for (_, result) in page.matchResults {
+                    guard let record = try? result.get() else { continue }
+                    payloads.append(Self.payload(from: record))
+                }
+                cursor = page.queryCursor
+            } while cursor != nil && payloads.count < Self.visitFetchLimit
+
+            return payloads
+        } catch {
+            throw Self.socialError(from: error)
+        }
+    }
+
+    /// Identifiers only — no notes, no attachments — so reconciling what a friend has
+    /// deleted costs a query rather than their whole feed.
+    ///
+    /// Returns nil when the answer would be partial, because the caller deletes anything
+    /// missing from the set it gets. A truncated list read as authoritative would wipe most
+    /// of a friend's history off the phone.
+    func visitIdentifiers(code: String) async throws -> Set<String>? {
+        let query = CKQuery(recordType: RecordType.visit, predicate: NSPredicate(format: "code == %@", code))
+
+        do {
+            var identifiers: Set<String> = []
+            var cursor: CKQueryOperation.Cursor?
+
+            repeat {
+                let page: (matchResults: [(CKRecord.ID, Result<CKRecord, Error>)], queryCursor: CKQueryOperation.Cursor?)
+                if let cursor {
+                    page = try await database.records(
+                        continuingMatchFrom: cursor,
+                        desiredKeys: ["identifier"],
+                        resultsLimit: Self.identifierPageSize
+                    )
+                } else {
+                    page = try await database.records(
+                        matching: query,
+                        desiredKeys: ["identifier"],
+                        resultsLimit: Self.identifierPageSize
+                    )
+                }
+                for (recordID, result) in page.matchResults {
+                    guard let record = try? result.get() else { continue }
+                    identifiers.insert(record["identifier"] as? String ?? recordID.recordName)
+                }
+                cursor = page.queryCursor
+                if identifiers.count > Self.identifierCeiling { return nil }
+            } while cursor != nil
+
+            return identifiers
+        } catch {
+            throw Self.socialError(from: error)
+        }
+    }
+
+    func deleteVisits(identifiers: [String]) async throws {
+        let ids = identifiers.map { CKRecord.ID(recordName: $0) }
+        do {
+            for batch in stride(from: 0, to: ids.count, by: Self.saveBatchSize) {
+                let end = min(batch + Self.saveBatchSize, ids.count)
+                _ = try await database.modifyRecords(
+                    saving: [],
+                    deleting: Array(ids[batch..<end]),
+                    savePolicy: .allKeys,
+                    atomically: false
+                )
             }
         } catch {
             throw Self.socialError(from: error)
@@ -365,7 +447,10 @@ struct CloudKitSocialBackend: SocialBackend {
         // schema has never been told about. Nothing on the phone can fix it and nothing
         // about the message below would send anyone to the right place.
         case .invalidArguments, .serverRejectedRequest:
-            return .unavailable("iCloud rejected this build's data — its iCloud setup needs updating before sharing can work.")
+            // Carries CloudKit's own sentence, which names the field or the index that is
+            // missing. Without it the message says only that something is wrong with a
+            // setup the person reading it cannot see, which is where this spent a day.
+            return .unavailable("iCloud rejected this request — the app's iCloud setup needs updating. \(ckError.localizedDescription)")
         case .zoneNotFound, .badContainer, .missingEntitlement:
             return .unavailable("iCloud sharing isn't set up in this build.")
         default:

@@ -126,6 +126,11 @@ final class MockSocialBackend: SocialBackend, @unchecked Sendable {
         )
     }
 
+    /// Everything it has, so a mock friend never appears to have deleted anything.
+    func visitIdentifiers(code: String) async throws -> Set<String>? {
+        Set((visitsByCode[code] ?? []).map(\.identifier))
+    }
+
     func fetchVisits(code: String, since: Date?) async throws -> [FriendVisitPayload] {
         await Self.simulateLatency()
         guard let all = visitsByCode[code.uppercased()] else { throw SocialError.notFound }
