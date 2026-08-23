@@ -13,6 +13,7 @@ struct FriendDetailScreen: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingRemove = false
     @State private var isAdoptingExclusions = false
+    @State private var breakdown: FriendStatBreakdownSheet.Kind?
 
     /// Trips first, newest first, then whatever they merely marked. See
     /// `Array<FriendVisit>.orderedByRecency()`.
@@ -43,6 +44,9 @@ struct FriendDetailScreen: View {
             .padding(.bottom, 32)
         }
         .background(Theme.background)
+        .sheet(item: $breakdown) { kind in
+            FriendStatBreakdownSheet(kind: kind, friend: friend)
+        }
         .navigationTitle(friend.displayName)
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog(
@@ -132,13 +136,34 @@ struct FriendDetailScreen: View {
             columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
             spacing: 12
         ) {
-            StatTile(value: "\(friend.totalParks)", label: "Parks visited", systemImage: "tree.fill")
-            StatTile(value: "\(friend.totalVisits)", label: "Total visits", systemImage: "figure.walk", tint: Theme.moss)
-            StatTile(value: "\(friend.citiesCount)", label: "Cities", systemImage: "building.2.fill", tint: Theme.sky)
-            StatTile(value: streakValue, label: "Current streak", systemImage: "flame.fill", tint: Theme.sunset)
-            StatTile(value: "\(friend.parksThisMonth)", label: "New this month", systemImage: "calendar", tint: Theme.fern)
+            tile(.parksVisited, "\(friend.totalParks)", "Parks visited", "tree.fill", Theme.accent)
+            tile(.allVisits, "\(friend.totalVisits)", "Total visits", "figure.walk", Theme.moss)
+            tile(.cities, "\(friend.citiesCount)", "Cities", "building.2.fill", Theme.sky)
+            tile(.currentStreak, streakValue, "Current streak", "flame.fill", Theme.sunset)
+            tile(.newThisMonth, "\(friend.parksThisMonth)", "New this month", "calendar", Theme.fern)
+            // Not a set, so there is nothing to open: one date, already on the tile. The
+            // list it would show is Total visits.
             StatTile(value: lastVisitValue, label: "Last visit", systemImage: "clock", tint: Theme.bark)
         }
+    }
+
+    /// A figure that opens the visits behind it, exactly as the user's own stats do.
+    private func tile(
+        _ kind: FriendStatBreakdownSheet.Kind,
+        _ value: String,
+        _ label: String,
+        _ systemImage: String,
+        _ tint: Color
+    ) -> some View {
+        Button {
+            breakdown = kind
+        } label: {
+            StatTile(value: value, label: label, systemImage: systemImage, tint: tint, showsDisclosure: true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint("Shows the full list")
     }
 
     private func mapCard(region: MKCoordinateRegion) -> some View {

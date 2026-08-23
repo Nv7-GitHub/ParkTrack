@@ -391,14 +391,31 @@ enum StatsEngine {
         now: Date,
         calendar: Calendar
     ) -> (current: [StreakWeek], longest: [StreakWeek]) {
+        streakWeeks(
+            visits: parks.flatMap { park in
+                park.datedVisits.map { (date: $0.date, parkKey: park.identifier) }
+            },
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    /// The streak rule itself, over nothing but dated visits and which park each was to.
+    ///
+    /// Split out so a friend's streak is computed by the same code as your own. A second
+    /// implementation over shared visits would drift from this one, and the two would then
+    /// disagree about the same person on two phones — with no way to tell which was right.
+    static func streakWeeks(
+        visits: [(date: Date, parkKey: String)],
+        now: Date,
+        calendar: Calendar
+    ) -> (current: [StreakWeek], longest: [StreakWeek]) {
         var visitsPerWeek: [Date: Int] = [:]
         var parksPerWeek: [Date: Set<String>] = [:]
-        for park in parks {
-            for visit in park.datedVisits {
-                let week = weekStart(visit.date, calendar)
-                visitsPerWeek[week, default: 0] += 1
-                parksPerWeek[week, default: []].insert(park.identifier)
-            }
+        for visit in visits {
+            let week = weekStart(visit.date, calendar)
+            visitsPerWeek[week, default: 0] += 1
+            parksPerWeek[week, default: []].insert(visit.parkKey)
         }
         guard !visitsPerWeek.isEmpty else { return ([], []) }
 
