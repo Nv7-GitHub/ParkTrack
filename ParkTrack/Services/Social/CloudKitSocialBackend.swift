@@ -345,7 +345,13 @@ struct CloudKitSocialBackend: SocialBackend {
             return .failed("Your iCloud storage is full, so sharing didn't go through.")
         case .permissionFailure:
             return .unavailable("This build doesn't have permission to use iCloud sharing.")
-        case .zoneNotFound, .invalidArguments, .badContainer, .missingEntitlement:
+        // Told apart from the entitlement failures below, because this is the one a
+        // *correct* build hits: a field the app writes that the container's production
+        // schema has never been told about. Nothing on the phone can fix it and nothing
+        // about the message below would send anyone to the right place.
+        case .invalidArguments, .serverRejectedRequest:
+            return .unavailable("iCloud rejected this build's data — its iCloud setup needs updating before sharing can work.")
+        case .zoneNotFound, .badContainer, .missingEntitlement:
             return .unavailable("iCloud sharing isn't set up in this build.")
         default:
             return .failed(ckError.localizedDescription)

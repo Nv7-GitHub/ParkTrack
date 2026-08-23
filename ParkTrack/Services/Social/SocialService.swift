@@ -173,6 +173,24 @@ final class SocialService {
     private(set) var lastError: String?
     private(set) var lastSyncedAt: Date?
 
+    /// The tail of the sync queue. Everything that talks to the backend goes through it,
+    /// so two pieces of work never overlap — publishing while a refresh is halfway through
+    /// would have each recording a `lastSyncedAt` the other's results predate.
+    private var chain: Task<Void, Never>?
+    /// A refresh that has been asked for but has not begun, so repeated pulls during a long
+    /// publish join it instead of stacking up a queue of identical fetches.
+    private var queuedRefresh: Task<Void, Never>?
+
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let previous = chain
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        chain = task
+        return task
+    }
+
     init(backend: SocialBackend, modelContext: ModelContext) {
         self.backend = backend
         self.modelContext = modelContext
@@ -265,9 +283,28 @@ final class SocialService {
         await backend.updateIndexedRegions(payloads)
     }
 
+    /// Queued behind whatever sync is already running, rather than dropped.
+    ///
+    /// This used to return immediately when `isSyncing` was set, which made pull-to-refresh
+    /// a silent no-op for as long as anything else was in flight — and the first launch
+    /// after a format bump re-publishes an entire library, which is minutes. Pulling during
+    /// it looked exactly like pulling and finding nothing new, and the only way to see a
+    /// friend's latest was to quit the app and come back.
     func refreshAll() async {
+        if let queued = queuedRefresh {
+            // One already waiting its turn, and it will fetch whatever this one would.
+            await queued.value
+            return
+        }
+        let task = enqueue { [weak self] in await self?.performRefresh() }
+        queuedRefresh = task
+        await task.value
+    }
+
+    private func performRefresh() async {
+        // Running now, so a pull from here on wants a new one rather than this.
+        queuedRefresh = nil
         await shareIndexedRegions()
-        guard !isSyncing else { return }
         if Self.claimMirrorUpgrade() {
             // Everything already mirrored was fetched before the format changed, and the
             // corrected copies carry the same dates they always did — so an incremental
@@ -309,7 +346,12 @@ final class SocialService {
     /// shared, and each visit carries at most one attachment, so a friend pulling the
     /// feed downloads kilobytes rather than megabytes.
     func publishMyData(parks: [Park], profile: FriendProfilePayload) async {
-        guard !isSyncing else { return }
+        await enqueue { [weak self] in
+            await self?.performPublish(parks: parks, profile: profile)
+        }.value
+    }
+
+    private func performPublish(parks: [Park], profile: FriendProfilePayload) async {
         isSyncing = true
         defer { isSyncing = false }
         lastError = nil
