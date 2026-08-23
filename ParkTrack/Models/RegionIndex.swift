@@ -130,7 +130,15 @@ extension RegionIndex {
     /// version bump without a `searchGeneration` bump, which is the distinction those two
     /// numbers exist for: the swept ground is still good, so re-indexing reuses every cell
     /// and pays only for the handful of text tiles. It asks for a tap, not for an afternoon.
-    static let currentIndexerVersion = 5
+    ///
+    /// Generation 6 asks each cell at a radius the map service will answer, where every
+    /// earlier generation asked at the cell's half-diagonal — under about a kilometre, which
+    /// is below the point where the request stops answering fully and starts answering less,
+    /// or not at all. Measured over twelve cells of Bellevue it found 9 of the 13 parks in
+    /// them, and the four it missed included a park a friend's older index still has. This
+    /// one does move `searchGeneration`: the ground was swept, but with a question narrow
+    /// enough that sweeping it again is not a formality.
+    static let currentIndexerVersion = 6
 
     /// True for a record written by an older generation, which still names a place worth
     /// indexing but whose count can no longer be believed.

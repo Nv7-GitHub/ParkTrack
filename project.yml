@@ -21,7 +21,7 @@ settings:
     # Bumped for every upload. App Store Connect rejects a build whose version-and-build
     # pair it has already seen, and the rejection arrives after the archive and the upload
     # have both been waited through.
-    CURRENT_PROJECT_VERSION: "5"
+    CURRENT_PROJECT_VERSION: "6"
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   ParkTrack:

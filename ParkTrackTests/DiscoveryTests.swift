@@ -67,16 +67,25 @@ final class DiscoveryTests: XCTestCase {
 
     // MARK: - Asking about a cell
 
-    /// A cell has to fit inside the reach of the request that asks about it — measured at
-    /// about a kilometre — corners included, and the widest cell is one at the equator.
-    func testEveryCellFitsInsideTheRequestReach() {
+    /// A cell must be asked about with a radius the map will actually answer, and one that
+    /// covers the cell's corners.
+    ///
+    /// The half-diagonal alone satisfies the second and fails the first. Measured against
+    /// the real service over Bellevue, a request of 787 m — exactly what a 0.010° cell at
+    /// that latitude works out to — returns `placemarkNotFound` for ground that holds a
+    /// park 459 m from the centre, and the same centre at 1200 m returns it. See
+    /// `minimumCellRequestRadius`.
+    func testEveryCellIsAskedAboutWithARadiusTheMapWillAnswer() {
         for latitude in stride(from: 0.0, through: 60.0, by: 15.0) {
             let cell = ParkDiscoveryService.latticeCell(
                 containing: CLLocationCoordinate2D(latitude: latitude, longitude: 0)
             )
             let radius = ParkDiscoveryService.cellRequestRadius(for: cell)
-            XCTAssertLessThan(radius, 900, "cell at \(latitude)° needs \(radius)m of reach")
-            // And it must actually cover the cell, or the corners go unsearched.
+            XCTAssertGreaterThanOrEqual(
+                radius, ParkDiscoveryService.minimumCellRequestRadius,
+                "cell at \(latitude)° is asked about with \(radius)m, below what the map answers"
+            )
+            // And it must still cover the cell, or the corners go unsearched.
             let corner = CLLocation(
                 latitude: cell.center.latitude + cell.span.latitudeDelta / 2,
                 longitude: cell.center.longitude + cell.span.longitudeDelta / 2

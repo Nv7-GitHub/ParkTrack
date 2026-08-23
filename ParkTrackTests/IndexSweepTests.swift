@@ -147,6 +147,35 @@ final class IndexSweepTests: XCTestCase {
         XCTAssertTrue(result.truncated)
     }
 
+    /// A cell whose *response* was cut off, rather than whose cell was full.
+    ///
+    /// `rawCount` counts what landed inside the cell, which is the right test for "this cell
+    /// holds more parks than one answer can carry" and blind to "the service stopped at
+    /// thirty results and the rest of them would have been here". Measured over Manhattan
+    /// and San Francisco, a request wide enough to cover a cell comes back at the cap in the
+    /// densest neighbourhoods while only a third of it is in the cell — so the cell reads as
+    /// comfortably unsaturated and the region publishes a truncated answer as a total.
+    func testACellWhoseResponseWasCutOffStillReportsAFloor() async {
+        let cells = CellCounter()
+        let parks = sammamish
+        let honest = answering(parks, locality: "Sammamish", counting: cells)
+        let result = await service.sweepDense(
+            around: centre,
+            radiusMiles: radiusMiles,
+            belongsToRegion: { $0.locality == "Sammamish" },
+            searchCell: { cell in
+                var outcome = await honest(cell)
+                guard !outcome.candidates.isEmpty else { return outcome }
+                // One park in the cell, and an answer the service filled to the brim with
+                // parks from all round it.
+                outcome.responseCount = ParkDiscoveryService.cappedResponseCount
+                return outcome
+            }
+        )
+        XCTAssertTrue(result.completed)
+        XCTAssertTrue(result.truncated, "a response the map cut off was published as a total")
+    }
+
     /// The other half of the Sammamish bug. A residential plateau has streets of housing
     /// between one park and the next, and a wall rule counted in cells got tighter every
     /// time the cells got smaller — so the sweep indexed the southern half of the city and

@@ -575,6 +575,27 @@ final class ParkDiscoveryService {
     /// district, not a suburb, so in practice this fires where it should and nowhere else.
     nonisolated static let saturatedResultCount = 20
 
+    /// The smallest radius `MKLocalPointsOfInterestRequest` will actually answer about.
+    ///
+    /// Not a documented number — a measured cliff. Over a cell of south-east Bellevue
+    /// holding Silverleaf Park 459 m from its centre, the request returns
+    /// `placemarkNotFound` at 400 m, 787 m and 1000 m, and returns the park at 1200 m. The
+    /// radius is not the bound it looks like: below roughly a kilometre it shrinks the
+    /// answer rather than the area, down to nothing at all.
+    ///
+    /// It is also the finest question the map can be asked, which is why a saturated cell
+    /// cannot be subdivided out of trouble. See `cappedResponseCount`.
+    nonisolated static let minimumCellRequestRadius: CLLocationDistance = 1_200
+
+    /// How many results the service will put in one answer before it stops.
+    ///
+    /// Measured across the densest cells of San Francisco and Manhattan: at a 2000 m radius
+    /// four unrelated neighbourhoods answered with 27, 28, 29 and 30 results, which is a
+    /// ceiling rather than four coincidences. At `minimumCellRequestRadius` the largest
+    /// answer anywhere was 14 — half of it — which is the headroom that makes asking at the
+    /// floor safe where asking wider would not be.
+    nonisolated static let cappedResponseCount = 30
+
     /// Refinement stops here. Below roughly 1.5 km a tile is smaller than the parks in it.
     nonisolated static let minimumTileSpanDegrees = 0.014
 
@@ -602,7 +623,15 @@ final class ParkDiscoveryService {
     /// bounded points-of-interest request instead of either, which is the first generation
     /// whose answers are actually about the cell it asked about; every earlier record claims
     /// ground the map never looked at, so none of it may be reused.
-    nonisolated static let searchGeneration = 3
+    ///
+    /// Generation 4 asks each cell at a radius the service will answer. Generation 3 asked
+    /// at the cell's half-diagonal, on the understanding that the radius was a formality and
+    /// the reach about a kilometre regardless — true of the large radii it was measured at,
+    /// false below roughly a kilometre, where the answer shrinks with it and eventually
+    /// becomes `placemarkNotFound`. Every generation 3 cell was therefore asked a narrower
+    /// question than it recorded having asked: measured over twelve cells of Bellevue, it
+    /// found 9 of the 13 parks that were in them. That ground has to be walked again.
+    nonisolated static let searchGeneration = 4
 
     /// How many cells a sweep keeps in flight.
     ///
@@ -1078,6 +1107,13 @@ final class ParkDiscoveryService {
                 // this many", which is what `isApproximate` means.
                 if outcome.rawCount >= Self.saturatedResultCount { truncated = true }
 
+                // And a cell whose answer was cut off before it got to the cell. Asking
+                // covers more ground than the cell to reach the radius the service answers
+                // at, so in a dense city those results are shared with the neighbours — and
+                // when the answer fills up, what is missing is not knowable from the part
+                // that arrived. See `TileOutcome.responseCount`.
+                if outcome.responseCount >= Self.cappedResponseCount { truncated = true }
+
                 coverage.record(cell, resolution: cell.span.latitudeDelta, generation: Self.searchGeneration)
                 note(walkedOver: cell)
                 cellsSinceSave += 1
@@ -1537,6 +1573,16 @@ final class ParkDiscoveryService {
         /// answer, which is what a stretch of farmland looks like and is worth recording as
         /// searched. See `ParkDiscoveryService.scannableRegion(_:)`.
         var answeredAboutSomewhereElse = false
+
+        /// How many results the answer held, in the cell or out of it.
+        ///
+        /// `rawCount` cannot see this. A response cut off at `cappedResponseCount` while
+        /// only a third of it was in the cell reads as a comfortably empty cell, and the
+        /// parks the service had no room to mention are simply never asked for again — the
+        /// lattice has no finer step, and asking the same disc in smaller pieces returns the
+        /// same cut-off answer. All the sweep can honestly do is stop calling the total
+        /// exhaustive.
+        var responseCount: Int = 0
     }
 
     /// Scans `region` tile by tile, for callers that hand us one region rather than a plan.
@@ -1669,6 +1715,7 @@ final class ParkDiscoveryService {
                 region,
                 coordinates: response.mapItems.map(\.placemark.coordinate)
             )
+            outcome.responseCount = response.mapItems.count
         } catch {
             // An empty answer is not a refusal. This request reports "nothing within a
             // kilometre of here" as an error, and a good deal of any city is exactly that:
@@ -1704,7 +1751,10 @@ final class ParkDiscoveryService {
         let halfLatitude = cell.span.latitudeDelta / 2 * metersPerDegreeLatitude
         let halfLongitude = cell.span.longitudeDelta / 2
             * metersPerDegreeLatitude * cos(cell.center.latitude * .pi / 180)
-        return (halfLatitude * halfLatitude + halfLongitude * halfLongitude).squareRoot()
+        let halfDiagonal = (halfLatitude * halfLatitude + halfLongitude * halfLongitude).squareRoot()
+        // Covering the cell is necessary and not sufficient: a radius the service will not
+        // answer covers nothing at all. See `minimumCellRequestRadius`.
+        return max(halfDiagonal, minimumCellRequestRadius)
     }
 
     nonisolated static let metersPerDegreeLatitude: CLLocationDistance = 111_320
